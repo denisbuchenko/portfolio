@@ -58,16 +58,22 @@ export function createGasPoints(opts: { texSize: number; viewBounds: THREE.Vecto
         return fract((p3.x + p3.y) * p3.z);
       }
 
-      vec2 mirrorRepeat2(vec2 p, vec2 b) {
-        // p in world coords; return inside [-b, b] with mirrored tiling per-axis
-        vec2 period = 2.0 * b;
-        vec2 t = mod(p + b, period); // [0 .. 2b)
-        vec2 firstHalf = t - b; // [-b .. 0]
-        vec2 secondHalf = period - t; // [0 .. b]
-        return mix(firstHalf, secondHalf, step(b, t)); // [-b .. b]
+      vec2 bounceRepeat2(vec2 p, vec2 b) {
+        // True "bounce" inside [-b, b] without teleporting.
+        // Period is 4b: -b -> +b -> -b (continuous at the edges).
+        vec2 bb = max(b, vec2(1e-6));
+        vec2 period = 4.0 * bb;
+        vec2 t = fract((p + bb) / period) * period; // [0 .. 4b)
+        vec2 first = t - bb;          // [-b .. +b] when t in [0..2b)
+        vec2 second = 3.0 * bb - t;   // [+b .. -b] when t in [2b..4b)
+        vec2 useFirst = 1.0 - step(2.0 * bb, t);
+        return mix(second, first, useFirst);
       }
 
       void main() {
+        // keep time bounded to avoid floating point precision issues over long sessions
+        float tTime = mod(uTime, 1000.0);
+
         // Procedural "free gas": deterministic per-particle seed from uv
         float r0 = hash12(uv * 97.1);
         float r1 = hash12(uv * 151.7 + 0.31);
@@ -80,12 +86,12 @@ export function createGasPoints(opts: { texSize: number; viewBounds: THREE.Vecto
 
         // Add small time-varying drift field to feel "gas-like"
         vec2 drift = 0.65 * vec2(
-          sin((init.y + uTime * 0.7) * 0.9 + 6.0 * r1),
-          cos((init.x + uTime * 0.6) * 0.8 + 6.0 * r0)
+          sin((init.y + tTime * 0.7) * 0.9 + 6.0 * r1),
+          cos((init.x + tTime * 0.6) * 0.8 + 6.0 * r0)
         );
 
-        vec2 pos = init + vel * uTime + drift;
-        pos = mirrorRepeat2(pos, uBounds);
+        vec2 pos = init + vel * tTime + drift;
+        pos = bounceRepeat2(pos, uBounds);
 
         vSpeed = speed;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(vec3(pos, 0.0), 1.0);
