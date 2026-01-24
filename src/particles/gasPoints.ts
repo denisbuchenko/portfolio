@@ -60,10 +60,11 @@ export function createGasPoints(opts: { texSize: number; viewBounds: THREE.Vecto
 
       vec2 mirrorRepeat2(vec2 p, vec2 b) {
         // p in world coords; return inside [-b, b] with mirrored tiling per-axis
-        vec2 x = p + b;
-        x = mod(x, 2.0 * b);
-        x = b - abs(x - b);
-        return x - b;
+        vec2 period = 2.0 * b;
+        vec2 t = mod(p + b, period); // [0 .. 2b)
+        vec2 firstHalf = t - b; // [-b .. 0]
+        vec2 secondHalf = period - t; // [0 .. b]
+        return mix(firstHalf, secondHalf, step(b, t)); // [-b .. b]
       }
 
       void main() {
