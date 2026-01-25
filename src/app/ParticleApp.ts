@@ -95,6 +95,16 @@ export class ParticleApp {
     assert(btn0 && btn1, "mode buttons not found");
 
     const setMode = (mode: Mode) => {
+      // если выходим из режима аттрактора — отпустим захват pointer, чтобы не "залипало"
+      if (this._mode === 0 && mode !== 0 && this._attractorPointerId !== null) {
+        try {
+          this._renderer.domElement.releasePointerCapture(this._attractorPointerId);
+        } catch {
+          // ignore
+        }
+        this._attractorPointerId = null;
+      }
+
       this._mode = mode;
       btn0.classList.toggle("btn--active", mode === 0);
       btn1.classList.toggle("btn--active", mode === 1);
@@ -194,13 +204,16 @@ export class ParticleApp {
 
     this._gas.uniforms.uTime.value = elapsed;
 
-    // Attractor uniforms (active while pointer is held down in mode 0)
-    const attractorActive = this._mode === 0 && this._attractorPointerId !== null;
-    const targetStrength = attractorActive ? CONFIG.orbitStrength : 0;
+    // Attractor uniforms:
+    // - uAttractorActive: "режим аттрактора включён" (без резкого обнуления при отпускании)
+    // - uAttractorStrength: плавная сила (включение/выключение по удержанию pointer)
+    const attractorModeOn = this._mode === 0;
+    const attractorHeld = attractorModeOn && this._attractorPointerId !== null;
+    const targetStrength = attractorHeld ? CONFIG.orbitStrength : 0;
     const k = 1.0 - Math.exp(-dt / 0.08); // ~80ms time constant
     this._attractorStrength = THREE.MathUtils.lerp(this._attractorStrength, targetStrength, k);
 
-    (this._gas.uniforms.uAttractorActive.value as number) = attractorActive ? 1 : 0;
+    (this._gas.uniforms.uAttractorActive.value as number) = attractorModeOn ? 1 : 0;
     (this._gas.uniforms.uAttractorStrength.value as number) = this._attractorStrength;
     (this._gas.uniforms.uAttractorStartTime.value as number) = this._attractorStartTime;
     (this._gas.uniforms.uAttractorPos.value as THREE.Vector2).set(this._mouseWorld.x, this._mouseWorld.y);
@@ -210,7 +223,7 @@ export class ParticleApp {
         this._mode === -1
           ? "свободный газ"
           : this._mode === 0
-            ? `аттрактор (зажми и води)${attractorActive ? " • активен" : ""}`
+            ? `аттрактор (зажми и води)${attractorHeld ? " • активен" : ""}`
             : "сплайн";
       this._hudStatus.textContent =
         `частиц: ${CONFIG.particles} (tex ${this._texSize}×${this._texSize}) • режим: ${modeText}` +
