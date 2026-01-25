@@ -14,6 +14,16 @@ export class ParticleApp {
 
   private _gas: GasPoints;
   private _pathLine: THREE.Line;
+  private _basePointSize = 0;
+
+  // Trails (ping-pong)
+  private _trailRead!: THREE.WebGLRenderTarget;
+  private _trailWrite!: THREE.WebGLRenderTarget;
+  private _trailFadeScene!: THREE.Scene;
+  private _trailPresentScene!: THREE.Scene;
+  private _trailOrthoCam!: THREE.OrthographicCamera;
+  private _trailFadeMat!: THREE.ShaderMaterial;
+  private _trailPresentMat!: THREE.ShaderMaterial;
 
   private _mode: Mode = -1;
   private _mouseWorld = new THREE.Vector3(0, 0, 0);
@@ -65,11 +75,16 @@ export class ParticleApp {
     assert(texSize * texSize >= CONFIG.particles, "bad texture size");
     this._texSize = texSize;
 
-    const pointSize = 4.0 * (window.devicePixelRatio || 1);
+    const pixelRatio = this._renderer.getPixelRatio();
+    const pointSize = CONFIG.pointSizeCssPx * pixelRatio;
+    this._basePointSize = pointSize;
     this._gas = createGasPoints({
       texSize,
       viewBounds: this._viewBounds,
       pointSize,
+      pixelsPerWorld: 100,
+      speedPxMin: CONFIG.speedPxMin,
+      speedPxMax: CONFIG.speedPxMax,
       attractorRadius: CONFIG.captureRadius,
       attractorInfluenceRadius: CONFIG.influenceRadius,
       attractorOmega: CONFIG.orbitOmega
@@ -79,6 +94,9 @@ export class ParticleApp {
     this._pathLine = createBezierLine({ points: this._bezier, segments: 64 });
     this._scene.add(this._pathLine);
 
+    this._initTrails();
+    this._updateParticleSize();
+
     this._bindUI();
     this._bindEvents();
     this._onResize();
@@ -87,6 +105,134 @@ export class ParticleApp {
 
   private _requireGPUFeatures() {
     assert(this._renderer.capabilities.isWebGL2, "WebGL2 is required");
+  }
+
+  private _createTrailRT(w: number, h: number) {
+    const rt = new THREE.WebGLRenderTarget(w, h, {
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType,
+      depthBuffer: false,
+      stencilBuffer: false,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter
+    });
+    rt.texture.generateMipmaps = false;
+    return rt;
+  }
+
+  private _getTrailResolutionScale() {
+    // Увеличиваем разрешение trail-буфера только на HiDPI, чтобы следы не выглядели жирными/мыльными
+    // при растягивании на экран. pixelRatio уже учитывает лимит из setPixelRatio(...).
+    const pr = this._renderer.getPixelRatio();
+    return pr > 1 ? 2 : 1;
+  }
+
+  private _initTrails() {
+    const size = new THREE.Vector2();
+    this._renderer.getDrawingBufferSize(size);
+    const scale = this._getTrailResolutionScale();
+    const w = Math.max(1, Math.floor(size.x * scale));
+    const h = Math.max(1, Math.floor(size.y * scale));
+
+    this._trailRead = this._createTrailRT(w, h);
+    this._trailWrite = this._createTrailRT(w, h);
+
+    this._trailOrthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const quadGeom = new THREE.PlaneGeometry(2, 2);
+
+    this._trailFadeMat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      depthTest: false,
+      depthWrite: false,
+      transparent: false,
+      uniforms: {
+        tPrev: { value: this._trailRead.texture },
+        uDecay: { value: 0.95 },
+        uTexel: { value: new THREE.Vector2(1 / w, 1 / h) }
+      },
+      vertexShader: /* glsl */ `
+        out vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        uniform sampler2D tPrev;
+        uniform float uDecay;
+        uniform vec2 uTexel;
+        in vec2 vUv;
+        out vec4 outColor;
+
+        void main() {
+          // Slight blur + decay: makes trails smoother and "alive"
+          vec4 c = texture(tPrev, vUv) * 0.56;
+          c += texture(tPrev, vUv + vec2(uTexel.x, 0.0)) * 0.11;
+          c += texture(tPrev, vUv - vec2(uTexel.x, 0.0)) * 0.11;
+          c += texture(tPrev, vUv + vec2(0.0, uTexel.y)) * 0.11;
+          c += texture(tPrev, vUv - vec2(0.0, uTexel.y)) * 0.11;
+          outColor = c * uDecay;
+        }
+      `
+    });
+
+    this._trailPresentMat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      depthTest: false,
+      depthWrite: false,
+      transparent: false,
+      uniforms: { tTex: { value: this._trailRead.texture } },
+      vertexShader: /* glsl */ `
+        out vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        uniform sampler2D tTex;
+        in vec2 vUv;
+        out vec4 outColor;
+        void main() {
+          outColor = texture(tTex, vUv);
+        }
+      `
+    });
+
+    this._trailFadeScene = new THREE.Scene();
+    this._trailFadeScene.add(new THREE.Mesh(quadGeom, this._trailFadeMat));
+    this._trailPresentScene = new THREE.Scene();
+    this._trailPresentScene.add(new THREE.Mesh(quadGeom, this._trailPresentMat));
+  }
+
+  private _resizeTrails() {
+    const size = new THREE.Vector2();
+    this._renderer.getDrawingBufferSize(size);
+    const scale = this._getTrailResolutionScale();
+    const w = Math.max(1, Math.floor(size.x * scale));
+    const h = Math.max(1, Math.floor(size.y * scale));
+
+    this._trailRead.setSize(w, h);
+    this._trailWrite.setSize(w, h);
+    (this._trailFadeMat.uniforms.uTexel.value as THREE.Vector2).set(1 / w, 1 / h);
+  }
+
+  private _updatePixelMetrics() {
+    // pixels per 1 world unit on z=0 plane (vertical axis)
+    const buf = new THREE.Vector2();
+    this._renderer.getDrawingBufferSize(buf);
+    const pixelsPerWorld = buf.y / Math.max(1e-6, this._viewBounds.y * 2);
+    (this._gas.uniforms.uPixelsPerWorld.value as number) = pixelsPerWorld;
+    (this._gas.uniforms.uSpeedPxMin.value as number) = CONFIG.speedPxMin;
+    (this._gas.uniforms.uSpeedPxMax.value as number) = CONFIG.speedPxMax;
+  }
+
+  private _updateParticleSize() {
+    const pixelRatio = this._renderer.getPixelRatio();
+    this._basePointSize = CONFIG.pointSizeCssPx * pixelRatio;
+    (this._gas.uniforms.uPointSize.value as number) = this._basePointSize;
   }
 
   private _bindUI() {
@@ -111,6 +257,9 @@ export class ParticleApp {
 
       // Чуть подсветим сплайн в соответствующем режиме
       (this._pathLine.material as THREE.LineBasicMaterial).opacity = mode === 1 ? 0.55 : 0.22;
+
+      // На всякий случай восстановим базовый размер после любых pass'ов
+      this._updateParticleSize();
     };
 
     btn0.addEventListener("click", () => setMode(this._mode === 0 ? -1 : 0));
@@ -187,7 +336,7 @@ export class ParticleApp {
     this._camera.updateProjectionMatrix();
     this._renderer.setSize(w, h);
 
-    (this._gas.uniforms.uPointSize.value as number) = 4.0 * (window.devicePixelRatio || 1);
+    this._updateParticleSize();
 
     // bounds of z=0 plane visible by the perspective camera
     const dist = Math.abs(this._camera.position.z);
@@ -195,6 +344,9 @@ export class ParticleApp {
     const halfW = halfH * this._camera.aspect;
     this._viewBounds.set(halfW, halfH);
     (this._gas.uniforms.uBounds.value as THREE.Vector2).copy(this._viewBounds);
+
+    this._resizeTrails();
+    this._updatePixelMetrics();
   }
 
   private _animate = () => {
@@ -230,7 +382,42 @@ export class ParticleApp {
         ` • область: ${(this._viewBounds.x * 2).toFixed(1)}×${(this._viewBounds.y * 2).toFixed(1)}`;
     }
 
+    // Trails pass: fade previous frame into write RT, then stamp current particles, then present to screen
+    const decay = Math.exp((-dt * Math.LN2) / Math.max(1e-4, CONFIG.trailHalfLife));
+
+    (this._trailFadeMat.uniforms.tPrev.value as THREE.Texture) = this._trailRead.texture;
+    (this._trailFadeMat.uniforms.uDecay.value as number) = decay;
+
+    // 1) fade to trailWrite
+    this._renderer.setRenderTarget(this._trailWrite);
+    this._renderer.autoClear = true;
+    this._renderer.render(this._trailFadeScene, this._trailOrthoCam);
+
+    // 2) stamp particles into trailWrite (thicker & dimmer)
+    this._renderer.autoClear = false;
+    (this._gas.uniforms.uPointSize.value as number) = this._basePointSize * CONFIG.trailPointSizeMul;
+    (this._gas.uniforms.uAlphaMul.value as number) = CONFIG.trailStampAlpha;
+    const wasLineVisible = this._pathLine.visible;
+    this._pathLine.visible = false;
     this._renderer.render(this._scene, this._camera);
+    this._pathLine.visible = wasLineVisible;
+
+    // 3) swap
+    const tmp = this._trailRead;
+    this._trailRead = this._trailWrite;
+    this._trailWrite = tmp;
+
+    // 4) present trails to screen
+    this._renderer.setRenderTarget(null);
+    this._renderer.autoClear = true;
+    this._renderer.render(this._trailPresentScene, this._trailOrthoCam);
+
+    // 5) render heads + line on top
+    this._renderer.autoClear = false;
+    (this._gas.uniforms.uPointSize.value as number) = this._basePointSize;
+    (this._gas.uniforms.uAlphaMul.value as number) = 1.0;
+    this._renderer.render(this._scene, this._camera);
+
     requestAnimationFrame(this._animate);
   };
 }

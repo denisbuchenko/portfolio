@@ -5,7 +5,11 @@ export type GasPoints = {
   uniforms: {
     uTime: { value: number };
     uBounds: { value: THREE.Vector2 };
+    uPixelsPerWorld: { value: number };
+    uSpeedPxMin: { value: number };
+    uSpeedPxMax: { value: number };
     uPointSize: { value: number };
+    uAlphaMul: { value: number };
     uAttractorActive: { value: number };
     uAttractorPos: { value: THREE.Vector2 };
     uAttractorStartTime: { value: number };
@@ -20,6 +24,9 @@ export function createGasPoints(opts: {
   texSize: number;
   viewBounds: THREE.Vector2;
   pointSize: number;
+  pixelsPerWorld?: number;
+  speedPxMin?: number;
+  speedPxMax?: number;
   attractorRadius?: number;
   attractorInfluenceRadius?: number;
   attractorOmega?: number;
@@ -48,7 +55,11 @@ export function createGasPoints(opts: {
   const uniforms = {
     uTime: { value: 0 },
     uBounds: { value: opts.viewBounds },
+    uPixelsPerWorld: { value: opts.pixelsPerWorld ?? 100 },
+    uSpeedPxMin: { value: opts.speedPxMin ?? 40 },
+    uSpeedPxMax: { value: opts.speedPxMax ?? 160 },
     uPointSize: { value: opts.pointSize },
+    uAlphaMul: { value: 1.0 },
 
     // Attractor (mouse / touch orbit)
     uAttractorActive: { value: 0 },
@@ -70,6 +81,9 @@ export function createGasPoints(opts: {
     vertexShader: /* glsl */ `
       uniform float uTime;
       uniform vec2 uBounds;
+      uniform float uPixelsPerWorld;
+      uniform float uSpeedPxMin;
+      uniform float uSpeedPxMax;
       uniform float uPointSize;
       uniform float uAttractorActive;
       uniform vec2 uAttractorPos;
@@ -117,7 +131,8 @@ export function createGasPoints(opts: {
         float r2 = hash12(uv * 211.3 + 0.73);
 
         vec2 init = (vec2(r0, r1) * 2.0 - 1.0) * (uBounds * 0.98);
-        float speed = 0.45 + 1.05 * r2;
+        float speedPx = mix(uSpeedPxMin, uSpeedPxMax, r2);
+        float speed = speedPx / max(uPixelsPerWorld, 1e-3);
         float ang = TAU * hash12(uv * 331.9 + 0.17);
         vec2 vel = speed * vec2(cos(ang), sin(ang));
 
@@ -161,6 +176,7 @@ export function createGasPoints(opts: {
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform float uAlphaMul;
       in float vSpeed;
       out vec4 outColor;
 
@@ -172,7 +188,7 @@ export function createGasPoints(opts: {
         vec3 colA = vec3(0.43, 0.91, 1.0);
         vec3 colB = vec3(0.66, 0.55, 1.0);
         vec3 col = mix(colA, colB, sp);
-        outColor = vec4(col, alpha);
+        outColor = vec4(col, alpha * uAlphaMul);
       }
     `
   });
