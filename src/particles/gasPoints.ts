@@ -6,10 +6,24 @@ export type GasPoints = {
     uTime: { value: number };
     uBounds: { value: THREE.Vector2 };
     uPointSize: { value: number };
+    uAttractorActive: { value: number };
+    uAttractorPos: { value: THREE.Vector2 };
+    uAttractorStartTime: { value: number };
+    uAttractorRadius: { value: number };
+    uAttractorInfluenceRadius: { value: number };
+    uAttractorOmega: { value: number };
+    uAttractorStrength: { value: number };
   };
 };
 
-export function createGasPoints(opts: { texSize: number; viewBounds: THREE.Vector2; pointSize: number }): GasPoints {
+export function createGasPoints(opts: {
+  texSize: number;
+  viewBounds: THREE.Vector2;
+  pointSize: number;
+  attractorRadius?: number;
+  attractorInfluenceRadius?: number;
+  attractorOmega?: number;
+}): GasPoints {
   const geom = new THREE.BufferGeometry();
   const count = opts.texSize * opts.texSize;
 
@@ -34,7 +48,16 @@ export function createGasPoints(opts: { texSize: number; viewBounds: THREE.Vecto
   const uniforms = {
     uTime: { value: 0 },
     uBounds: { value: opts.viewBounds },
-    uPointSize: { value: opts.pointSize }
+    uPointSize: { value: opts.pointSize },
+
+    // Attractor (mouse / touch orbit)
+    uAttractorActive: { value: 0 },
+    uAttractorPos: { value: new THREE.Vector2(0, 0) },
+    uAttractorStartTime: { value: 0 },
+    uAttractorRadius: { value: opts.attractorRadius ?? 1.0 },
+    uAttractorInfluenceRadius: { value: opts.attractorInfluenceRadius ?? 2.2 },
+    uAttractorOmega: { value: opts.attractorOmega ?? 5.2 },
+    uAttractorStrength: { value: 0 }
   };
 
   const mat = new THREE.ShaderMaterial({
@@ -48,6 +71,13 @@ export function createGasPoints(opts: { texSize: number; viewBounds: THREE.Vecto
       uniform float uTime;
       uniform vec2 uBounds;
       uniform float uPointSize;
+      uniform float uAttractorActive;
+      uniform vec2 uAttractorPos;
+      uniform float uAttractorStartTime;
+      uniform float uAttractorRadius;
+      uniform float uAttractorInfluenceRadius;
+      uniform float uAttractorOmega;
+      uniform float uAttractorStrength;
       out float vSpeed;
 
       const float TAU = 6.28318530718;
@@ -70,6 +100,13 @@ export function createGasPoints(opts: { texSize: number; viewBounds: THREE.Vecto
         return mix(second, first, useFirst);
       }
 
+      vec2 driftField(vec2 base, float t, float r0, float r1) {
+        return 0.65 * vec2(
+          sin((base.y + t * 0.7) * 0.9 + 6.0 * r1),
+          cos((base.x + t * 0.6) * 0.8 + 6.0 * r0)
+        );
+      }
+
       void main() {
         // keep time bounded to avoid floating point precision issues over long sessions
         float tTime = mod(uTime, 1000.0);
@@ -85,13 +122,38 @@ export function createGasPoints(opts: { texSize: number; viewBounds: THREE.Vecto
         vec2 vel = speed * vec2(cos(ang), sin(ang));
 
         // Add small time-varying drift field to feel "gas-like"
-        vec2 drift = 0.65 * vec2(
-          sin((init.y + tTime * 0.7) * 0.9 + 6.0 * r1),
-          cos((init.x + tTime * 0.6) * 0.8 + 6.0 * r0)
-        );
+        vec2 drift = driftField(init, tTime, r0, r1);
 
-        vec2 pos = init + vel * tTime + drift;
-        pos = bounceRepeat2(pos, uBounds);
+        vec2 basePos = init + vel * tTime + drift;
+        basePos = bounceRepeat2(basePos, uBounds);
+
+        // Mouse/touch attractor: smoothly re-route nearby particles onto an orbit ring
+        // around uAttractorPos. Since we don't keep per-particle state, we compute
+        // "start angle" from the particle position at the moment the attractor was engaged.
+        vec2 pos = basePos;
+        float attractorOn = uAttractorActive * uAttractorStrength;
+        if (attractorOn > 0.0001) {
+          vec2 center = uAttractorPos;
+          float dist = length(basePos - center);
+
+          float outer = max(uAttractorInfluenceRadius, 1e-4);
+          float inner = outer * 0.35;
+          float wInfluence = 1.0 - smoothstep(inner, outer, dist);
+
+          // reconstruct particle position at attractor start moment (bounded for stability)
+          float tStart = mod(uAttractorStartTime, 1000.0);
+          vec2 startPos = init + vel * tStart + driftField(init, tStart, r0, r1);
+          startPos = bounceRepeat2(startPos, uBounds);
+
+          vec2 v0 = startPos - center;
+          float a0 = atan(v0.y, v0.x);
+          float dt = max(0.0, uTime - uAttractorStartTime);
+          float a = a0 + uAttractorOmega * dt;
+          vec2 orbitPos = center + uAttractorRadius * vec2(cos(a), sin(a));
+
+          float w = attractorOn * wInfluence;
+          pos = mix(basePos, orbitPos, w);
+        }
 
         vSpeed = speed;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(vec3(pos, 0.0), 1.0);
