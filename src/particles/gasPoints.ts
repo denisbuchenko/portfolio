@@ -17,6 +17,17 @@ export type GasPoints = {
     uAttractorInfluenceRadius: { value: number };
     uAttractorOmega: { value: number };
     uAttractorStrength: { value: number };
+    uBezierActive: { value: number };
+    uBezierP0: { value: THREE.Vector2 };
+    uBezierP1: { value: THREE.Vector2 };
+    uBezierP2: { value: THREE.Vector2 };
+    uBezierP3: { value: THREE.Vector2 };
+    uBezierJitterRadius: { value: number };
+    uBezierTimeScale: { value: number };
+    uBezierPhaseOffset: { value: number };
+    uPathTex: { value: THREE.Texture | null };
+    uPathCount: { value: number };
+    uPathUseTexture: { value: number };
   };
 };
 
@@ -68,7 +79,22 @@ export function createGasPoints(opts: {
     uAttractorRadius: { value: opts.attractorRadius ?? 1.0 },
     uAttractorInfluenceRadius: { value: opts.attractorInfluenceRadius ?? 2.2 },
     uAttractorOmega: { value: opts.attractorOmega ?? 5.2 },
-    uAttractorStrength: { value: 0 }
+    uAttractorStrength: { value: 0 },
+
+    // Bezier path mode (spline)
+    uBezierActive: { value: 0 },
+    uBezierP0: { value: new THREE.Vector2(-3, -2) },
+    uBezierP1: { value: new THREE.Vector2(-1, 2) },
+    uBezierP2: { value: new THREE.Vector2(1, -2) },
+    uBezierP3: { value: new THREE.Vector2(3, 2) },
+    uBezierJitterRadius: { value: 0.15 },
+    uBezierTimeScale: { value: 0.12 },
+    uBezierPhaseOffset: { value: 0.0 },
+
+    // Generic path sampling (from SVG -> sampled points -> 1D texture)
+    uPathTex: { value: null },
+    uPathCount: { value: 0 },
+    uPathUseTexture: { value: 0 }
   };
 
   const mat = new THREE.ShaderMaterial({
@@ -92,6 +118,17 @@ export function createGasPoints(opts: {
       uniform float uAttractorInfluenceRadius;
       uniform float uAttractorOmega;
       uniform float uAttractorStrength;
+      uniform float uBezierActive;
+      uniform vec2 uBezierP0;
+      uniform vec2 uBezierP1;
+      uniform vec2 uBezierP2;
+      uniform vec2 uBezierP3;
+      uniform float uBezierJitterRadius;
+      uniform float uBezierTimeScale;
+      uniform float uBezierPhaseOffset;
+      uniform sampler2D uPathTex;
+      uniform float uPathCount;
+      uniform float uPathUseTexture;
       out float vSpeed;
 
       const float TAU = 6.28318530718;
@@ -121,6 +158,29 @@ export function createGasPoints(opts: {
         );
       }
 
+      vec2 bezier3(vec2 p0, vec2 p1, vec2 p2, vec2 p3, float t) {
+        float u = 1.0 - t;
+        float tt = t * t;
+        float uu = u * u;
+        float uuu = uu * u;
+        float ttt = tt * t;
+        return uuu * p0 + (3.0 * uu * t) * p1 + (3.0 * u * tt) * p2 + ttt * p3;
+      }
+
+      vec2 samplePathTex(float t) {
+        float n = max(uPathCount, 2.0);
+        float x = clamp(t, 0.0, 1.0) * (n - 1.0);
+        float i0 = floor(x);
+        float i1 = min(i0 + 1.0, n - 1.0);
+        float f = fract(x);
+
+        vec2 uv0 = vec2((i0 + 0.5) / n, 0.5);
+        vec2 uv1 = vec2((i1 + 0.5) / n, 0.5);
+        vec2 p0 = texture(uPathTex, uv0).xy;
+        vec2 p1 = texture(uPathTex, uv1).xy;
+        return mix(p0, p1, f);
+      }
+
       void main() {
         // keep time bounded to avoid floating point precision issues over long sessions
         float tTime = mod(uTime, 1000.0);
@@ -146,7 +206,8 @@ export function createGasPoints(opts: {
         // around uAttractorPos. Since we don't keep per-particle state, we compute
         // "start angle" from the particle position at the moment the attractor was engaged.
         vec2 pos = basePos;
-        float attractorOn = uAttractorActive * uAttractorStrength;
+        float bezierW = clamp(uBezierActive, 0.0, 1.0);
+        float attractorOn = uAttractorActive * uAttractorStrength * (1.0 - bezierW);
         if (attractorOn > 0.0001) {
           vec2 center = uAttractorPos;
           float dist = length(basePos - center);
@@ -169,6 +230,23 @@ export function createGasPoints(opts: {
           float w = attractorOn * wInfluence;
           pos = mix(basePos, orbitPos, w);
         }
+
+        // Bezier path mode: compute target position from curve parameter + per-particle phase.
+        // Note: we move in curve parameter space (not arc-length). Fast and stable.
+        float phase = hash12(uv * 541.7 + 0.11);
+        float tCurve = fract(uBezierPhaseOffset + phase + tTime * max(uBezierTimeScale, 0.0));
+        vec2 bezPos = bezier3(uBezierP0, uBezierP1, uBezierP2, uBezierP3, tCurve);
+        vec2 pathPos = (uPathUseTexture > 0.5) ? samplePathTex(tCurve) : bezPos;
+
+        // Deterministic jitter per particle (constant offset in world units).
+        float j0 = hash12(uv * 913.3 + 0.27);
+        float j1 = hash12(uv * 1229.7 + 0.93);
+        float jAng = TAU * j0;
+        // sqrt for uniform distribution in disk
+        float jRad = sqrt(j1) * max(uBezierJitterRadius, 0.0);
+        vec2 jitter = jRad * vec2(cos(jAng), sin(jAng));
+
+        pos = mix(pos, pathPos + jitter, bezierW);
 
         vSpeed = speed;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(vec3(pos, 0.0), 1.0);

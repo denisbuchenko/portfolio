@@ -4,6 +4,7 @@ import { assert } from "../utils/assert";
 import type { Overlay } from "../ui/overlay";
 import { createGasPoints, type GasPoints } from "../particles/gasPoints";
 import { createBezierLine, type BezierControlPoints } from "../scene/bezier";
+import { loadSvgPathSamples, mapSvgPointsToWorld } from "../scene/svgPath";
 
 export class ParticleApp {
   private _renderer: THREE.WebGLRenderer;
@@ -35,6 +36,11 @@ export class ParticleApp {
   private _attractorPointerId: number | null = null;
   private _attractorStartTime = 0;
   private _attractorStrength = 0;
+
+  private _bezierActive = 0;
+  private _svgPathRaw: THREE.Vector2[] | null = null; // SVG coords (y-down)
+  private _pathSamples = 512;
+  private _pathTex: THREE.DataTexture | null = null;
 
   private _overlay: Overlay;
   private _hudStatus = document.getElementById("hud-status");
@@ -97,10 +103,69 @@ export class ParticleApp {
     this._initTrails();
     this._updateParticleSize();
 
+    this._loadSplineSvg();
+
     this._bindUI();
     this._bindEvents();
     this._onResize();
     this._animate();
+  }
+
+  private async _loadSplineSvg() {
+    try {
+      const sample = await loadSvgPathSamples({ url: "/paths/treble-clef.svg", samples: this._pathSamples });
+      this._svgPathRaw = sample.pointsSvg;
+      this._applySvgPathToWorld();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("Не удалось загрузить SVG-путь для сплайна:", e);
+      // keep fallback bezier curve
+      (this._gas.uniforms.uPathUseTexture.value as number) = 0;
+    }
+  }
+
+  private _applySvgPathToWorld() {
+    if (!this._svgPathRaw) return;
+
+    const ptsWorld = mapSvgPointsToWorld({
+      pointsSvg: this._svgPathRaw,
+      targetHalfBounds: this._viewBounds,
+      fit: 0.9
+    });
+
+    // Update spline line geometry (reuse existing line object/material).
+    const verts = ptsWorld.map((p) => new THREE.Vector3(p.x, p.y, 0));
+    const geom = new THREE.BufferGeometry().setFromPoints(verts);
+    this._pathLine.geometry.dispose();
+    this._pathLine.geometry = geom;
+
+    // Upload sampled path points as a 1D float texture (RGBA: x,y,0,1).
+    const n = ptsWorld.length;
+    const data = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      const p = ptsWorld[i];
+      const o = i * 4;
+      data[o + 0] = p.x;
+      data[o + 1] = p.y;
+      data[o + 2] = 0;
+      data[o + 3] = 1;
+    }
+
+    const tex = new THREE.DataTexture(data, n, 1, THREE.RGBAFormat, THREE.FloatType);
+    tex.needsUpdate = true;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+
+    // Prevent resource leaks on resize / reload.
+    if (this._pathTex) this._pathTex.dispose();
+    this._pathTex = tex;
+
+    (this._gas.uniforms.uPathTex.value as THREE.Texture | null) = tex;
+    (this._gas.uniforms.uPathCount.value as number) = n;
+    (this._gas.uniforms.uPathUseTexture.value as number) = 1;
   }
 
   private _requireGPUFeatures() {
@@ -345,6 +410,9 @@ export class ParticleApp {
     this._viewBounds.set(halfW, halfH);
     (this._gas.uniforms.uBounds.value as THREE.Vector2).copy(this._viewBounds);
 
+    // Re-fit SVG path to the new view bounds (keeps it nicely framed on any aspect ratio).
+    this._applySvgPathToWorld();
+
     this._resizeTrails();
     this._updatePixelMetrics();
   }
@@ -355,6 +423,24 @@ export class ParticleApp {
     const elapsed = this._time;
 
     this._gas.uniforms.uTime.value = elapsed;
+
+    // Bezier path mode (spline): smooth enable/disable for pleasant transitions
+    const bezierModeOn = this._mode === 1;
+    {
+      const target = bezierModeOn ? 1 : 0;
+      const k = 1.0 - Math.exp(-dt / 0.12); // ~120ms time constant
+      this._bezierActive = THREE.MathUtils.lerp(this._bezierActive, target, k);
+      (this._gas.uniforms.uBezierActive.value as number) = this._bezierActive;
+
+      (this._gas.uniforms.uBezierJitterRadius.value as number) = CONFIG.bezierJitterRadius;
+      (this._gas.uniforms.uBezierTimeScale.value as number) = CONFIG.bezierTimeScale;
+      (this._gas.uniforms.uBezierPhaseOffset.value as number) = CONFIG.bezierPhaseOffset;
+
+      (this._gas.uniforms.uBezierP0.value as THREE.Vector2).set(this._bezier[0].x, this._bezier[0].y);
+      (this._gas.uniforms.uBezierP1.value as THREE.Vector2).set(this._bezier[1].x, this._bezier[1].y);
+      (this._gas.uniforms.uBezierP2.value as THREE.Vector2).set(this._bezier[2].x, this._bezier[2].y);
+      (this._gas.uniforms.uBezierP3.value as THREE.Vector2).set(this._bezier[3].x, this._bezier[3].y);
+    }
 
     // Attractor uniforms:
     // - uAttractorActive: "режим аттрактора включён" (без резкого обнуления при отпускании)

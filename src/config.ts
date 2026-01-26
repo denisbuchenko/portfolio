@@ -16,6 +16,11 @@ export const CONFIG = {
   orbitOmega: 5, // угловая скорость (рад/сек)
   orbitStrength: 0.85, // целевая сила эффекта (сглаживается во времени в JS)
 
+  // Сплайн (движение по кривой Безье)
+  bezierJitterRadius: 0.25, // world units: 0 = строго по кривой
+  bezierTimeScale: 0.08, // cycles/sec по параметру t кривой (не arc-length)
+  bezierPhaseOffset: 0.0, // глобальный сдвиг фазы (для отладки/вариаций)
+
   // Следы (кометы): накопление предыдущих кадров в offscreen буфере
   trailPointSizeMul: 2.0, // толщина следа относительно точки
   trailHalfLife: 0.065, // секунды: в 2 раза длиннее хвост (больше = длиннее)
