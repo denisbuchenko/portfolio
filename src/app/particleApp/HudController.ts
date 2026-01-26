@@ -15,17 +15,17 @@ export class HudController {
     this._statusEl = document.getElementById("hud-status");
   }
 
-  bindModeToggle(getMode: () => Mode, setMode: (m: Mode) => void) {
+  bindModeToggle(getMode: () => Mode, setMode: (m: Mode) => void): void {
     this._btnAttractor.addEventListener("click", () => setMode(getMode() === 0 ? -1 : 0));
     this._btnSpline.addEventListener("click", () => setMode(getMode() === 1 ? -1 : 1));
   }
 
-  setMode(mode: Mode) {
+  setMode(mode: Mode): void {
     this._btnAttractor.classList.toggle("btn--active", mode === 0);
     this._btnSpline.classList.toggle("btn--active", mode === 1);
   }
 
-  setStatus(text: string) {
+  setStatus(text: string): void {
     if (!this._statusEl) return;
     this._statusEl.textContent = text;
   }

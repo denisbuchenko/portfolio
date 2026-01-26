@@ -10,19 +10,19 @@ export class PointerTracker {
   private _pointerId: number | null = null;
   private _startTime = 0;
 
-  get mouseWorld() {
+  get mouseWorld(): THREE.Vector3 {
     return this._mouseWorld;
   }
 
-  get isCaptured() {
+  get isCaptured(): boolean {
     return this._pointerId !== null;
   }
 
-  get startTime() {
+  get startTime(): number {
     return this._startTime;
   }
 
-  updateFromEvent(e: PointerEvent, canvas: HTMLCanvasElement, camera: THREE.Camera) {
+  updateFromEvent(e: PointerEvent, canvas: HTMLCanvasElement, camera: THREE.Camera): void {
     const rect = canvas.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
@@ -33,14 +33,14 @@ export class PointerTracker {
     if (hit) this._mouseWorld.copy(hit);
   }
 
-  capture(e: PointerEvent, canvas: HTMLCanvasElement, startTime: number) {
+  capture(e: PointerEvent, canvas: HTMLCanvasElement, startTime: number): void {
     if (this._pointerId !== null) return;
     this._pointerId = e.pointerId;
     this._startTime = startTime;
     canvas.setPointerCapture(e.pointerId);
   }
 
-  release(e: PointerEvent, canvas: HTMLCanvasElement) {
+  release(e: PointerEvent, canvas: HTMLCanvasElement): void {
     if (this._pointerId !== e.pointerId) return;
     this._pointerId = null;
     try {
@@ -50,7 +50,7 @@ export class PointerTracker {
     }
   }
 
-  forceRelease(canvas: HTMLCanvasElement) {
+  forceRelease(canvas: HTMLCanvasElement): void {
     if (this._pointerId === null) return;
     const id = this._pointerId;
     this._pointerId = null;

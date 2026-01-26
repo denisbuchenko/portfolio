@@ -9,7 +9,7 @@ export class TrailComposer {
   private _fadeMat!: THREE.ShaderMaterial;
   private _presentMat!: THREE.ShaderMaterial;
 
-  init(renderer: THREE.WebGLRenderer) {
+  init(renderer: THREE.WebGLRenderer): void {
     this._orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     const quadGeom = new THREE.PlaneGeometry(2, 2);
 
@@ -83,7 +83,7 @@ export class TrailComposer {
     this._presentScene.add(new THREE.Mesh(quadGeom, this._presentMat));
   }
 
-  resize(renderer: THREE.WebGLRenderer) {
+  resize(renderer: THREE.WebGLRenderer): void {
     const { w, h } = this._computeSize(renderer);
     this._read.setSize(w, h);
     this._write.setSize(w, h);
@@ -100,7 +100,7 @@ export class TrailComposer {
     trailPointSizeMul: number;
     trailStampAlpha: number;
     decay: number;
-  }) {
+  }): void {
     (this._fadeMat.uniforms.tPrev.value as THREE.Texture) = this._read.texture;
     (this._fadeMat.uniforms.uDecay.value as number) = opts.decay;
 
@@ -129,7 +129,7 @@ export class TrailComposer {
     opts.renderer.render(opts.scene, opts.camera);
   }
 
-  private _computeSize(renderer: THREE.WebGLRenderer) {
+  private _computeSize(renderer: THREE.WebGLRenderer): { w: number; h: number } {
     const size = new THREE.Vector2();
     renderer.getDrawingBufferSize(size);
     const scale = this._resolutionScale(renderer);
@@ -138,12 +138,12 @@ export class TrailComposer {
     return { w, h };
   }
 
-  private _resolutionScale(renderer: THREE.WebGLRenderer) {
+  private _resolutionScale(renderer: THREE.WebGLRenderer): number {
     const pr = renderer.getPixelRatio();
     return pr > 1 ? 2 : 1;
   }
 
-  private _createRT(w: number, h: number) {
+  private _createRT(w: number, h: number): THREE.WebGLRenderTarget {
     const rt = new THREE.WebGLRenderTarget(w, h, {
       format: THREE.RGBAFormat,
       type: THREE.UnsignedByteType,

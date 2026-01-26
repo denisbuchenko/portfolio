@@ -4,6 +4,7 @@ import { assert } from "../../utils/assert";
 import type { Overlay } from "../../ui/overlay";
 import { createGasPoints, type GasPoints } from "../../particles/gasPoints";
 import { createBezierLine, type BezierControlPoints } from "../../scene/bezier";
+
 import { computePixelsPerWorld, computeViewBounds } from "./viewMetrics";
 import { HudController } from "./HudController";
 import { PointerTracker } from "./PointerTracker";
@@ -70,7 +71,7 @@ export class ParticleApp {
     this._animate();
   }
 
-  private _createRenderer(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext) {
+  private _createRenderer(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): THREE.WebGLRenderer {
     const renderer = new THREE.WebGLRenderer({
       canvas,
       context: gl,
@@ -86,14 +87,14 @@ export class ParticleApp {
     return renderer;
   }
 
-  private _createCamera() {
+  private _createCamera(): THREE.PerspectiveCamera {
     const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.01, 100);
     camera.position.set(0, 0, 11);
     camera.lookAt(0, 0, 0);
     return camera;
   }
 
-  private _createGas() {
+  private _createGas(): { gas: GasPoints; texSize: number; basePointSize: number } {
     const texSize = Math.ceil(Math.sqrt(CONFIG.particles));
     assert(texSize * texSize >= CONFIG.particles, "bad texture size");
 
@@ -114,7 +115,7 @@ export class ParticleApp {
     return { gas, texSize, basePointSize };
   }
 
-  private async _loadSplineSvg() {
+  private async _loadSplineSvg(): Promise<void> {
     try {
       await this._splineSvg.load("/paths/treble-clef.svg");
       this._splineSvg.applyToWorld({ viewBounds: this._viewBounds, pathLine: this._pathLine, gas: this._gas });
@@ -125,11 +126,11 @@ export class ParticleApp {
     }
   }
 
-  private _requireGPUFeatures() {
+  private _requireGPUFeatures(): void {
     assert(this._renderer.capabilities.isWebGL2, "WebGL2 is required");
   }
 
-  private _bindUI() {
+  private _bindUI(): void {
     const setMode = (mode: Mode) => {
       if (this._mode === 0 && mode !== 0) this._pointer.forceRelease(this._renderer.domElement);
       this._mode = mode;
@@ -142,7 +143,7 @@ export class ParticleApp {
     setMode(-1);
   }
 
-  private _bindEvents() {
+  private _bindEvents(): void {
     window.addEventListener("resize", () => this._onResize());
 
     const canvas = this._renderer.domElement;
@@ -164,21 +165,21 @@ export class ParticleApp {
     );
   }
 
-  private _onPointerMove(e: PointerEvent) {
+  private _onPointerMove(e: PointerEvent): void {
     this._pointer.updateFromEvent(e, this._renderer.domElement, this._camera);
   }
 
-  private _onPointerDown(e: PointerEvent) {
+  private _onPointerDown(e: PointerEvent): void {
     this._onPointerMove(e);
     if (this._mode !== 0) return;
     this._pointer.capture(e, this._renderer.domElement, this._time);
   }
 
-  private _onPointerUp(e: PointerEvent) {
+  private _onPointerUp(e: PointerEvent): void {
     this._pointer.release(e, this._renderer.domElement);
   }
 
-  private _onResize() {
+  private _onResize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this._camera.aspect = w / h;
@@ -195,19 +196,19 @@ export class ParticleApp {
     this._updatePixelMetrics();
   }
 
-  private _updateParticleSize() {
+  private _updateParticleSize(): void {
     const pixelRatio = this._renderer.getPixelRatio();
     this._basePointSize = CONFIG.pointSizeCssPx * pixelRatio;
     (this._gas.uniforms.uPointSize.value as number) = this._basePointSize;
   }
 
-  private _updatePixelMetrics() {
+  private _updatePixelMetrics(): void {
     (this._gas.uniforms.uPixelsPerWorld.value as number) = computePixelsPerWorld(this._renderer, this._viewBounds);
     (this._gas.uniforms.uSpeedPxMin.value as number) = CONFIG.speedPxMin;
     (this._gas.uniforms.uSpeedPxMax.value as number) = CONFIG.speedPxMax;
   }
 
-  private _updateBezierMode(dt: number) {
+  private _updateBezierMode(dt: number): void {
     const target = this._mode === 1 ? 1 : 0;
     const k = 1.0 - Math.exp(-dt / 0.12);
     this._bezierActive = THREE.MathUtils.lerp(this._bezierActive, target, k);
@@ -223,7 +224,7 @@ export class ParticleApp {
     (this._gas.uniforms.uBezierP3.value as THREE.Vector2).set(this._bezier[3].x, this._bezier[3].y);
   }
 
-  private _updateAttractorMode(dt: number) {
+  private _updateAttractorMode(dt: number): boolean {
     const modeOn = this._mode === 0;
     const held = modeOn && this._pointer.isCaptured;
     const targetStrength = held ? CONFIG.orbitStrength : 0;
@@ -237,7 +238,7 @@ export class ParticleApp {
     return held;
   }
 
-  private _updateHud(attractorHeld: boolean) {
+  private _updateHud(attractorHeld: boolean): void {
     const modeText =
       this._mode === -1
         ? "свободный газ"
@@ -251,7 +252,7 @@ export class ParticleApp {
     );
   }
 
-  private _animate = () => {
+  private _animate = (): void => {
     const dt = Math.max(0, this._clock.getDelta());
     this._time += dt;
     this._gas.uniforms.uTime.value = this._time;

@@ -13,12 +13,12 @@ export class SplineSvgPath {
     this._fit = THREE.MathUtils.clamp(opts.fit, 0.05, 1.0);
   }
 
-  async load(url: string) {
+  async load(url: string): Promise<void> {
     const sample = await loadSvgPathSamples({ url, samples: this._samples });
     this._rawSvgPoints = sample.pointsSvg;
   }
 
-  applyToWorld(opts: { viewBounds: THREE.Vector2; pathLine: THREE.Line; gas: GasPoints }) {
+  applyToWorld(opts: { viewBounds: THREE.Vector2; pathLine: THREE.Line; gas: GasPoints }): void {
     if (!this._rawSvgPoints) return;
 
     const ptsWorld = mapSvgPointsToWorld({
@@ -38,23 +38,23 @@ export class SplineSvgPath {
     (opts.gas.uniforms.uPathUseTexture.value as number) = 1;
   }
 
-  disable(gas: GasPoints) {
+  disable(gas: GasPoints): void {
     (gas.uniforms.uPathUseTexture.value as number) = 0;
   }
 
-  dispose() {
+  dispose(): void {
     if (this._tex) this._tex.dispose();
     this._tex = null;
   }
 
-  private _updateLine(line: THREE.Line, ptsWorld: THREE.Vector2[]) {
+  private _updateLine(line: THREE.Line, ptsWorld: THREE.Vector2[]): void {
     const verts = ptsWorld.map((p) => new THREE.Vector3(p.x, p.y, 0));
     const geom = new THREE.BufferGeometry().setFromPoints(verts);
     line.geometry.dispose();
     line.geometry = geom;
   }
 
-  private _createPathTexture(ptsWorld: THREE.Vector2[]) {
+  private _createPathTexture(ptsWorld: THREE.Vector2[]): THREE.DataTexture {
     const n = ptsWorld.length;
     const data = new Float32Array(n * 4);
     for (let i = 0; i < n; i++) {
