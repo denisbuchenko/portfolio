@@ -1,6 +1,11 @@
 import * as THREE from "three";
 import { assert } from "../../utils/assert";
 
+import fullscreenVert from "../../shaders/fullscreenQuad.vert.glsl?raw";
+import paintFadeFrag from "../../shaders/paintFade.frag.glsl?raw";
+import paintStampFrag from "../../shaders/paintStamp.frag.glsl?raw";
+import paintPresentFrag from "../../shaders/paintPresent.frag.glsl?raw";
+
 export class PaintLayer {
   private _read!: THREE.WebGLRenderTarget;
   private _write!: THREE.WebGLRenderTarget;
@@ -35,30 +40,8 @@ export class PaintLayer {
         uDecay: { value: 0.98 },
         uTexel: { value: new THREE.Vector2(1 / w, 1 / h) }
       },
-      vertexShader: /* glsl */ `
-        out vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = vec4(position.xy, 0.0, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        precision highp float;
-        uniform sampler2D tPrev;
-        uniform float uDecay;
-        uniform vec2 uTexel;
-        in vec2 vUv;
-        out vec4 outColor;
-
-        void main() {
-          vec4 c = texture(tPrev, vUv) * 0.50;
-          c += texture(tPrev, vUv + vec2(uTexel.x, 0.0)) * 0.12;
-          c += texture(tPrev, vUv - vec2(uTexel.x, 0.0)) * 0.12;
-          c += texture(tPrev, vUv + vec2(0.0, uTexel.y)) * 0.13;
-          c += texture(tPrev, vUv - vec2(0.0, uTexel.y)) * 0.13;
-          outColor = c * uDecay;
-        }
-      `
+      vertexShader: fullscreenVert,
+      fragmentShader: paintFadeFrag
     });
 
     this._stampMat = new THREE.ShaderMaterial({
@@ -78,71 +61,8 @@ export class PaintLayer {
         uGlowIntensity: { value: 1.1 },
         uPulseSpeed: { value: 2.2 }
       },
-      vertexShader: /* glsl */ `
-        out vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = vec4(position.xy, 0.0, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        precision highp float;
-        in vec2 vUv;
-        out vec4 outColor;
-
-        uniform float uTime;
-        uniform vec2 uCenter;
-        uniform float uRadius;
-        uniform float uStrength;
-        uniform float uNoiseScale;
-        uniform float uEdgeAmp;
-        uniform float uEdgeSoftness;
-        uniform float uGlowIntensity;
-        uniform float uPulseSpeed;
-
-        float hash12(vec2 p) {
-          vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-          p3 += dot(p3, p3.yzx + 33.33);
-          return fract((p3.x + p3.y) * p3.z);
-        }
-
-        float valueNoise(vec2 p) {
-          vec2 i = floor(p);
-          vec2 f = fract(p);
-          float a = hash12(i);
-          float b = hash12(i + vec2(1.0, 0.0));
-          float c = hash12(i + vec2(0.0, 1.0));
-          float d = hash12(i + vec2(1.0, 1.0));
-          vec2 u = f * f * (3.0 - 2.0 * f);
-          return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-        }
-
-        float fbm(vec2 p) {
-          float v = 0.0;
-          float a = 0.55;
-          for (int i = 0; i < 4; i++) {
-            v += a * valueNoise(p);
-            p *= 2.03;
-            a *= 0.55;
-          }
-          return v;
-        }
-
-        void main() {
-          vec2 d = (vUv - uCenter);
-          float dist = length(d);
-          float dn = dist / max(uRadius, 1e-6);
-
-          // Anchor noise in the global UV field to avoid "stamp seams".
-          vec2 p = vUv * uNoiseScale + vec2(uTime * 0.08, -uTime * 0.06);
-          float n = fbm(p) - 0.5;
-
-          float boundary = 1.0 + uEdgeAmp * n;
-          float fill = 1.0 - smoothstep(boundary - uEdgeSoftness, boundary, dn);
-          float a = clamp(fill * uStrength, 0.0, 1.0);
-          outColor = vec4(0.0, 0.0, 0.0, a);
-        }
-      `
+      vertexShader: fullscreenVert,
+      fragmentShader: paintStampFrag
     });
 
     this._presentMat = new THREE.ShaderMaterial({
@@ -160,106 +80,8 @@ export class PaintLayer {
         uGlowIntensity: { value: 1.1 },
         uPulseSpeed: { value: 2.2 }
       },
-      vertexShader: /* glsl */ `
-        out vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = vec4(position.xy, 0.0, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        precision highp float;
-        uniform sampler2D tTex;
-        uniform float uTime;
-        uniform float uNoiseScale;
-        uniform float uEdgeAmp;
-        uniform float uEdgeSoftness;
-        uniform float uGlowIntensity;
-        uniform float uPulseSpeed;
-        in vec2 vUv;
-        out vec4 outColor;
-
-        float hash13(vec3 p) {
-          vec3 p3 = fract(p * 0.1031);
-          p3 += dot(p3, p3.yzx + 33.33);
-          return fract((p3.x + p3.y) * p3.z);
-        }
-
-        float valueNoise3(vec3 p) {
-          vec3 i = floor(p);
-          vec3 f = fract(p);
-
-          float n000 = hash13(i);
-          float n100 = hash13(i + vec3(1.0, 0.0, 0.0));
-          float n010 = hash13(i + vec3(0.0, 1.0, 0.0));
-          float n110 = hash13(i + vec3(1.0, 1.0, 0.0));
-          float n001 = hash13(i + vec3(0.0, 0.0, 1.0));
-          float n101 = hash13(i + vec3(1.0, 0.0, 1.0));
-          float n011 = hash13(i + vec3(0.0, 1.0, 1.0));
-          float n111 = hash13(i + vec3(1.0, 1.0, 1.0));
-
-          vec3 u = f * f * (3.0 - 2.0 * f);
-
-          float nx00 = mix(n000, n100, u.x);
-          float nx10 = mix(n010, n110, u.x);
-          float nx01 = mix(n001, n101, u.x);
-          float nx11 = mix(n011, n111, u.x);
-          float nxy0 = mix(nx00, nx10, u.y);
-          float nxy1 = mix(nx01, nx11, u.y);
-          return mix(nxy0, nxy1, u.z);
-        }
-
-        float fbm3(vec3 p) {
-          float v = 0.0;
-          float a = 0.55;
-          for (int i = 0; i < 4; i++) {
-            v += a * valueNoise3(p);
-            p *= 2.03;
-            a *= 0.55;
-          }
-          return v;
-        }
-
-        vec3 paintPalette(float t) {
-          vec3 blue = vec3(0.12, 0.40, 1.00);
-          vec3 lightBlue = vec3(0.34, 0.78, 1.00);
-          vec3 white = vec3(0.95, 0.98, 1.00);
-
-          float a = smoothstep(0.0, 1.0, t);
-          vec3 c = mix(blue, lightBlue, a);
-          float w = smoothstep(0.65, 1.0, t);
-          return mix(c, white, w);
-        }
-
-        void main() {
-          float density = texture(tTex, vUv).a;
-          if (density <= 0.0005) {
-            outColor = vec4(0.0);
-            return;
-          }
-
-          float t = uTime * 0.18;
-          vec3 q = vec3(vUv * uNoiseScale, t);
-          vec2 flow = vec2(fbm3(q + vec3(2.1, 1.3, 0.0)), fbm3(q + vec3(5.2, 3.7, 0.0))) - 0.5;
-          q.xy += 0.70 * flow;
-          float n = fbm3(q * 1.15) - 0.5;
-
-          float edgeBand = smoothstep(0.02, 0.25, density) * (1.0 - smoothstep(0.25, 0.65, density));
-          float warped = clamp(density + edgeBand * n * uEdgeAmp, 0.0, 1.0);
-
-          float a = smoothstep(0.15 - uEdgeSoftness, 0.15 + uEdgeSoftness, warped);
-          float pulseNoise = fbm3(vec3(vUv * (uNoiseScale * 0.32), uTime * 0.11));
-          float pulse = 0.72 + 0.28 * sin(uTime * uPulseSpeed + 6.28318 * pulseNoise);
-          float glow = (1.0 - smoothstep(0.18, 0.85, warped));
-          glow = pow(max(glow, 0.0), 2.2) * uGlowIntensity * pulse;
-
-          float hueT = clamp(0.35 + 0.65 * (0.5 + n) + 0.10 * sin(uTime * 0.6 + 6.28318 * pulseNoise), 0.0, 1.0);
-          vec3 base = paintPalette(hueT);
-          float light = clamp(0.55 * a + glow, 0.0, 2.0);
-          vec3 col = base * light;
-          outColor = vec4(col, a);
-        }
-      `
+      vertexShader: fullscreenVert,
+      fragmentShader: paintPresentFrag
     });
 
     this._fadeScene = new THREE.Scene();

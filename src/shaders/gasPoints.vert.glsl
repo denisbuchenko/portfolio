@@ -40,7 +40,6 @@ float hash12(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
-// Returns stable seeds in [0..1) for a given particle uv.
 vec3 seed3(vec2 u) {
   float a = hash12(u * 97.1);
   float b = hash12(u * 151.7 + 0.31);
@@ -93,7 +92,7 @@ vec2 splinePosition(float tCurve) {
 }
 
 // ------------------------------- attractor -------------------------------
-vec2 applyAttractor(vec2 basePos, vec2 init, vec2 vel, vec2 r01, float tTime, float bezierW) {
+vec2 applyAttractor(vec2 basePos, vec2 init, vec2 vel, vec2 r01, float bezierW) {
   float strength = uAttractorActive * uAttractorStrength * (1.0 - bezierW);
   if (strength <= 1e-4) return basePos;
 
@@ -136,7 +135,7 @@ void main() {
   basePos = bounceRepeat2(basePos, uBounds);
 
   float bezierW = clamp(uBezierActive, 0.0, 1.0);
-  vec2 pos = applyAttractor(basePos, init, vel, r01, tTime, bezierW);
+  vec2 pos = applyAttractor(basePos, init, vel, r01, bezierW);
 
   float phase = hash12(uv * 541.7 + 0.11);
   float tCurve = fract(uBezierPhaseOffset + phase + tTime * max(uBezierTimeScale, 0.0));

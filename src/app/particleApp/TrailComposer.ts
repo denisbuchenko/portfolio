@@ -1,5 +1,9 @@
 import * as THREE from "three";
 
+import fullscreenVert from "../../shaders/fullscreenQuad.vert.glsl?raw";
+import trailsFadeFrag from "../../shaders/trailsFade.frag.glsl?raw";
+import texturePresentFrag from "../../shaders/texturePresent.frag.glsl?raw";
+
 export class TrailComposer {
   private _read!: THREE.WebGLRenderTarget;
   private _write!: THREE.WebGLRenderTarget;
@@ -27,30 +31,8 @@ export class TrailComposer {
         uDecay: { value: 0.95 },
         uTexel: { value: new THREE.Vector2(1 / w, 1 / h) }
       },
-      vertexShader: /* glsl */ `
-        out vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = vec4(position.xy, 0.0, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        precision highp float;
-        uniform sampler2D tPrev;
-        uniform float uDecay;
-        uniform vec2 uTexel;
-        in vec2 vUv;
-        out vec4 outColor;
-
-        void main() {
-          vec4 c = texture(tPrev, vUv) * 0.56;
-          c += texture(tPrev, vUv + vec2(uTexel.x, 0.0)) * 0.11;
-          c += texture(tPrev, vUv - vec2(uTexel.x, 0.0)) * 0.11;
-          c += texture(tPrev, vUv + vec2(0.0, uTexel.y)) * 0.11;
-          c += texture(tPrev, vUv - vec2(0.0, uTexel.y)) * 0.11;
-          outColor = c * uDecay;
-        }
-      `
+      vertexShader: fullscreenVert,
+      fragmentShader: trailsFadeFrag
     });
 
     this._presentMat = new THREE.ShaderMaterial({
@@ -60,22 +42,8 @@ export class TrailComposer {
       transparent: true,
       blending: THREE.AdditiveBlending,
       uniforms: { tTex: { value: this._read.texture } },
-      vertexShader: /* glsl */ `
-        out vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = vec4(position.xy, 0.0, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        precision highp float;
-        uniform sampler2D tTex;
-        in vec2 vUv;
-        out vec4 outColor;
-        void main() {
-          outColor = texture(tTex, vUv);
-        }
-      `
+      vertexShader: fullscreenVert,
+      fragmentShader: texturePresentFrag
     });
 
     this._fadeScene = new THREE.Scene();
