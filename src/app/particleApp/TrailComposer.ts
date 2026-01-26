@@ -40,7 +40,16 @@ export class TrailComposer {
       depthTest: false,
       depthWrite: false,
       transparent: true,
-      blending: THREE.AdditiveBlending,
+      // We want trails to add over the already drawn paint layer.
+      // Important: trail RT alpha may be ~0, so classic AdditiveBlending (SRC_ALPHA, ONE)
+      // can make trails invisible. Use ONE, ONE instead.
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneFactor,
+      blendEquation: THREE.AddEquation,
+      blendSrcAlpha: THREE.OneFactor,
+      blendDstAlpha: THREE.OneFactor,
+      blendEquationAlpha: THREE.AddEquation,
       uniforms: { tTex: { value: this._read.texture } },
       vertexShader: fullscreenVert,
       fragmentShader: texturePresentFrag

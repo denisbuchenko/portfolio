@@ -1,7 +1,7 @@
 export type Mode = -1 | 0 | 1 | 2;
 
 export const CONFIG = {
-  particles: 2048, // 32x32 — >= 1000
+  particles: 1024, // 32x32 — >= 1000
 
   // Размер "головы" частицы в CSS-пикселях (визуально одинаковый на разных DPR).
   pointSizeCssPx: 4.0,
