@@ -312,7 +312,13 @@ export class ParticleApp {
       edgeAmp: CONFIG.paintEdgeAmp,
       edgeSoftness: CONFIG.paintEdgeSoftness,
       glowIntensity: CONFIG.paintGlowIntensity,
-      pulseSpeed: CONFIG.paintPulseSpeed
+      pulseSpeed: CONFIG.paintPulseSpeed,
+      warpScale: CONFIG.paintWarpScale,
+      warpSpeed: CONFIG.paintWarpSpeed,
+      warpAmp: CONFIG.paintWarpAmp,
+      contourThreshold: CONFIG.paintContourThreshold,
+      contourWidth: CONFIG.paintContourWidth,
+      contourNoiseAmp: CONFIG.paintContourNoiseAmp
     });
 
     const decay = Math.exp((-dt * Math.LN2) / Math.max(1e-4, CONFIG.trailHalfLife));

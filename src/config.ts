@@ -28,14 +28,22 @@ export const CONFIG = {
 
   // Paint (рисование пальцем): "живое" пятно под частицами
   paintHalfLife: 0.85, // секунды: дольше = след держится дольше
-  paintRadiusCssPx: 18, // размер кисти в CSS-пикселях (приблизительно "палец")
+  paintRadiusCssPx: 21, // размер кисти в CSS-пикселях (приблизительно "палец")
   paintSpacingCssPx: 10, // шаг штампов по траектории (меньше = ровнее линия)
-  paintStampStrength: 0.2, // общая сила штампа
+  paintStampStrength: 0.4, // общая сила штампа
   paintNoiseScale: 50.0, // масштаб шума по краю
   paintEdgeAmp: 0.5, // амплитуда "рваного" края
   paintEdgeSoftness: 1.0, // мягкость перехода края
   paintGlowIntensity: 1.6, // свечение
-  paintPulseSpeed: 2.2 // скорость пульса
+  paintPulseSpeed: 2.2, // скорость пульса
+
+  // Paint: "плавающая клякса" (доп. смещение/контур)
+  paintWarpScale: 2.0, // масштаб поля смещения (больше = мельче детали)
+  paintWarpSpeed: 0.85, // скорость "перетекания" поля
+  paintWarpAmp: 0.1, // амплитуда UV-смещения (0..~0.06)
+  paintContourThreshold: 0.08, // порог заливки (больше = тоньше след)
+  paintContourWidth: 0.085, // ширина перехода контура (меньше = резче)
+  paintContourNoiseAmp: 1.0 // насколько шум "рвёт" порог у края
 } as const;
 
 

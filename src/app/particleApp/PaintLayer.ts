@@ -51,15 +51,10 @@ export class PaintLayer {
       transparent: true,
       blending: THREE.AdditiveBlending,
       uniforms: {
-        uTime: { value: 0 },
         uCenter: { value: new THREE.Vector2(0.5, 0.5) },
         uRadius: { value: 0.05 },
         uStrength: { value: 1.0 },
-        uNoiseScale: { value: 14.0 },
-        uEdgeAmp: { value: 0.28 },
-        uEdgeSoftness: { value: 0.14 },
-        uGlowIntensity: { value: 1.1 },
-        uPulseSpeed: { value: 2.2 }
+        uEdgeSoftness: { value: 0.14 }
       },
       vertexShader: fullscreenVert,
       fragmentShader: paintStampFrag
@@ -78,7 +73,13 @@ export class PaintLayer {
         uEdgeAmp: { value: 0.28 },
         uEdgeSoftness: { value: 0.14 },
         uGlowIntensity: { value: 1.1 },
-        uPulseSpeed: { value: 2.2 }
+        uPulseSpeed: { value: 2.2 },
+        uWarpScale: { value: 6.0 },
+        uWarpSpeed: { value: 0.45 },
+        uWarpAmp: { value: 0.028 },
+        uContourThreshold: { value: 0.18 },
+        uContourWidth: { value: 0.035 },
+        uContourNoiseAmp: { value: 0.22 }
       },
       vertexShader: fullscreenVert,
       fragmentShader: paintPresentFrag
@@ -130,12 +131,7 @@ export class PaintLayer {
     opts.renderer.render(this._fadeScene, this._orthoCam);
 
     if (opts.stamps.length > 0) {
-      (this._stampMat.uniforms.uTime.value as number) = opts.time;
-      (this._stampMat.uniforms.uNoiseScale.value as number) = opts.noiseScale;
-      (this._stampMat.uniforms.uEdgeAmp.value as number) = opts.edgeAmp;
       (this._stampMat.uniforms.uEdgeSoftness.value as number) = opts.edgeSoftness;
-      (this._stampMat.uniforms.uGlowIntensity.value as number) = opts.glowIntensity;
-      (this._stampMat.uniforms.uPulseSpeed.value as number) = opts.pulseSpeed;
 
       opts.renderer.autoClear = false;
       for (const s of opts.stamps) {
@@ -161,6 +157,12 @@ export class PaintLayer {
       edgeSoftness: number;
       glowIntensity: number;
       pulseSpeed: number;
+      warpScale: number;
+      warpSpeed: number;
+      warpAmp: number;
+      contourThreshold: number;
+      contourWidth: number;
+      contourNoiseAmp: number;
     }
   ): void {
     (this._presentMat.uniforms.uTime.value as number) = opts.time;
@@ -169,6 +171,12 @@ export class PaintLayer {
     (this._presentMat.uniforms.uEdgeSoftness.value as number) = opts.edgeSoftness;
     (this._presentMat.uniforms.uGlowIntensity.value as number) = opts.glowIntensity;
     (this._presentMat.uniforms.uPulseSpeed.value as number) = opts.pulseSpeed;
+    (this._presentMat.uniforms.uWarpScale.value as number) = opts.warpScale;
+    (this._presentMat.uniforms.uWarpSpeed.value as number) = opts.warpSpeed;
+    (this._presentMat.uniforms.uWarpAmp.value as number) = opts.warpAmp;
+    (this._presentMat.uniforms.uContourThreshold.value as number) = opts.contourThreshold;
+    (this._presentMat.uniforms.uContourWidth.value as number) = opts.contourWidth;
+    (this._presentMat.uniforms.uContourNoiseAmp.value as number) = opts.contourNoiseAmp;
     renderer.setRenderTarget(null);
     renderer.render(this._presentScene, this._orthoCam);
   }

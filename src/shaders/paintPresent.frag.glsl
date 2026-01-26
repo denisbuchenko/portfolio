@@ -7,6 +7,12 @@ uniform float uEdgeAmp;
 uniform float uEdgeSoftness;
 uniform float uGlowIntensity;
 uniform float uPulseSpeed;
+uniform float uWarpScale;
+uniform float uWarpSpeed;
+uniform float uWarpAmp;
+uniform float uContourThreshold;
+uniform float uContourWidth;
+uniform float uContourNoiseAmp;
 
 in vec2 vUv;
 out vec4 outColor;
@@ -64,23 +70,36 @@ vec3 paintPalette(float t) {
 }
 
 void main() {
-  float density = texture(tTex, vUv).a;
-  if (density <= 0.0005) {
+  float density0 = texture(tTex, vUv).a;
+  if (density0 <= 0.0005) {
     outColor = vec4(0.0);
     return;
   }
 
-  float t = uTime * 0.18;
-  vec3 q = vec3(vUv * uNoiseScale, t);
-  vec2 flow = vec2(fbm3(q + vec3(2.1, 1.3, 0.0)), fbm3(q + vec3(5.2, 3.7, 0.0))) - 0.5;
+  float t = uTime;
+
+  // Displacement mask (animated): makes the contour "flow" smoothly.
+  vec3 qWarp = vec3(vUv * uWarpScale, t * uWarpSpeed);
+  vec2 flow = vec2(fbm3(qWarp + vec3(2.1, 1.3, 0.0)), fbm3(qWarp + vec3(5.2, 3.7, 0.0))) - 0.5;
+  float edgeBand0 = smoothstep(0.02, 0.25, density0) * (1.0 - smoothstep(0.25, 0.65, density0));
+
+  // Warp sampling near the contour to make the blob feel "alive" without drifting as a whole.
+  vec2 uvWarp = clamp(vUv + edgeBand0 * uWarpAmp * flow, vec2(0.0), vec2(1.0));
+  float density = texture(tTex, uvWarp).a;
+
+  // Shape noise for jagged/animated contour. Keep it tied to warped UV.
+  vec3 q = vec3(uvWarp * uNoiseScale, t * 0.18);
   q.xy += 0.70 * flow;
   float n = fbm3(q * 1.15) - 0.5;
 
   float edgeBand = smoothstep(0.02, 0.25, density) * (1.0 - smoothstep(0.25, 0.65, density));
   float warped = clamp(density + edgeBand * n * uEdgeAmp, 0.0, 1.0);
 
-  float a = smoothstep(0.15 - uEdgeSoftness, 0.15 + uEdgeSoftness, warped);
-  float pulseNoise = fbm3(vec3(vUv * (uNoiseScale * 0.32), uTime * 0.11));
+  // Apply an extra noisy threshold on the resulting mask to get a sharper, more "ink-like" edge.
+  float thr = uContourThreshold + edgeBand * (n * uContourNoiseAmp);
+  float a = smoothstep(thr - uContourWidth, thr + uContourWidth, warped);
+
+  float pulseNoise = fbm3(vec3(uvWarp * (uNoiseScale * 0.32), uTime * 0.11));
   float pulse = 0.72 + 0.28 * sin(uTime * uPulseSpeed + 6.28318 * pulseNoise);
   float glow = (1.0 - smoothstep(0.18, 0.85, warped));
   glow = pow(max(glow, 0.0), 2.2) * uGlowIntensity * pulse;
