@@ -30,10 +30,10 @@ export const CONFIG = {
   paintHalfLife: 0.85, // секунды: дольше = след держится дольше
   paintRadiusCssPx: 18, // размер кисти в CSS-пикселях (приблизительно "палец")
   paintSpacingCssPx: 10, // шаг штампов по траектории (меньше = ровнее линия)
-  paintStampStrength: 0.1, // общая сила штампа
-  paintNoiseScale: 30.0, // масштаб шума по краю
-  paintEdgeAmp: 0.7, // амплитуда "рваного" края
-  paintEdgeSoftness: 0.7, // мягкость перехода края
+  paintStampStrength: 0.2, // общая сила штампа
+  paintNoiseScale: 50.0, // масштаб шума по краю
+  paintEdgeAmp: 0.5, // амплитуда "рваного" края
+  paintEdgeSoftness: 1.0, // мягкость перехода края
   paintGlowIntensity: 1.6, // свечение
   paintPulseSpeed: 2.2 // скорость пульса
 } as const;

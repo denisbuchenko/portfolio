@@ -66,7 +66,7 @@ export class PaintLayer {
       depthTest: false,
       depthWrite: false,
       transparent: true,
-      blending: THREE.NormalBlending,
+      blending: THREE.AdditiveBlending,
       uniforms: {
         uTime: { value: 0 },
         uCenter: { value: new THREE.Vector2(0.5, 0.5) },
@@ -133,7 +133,8 @@ export class PaintLayer {
           float dist = length(d);
           float dn = dist / max(uRadius, 1e-6);
 
-          vec2 p = d * uNoiseScale + vec2(uTime * 0.35, -uTime * 0.28);
+          // Anchor noise in the global UV field to avoid "stamp seams".
+          vec2 p = vUv * uNoiseScale + vec2(uTime * 0.08, -uTime * 0.06);
           float n = fbm(p) - 0.5;
 
           float boundary = 1.0 + uEdgeAmp * n;
@@ -301,7 +302,6 @@ export class PaintLayer {
 
     (this._fadeMat.uniforms.tPrev.value as THREE.Texture) = this._read.texture;
     (this._fadeMat.uniforms.uDecay.value as number) = 1.0;
-    (this._fadeMat.uniforms.uTexel.value as THREE.Vector2).set(0, 0);
 
     opts.renderer.setRenderTarget(this._write);
     opts.renderer.autoClear = true;

@@ -20,8 +20,10 @@ export class PaintInput {
   capture(e: PointerEvent, canvas: HTMLCanvasElement): void {
     if (this._pointerId !== null) return;
     this._pointerId = e.pointerId;
-    this._lastUv = null;
     this._stamps.length = 0;
+    const uv = this._eventToUv(e, canvas);
+    this._lastUv = uv.clone();
+    this._stamps.push(uv);
     canvas.setPointerCapture(e.pointerId);
   }
 
