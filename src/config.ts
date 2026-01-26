@@ -1,4 +1,4 @@
-export type Mode = -1 | 0 | 1;
+export type Mode = -1 | 0 | 1 | 2;
 
 export const CONFIG = {
   particles: 2048, // 32x32 — >= 1000
@@ -24,7 +24,18 @@ export const CONFIG = {
   // Следы (кометы): накопление предыдущих кадров в offscreen буфере
   trailPointSizeMul: 2.0, // толщина следа относительно точки
   trailHalfLife: 0.065, // секунды: в 2 раза длиннее хвост (больше = длиннее)
-  trailStampAlpha: 0.2 // яркость "штампа" в trail-буфер (голова рисуется отдельно поверх)
+  trailStampAlpha: 0.2, // яркость "штампа" в trail-буфер (голова рисуется отдельно поверх)
+
+  // Paint (рисование пальцем): "живое" пятно под частицами
+  paintHalfLife: 0.85, // секунды: дольше = след держится дольше
+  paintRadiusCssPx: 18, // размер кисти в CSS-пикселях (приблизительно "палец")
+  paintSpacingCssPx: 10, // шаг штампов по траектории (меньше = ровнее линия)
+  paintStampStrength: 0.1, // общая сила штампа
+  paintNoiseScale: 30.0, // масштаб шума по краю
+  paintEdgeAmp: 0.7, // амплитуда "рваного" края
+  paintEdgeSoftness: 0.7, // мягкость перехода края
+  paintGlowIntensity: 1.6, // свечение
+  paintPulseSpeed: 2.2 // скорость пульса
 } as const;
 
 

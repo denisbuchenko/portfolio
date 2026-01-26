@@ -57,7 +57,8 @@ export class TrailComposer {
       glslVersion: THREE.GLSL3,
       depthTest: false,
       depthWrite: false,
-      transparent: false,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
       uniforms: { tTex: { value: this._read.texture } },
       vertexShader: /* glsl */ `
         out vec2 vUv;
@@ -100,6 +101,7 @@ export class TrailComposer {
     trailPointSizeMul: number;
     trailStampAlpha: number;
     decay: number;
+    presentToScreen?: boolean;
   }): void {
     (this._fadeMat.uniforms.tPrev.value as THREE.Texture) = this._read.texture;
     (this._fadeMat.uniforms.uDecay.value as number) = opts.decay;
@@ -120,9 +122,11 @@ export class TrailComposer {
     this._write = tmp;
 
     (this._presentMat.uniforms.tTex.value as THREE.Texture) = this._read.texture;
-    opts.renderer.setRenderTarget(null);
-    opts.renderer.autoClear = true;
-    opts.renderer.render(this._presentScene, this._orthoCam);
+    if (opts.presentToScreen !== false) {
+      opts.renderer.setRenderTarget(null);
+      opts.renderer.autoClear = false;
+      opts.renderer.render(this._presentScene, this._orthoCam);
+    }
 
     opts.renderer.autoClear = false;
     opts.setGasVisual({ pointSize: opts.basePointSize, alphaMul: 1.0 });

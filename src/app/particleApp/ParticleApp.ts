@@ -10,6 +10,8 @@ import { HudController } from "./HudController";
 import { PointerTracker } from "./PointerTracker";
 import { TrailComposer } from "./TrailComposer";
 import { SplineSvgPath } from "./SplineSvgPath";
+import { PaintLayer } from "./PaintLayer";
+import { PaintInput } from "./PaintInput";
 
 export class ParticleApp {
   private _renderer: THREE.WebGLRenderer;
@@ -22,6 +24,8 @@ export class ParticleApp {
   private _pathLine: THREE.Line;
   private _trail: TrailComposer;
   private _splineSvg: SplineSvgPath;
+  private _paint: PaintLayer;
+  private _paintInput = new PaintInput();
   private _pointer = new PointerTracker();
   private _hud = new HudController();
 
@@ -64,6 +68,9 @@ export class ParticleApp {
 
     this._splineSvg = new SplineSvgPath({ samples: 512, fit: 0.9 });
     this._loadSplineSvg();
+
+    this._paint = new PaintLayer();
+    this._paint.init(this._renderer);
 
     this._bindUI();
     this._bindEvents();
@@ -133,6 +140,7 @@ export class ParticleApp {
   private _bindUI(): void {
     const setMode = (mode: Mode) => {
       if (this._mode === 0 && mode !== 0) this._pointer.forceRelease(this._renderer.domElement);
+      if (this._mode === 2 && mode !== 2) this._paintInput.forceRelease(this._renderer.domElement);
       this._mode = mode;
       this._hud.setMode(mode);
       (this._pathLine.material as THREE.LineBasicMaterial).opacity = mode === 1 ? 0.55 : 0.22;
@@ -167,16 +175,18 @@ export class ParticleApp {
 
   private _onPointerMove(e: PointerEvent): void {
     this._pointer.updateFromEvent(e, this._renderer.domElement, this._camera);
+    if (this._mode === 2) this._paintInput.onMove(e, this._renderer.domElement);
   }
 
   private _onPointerDown(e: PointerEvent): void {
     this._onPointerMove(e);
-    if (this._mode !== 0) return;
-    this._pointer.capture(e, this._renderer.domElement, this._time);
+    if (this._mode === 0) this._pointer.capture(e, this._renderer.domElement, this._time);
+    if (this._mode === 2) this._paintInput.capture(e, this._renderer.domElement);
   }
 
   private _onPointerUp(e: PointerEvent): void {
     this._pointer.release(e, this._renderer.domElement);
+    this._paintInput.release(e, this._renderer.domElement);
   }
 
   private _onResize(): void {
@@ -193,7 +203,13 @@ export class ParticleApp {
 
     this._splineSvg.applyToWorld({ viewBounds: this._viewBounds, pathLine: this._pathLine, gas: this._gas });
     this._trail.resize(this._renderer);
+    this._paint.resize(this._renderer);
     this._updatePixelMetrics();
+
+    const size = this._paint.getSize();
+    const pr = this._renderer.getPixelRatio();
+    const spacingPx = CONFIG.paintSpacingCssPx * pr;
+    this._paintInput.setSpacingUv(spacingPx / Math.max(1, Math.min(size.w, size.h)));
   }
 
   private _updateParticleSize(): void {
@@ -244,7 +260,9 @@ export class ParticleApp {
         ? "свободный газ"
         : this._mode === 0
           ? `аттрактор (зажми и води)${attractorHeld ? " • активен" : ""}`
-          : "сплайн";
+          : this._mode === 1
+            ? "сплайн"
+            : "рисование";
 
     this._hud.setStatus(
       `частиц: ${CONFIG.particles} (tex ${this._texSize}×${this._texSize}) • режим: ${modeText}` +
@@ -261,6 +279,42 @@ export class ParticleApp {
     const attractorHeld = this._updateAttractorMode(dt);
     this._updateHud(attractorHeld);
 
+    const pr = this._renderer.getPixelRatio();
+    const radiusPx = CONFIG.paintRadiusCssPx * pr;
+    const paintSize = this._paint.getSize();
+    const radiusUv = radiusPx / Math.max(1, Math.min(paintSize.w, paintSize.h));
+    const stamps = this._paintInput.consumeStamps().map((s) => ({
+      uv: s.uv,
+      radiusUv,
+      strength: CONFIG.paintStampStrength
+    }));
+
+    this._paint.step({
+      renderer: this._renderer,
+      time: this._time,
+      stamps,
+      noiseScale: CONFIG.paintNoiseScale,
+      edgeAmp: CONFIG.paintEdgeAmp,
+      edgeSoftness: CONFIG.paintEdgeSoftness,
+      glowIntensity: CONFIG.paintGlowIntensity,
+      pulseSpeed: CONFIG.paintPulseSpeed
+    });
+
+    // Screen composition order:
+    // 1) clear, 2) paint (under), 3) trails + heads + line (over)
+    this._renderer.setRenderTarget(null);
+    this._renderer.autoClear = true;
+    this._renderer.clear();
+    this._renderer.autoClear = false;
+    this._paint.present(this._renderer, {
+      time: this._time,
+      noiseScale: CONFIG.paintNoiseScale,
+      edgeAmp: CONFIG.paintEdgeAmp,
+      edgeSoftness: CONFIG.paintEdgeSoftness,
+      glowIntensity: CONFIG.paintGlowIntensity,
+      pulseSpeed: CONFIG.paintPulseSpeed
+    });
+
     const decay = Math.exp((-dt * Math.LN2) / Math.max(1e-4, CONFIG.trailHalfLife));
     this._trail.renderFrame({
       renderer: this._renderer,
@@ -274,7 +328,8 @@ export class ParticleApp {
       basePointSize: this._basePointSize,
       trailPointSizeMul: CONFIG.trailPointSizeMul,
       trailStampAlpha: CONFIG.trailStampAlpha,
-      decay
+      decay,
+      presentToScreen: true
     });
 
     requestAnimationFrame(this._animate);
