@@ -68,6 +68,8 @@ export class ParticleApp {
     this._scene.add(this._gas.points);
 
     this._pathLine = createBezierLine({ points: this._bezier, segments: 64 });
+    // Линия нужна как носитель геометрии/пути; видимость управляется конфигом.
+    this._pathLine.visible = CONFIG.ui.showBezierLine;
     this._scene.add(this._pathLine);
 
     this._trail = new TrailComposer();
