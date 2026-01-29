@@ -1,10 +1,10 @@
 import * as THREE from "three";
-import { assert } from "../../utils/assert";
+import { assert } from "../../../../utils/assert";
 
-import fullscreenVert from "../../shaders/fullscreenQuad.vert.glsl?raw";
-import paintFadeFrag from "../../shaders/paintFade.frag.glsl?raw";
-import paintStampFrag from "../../shaders/paintStamp.frag.glsl?raw";
-import paintPresentFrag from "../../shaders/paintPresent.frag.glsl?raw";
+import fullscreenVert from "../../../../shaders/fullscreenQuad.vert.glsl?raw";
+import paintFadeFrag from "../../../../shaders/paintFade.frag.glsl?raw";
+import paintStampFrag from "../../../../shaders/paintStamp.frag.glsl?raw";
+import paintPresentFrag from "../../../../shaders/paintPresent.frag.glsl?raw";
 
 export class PaintLayer {
   private _read!: THREE.WebGLRenderTarget;

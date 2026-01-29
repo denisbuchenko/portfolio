@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { GasPoints } from "../../particles/gasPoints";
-import { loadSvgPathSamples, mapSvgPointsToWorld } from "../../scene/svgPath";
+import { loadSvgPathSamples, mapSvgPointsToWorld } from "../../../../scene/svgPath";
 
 export class SplineSvgPath {
   private _rawSvgPoints: THREE.Vector2[] | null = null;

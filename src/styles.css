@@ -29,6 +29,44 @@ body {
   overflow: hidden;
 }
 
+.launcher {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  pointer-events: auto;
+}
+
+.launcher__card {
+  max-width: 520px;
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--panel-border);
+  background: rgba(10, 12, 18, 0.72);
+  padding: 18px 18px;
+  backdrop-filter: blur(10px);
+}
+
+.launcher__title {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+.launcher__grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.launcher__hint {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 canvas {
   display: block;
   width: 100%;

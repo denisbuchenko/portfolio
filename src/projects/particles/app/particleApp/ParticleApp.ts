@@ -1,9 +1,9 @@
 import * as THREE from "three";
-import { CONFIG, type Mode } from "../../config";
-import { assert } from "../../utils/assert";
-import type { Overlay } from "../../ui/overlay";
+import { CONFIG, type Mode } from "../../../../config";
+import { assert } from "../../../../utils/assert";
+import type { Overlay } from "../../../../ui/overlay";
 import { createGasPoints, type GasPoints } from "../../particles/gasPoints";
-import { createBezierLine, type BezierControlPoints } from "../../scene/bezier";
+import { createBezierLine, type BezierControlPoints } from "../../../../scene/bezier";
 
 import { computePixelsPerWorld, computeViewBounds } from "./viewMetrics";
 import { HudController } from "./HudController";

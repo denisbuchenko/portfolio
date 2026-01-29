@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CONFIG } from "../../config";
+import { CONFIG } from "../../../../config";
 
 type TracePhase = "idle" | "inPath" | "failed" | "completed";
 

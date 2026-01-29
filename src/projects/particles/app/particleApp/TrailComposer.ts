@@ -1,8 +1,8 @@
 import * as THREE from "three";
 
-import fullscreenVert from "../../shaders/fullscreenQuad.vert.glsl?raw";
-import trailsFadeFrag from "../../shaders/trailsFade.frag.glsl?raw";
-import texturePresentFrag from "../../shaders/texturePresent.frag.glsl?raw";
+import fullscreenVert from "../../../../shaders/fullscreenQuad.vert.glsl?raw";
+import trailsFadeFrag from "../../../../shaders/trailsFade.frag.glsl?raw";
+import texturePresentFrag from "../../../../shaders/texturePresent.frag.glsl?raw";
 
 export class TrailComposer {
   private _read!: THREE.WebGLRenderTarget;

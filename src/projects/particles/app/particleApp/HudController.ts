@@ -1,5 +1,5 @@
-import { assert } from "../../utils/assert";
-import type { Mode } from "../../config";
+import { assert } from "../../../../utils/assert";
+import type { Mode } from "../../../../config";
 
 export class HudController {
   private _rootEl: HTMLElement | null;

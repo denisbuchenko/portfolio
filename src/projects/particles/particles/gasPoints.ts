@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
-import fragmentShader from "../shaders/gasPoints.frag.glsl?raw";
-import vertexShader from "../shaders/gasPoints.vert.glsl?raw";
+import fragmentShader from "../../../shaders/gasPoints.frag.glsl?raw";
+import vertexShader from "../../../shaders/gasPoints.vert.glsl?raw";
 
 export type GasUniforms = {
   uTime: { value: number };
