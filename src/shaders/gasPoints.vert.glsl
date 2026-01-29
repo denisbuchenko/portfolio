@@ -14,6 +14,10 @@ uniform float uAttractorOmega;
 uniform float uAttractorStrength;
 
 uniform float uTraceDanger;
+uniform float uTraceTargetActive;
+uniform vec2 uTraceTargetPos;
+uniform float uTraceFailRadiusWorld;
+uniform float uTraceWarnStartFrac;
 
 uniform float uBezierActive;
 uniform vec2 uBezierP0;
@@ -30,6 +34,7 @@ uniform float uPathUseTexture;
 
 out float vSpeed;
 out float vAttrProx;
+out float vTargetRisk;
 
 // ------------------------------- constants -------------------------------
 const float EPS = 1e-6;
@@ -150,6 +155,13 @@ void main() {
   float innerA = outerA * 0.35;
   float influenceA = 1.0 - smoothstep(innerA, outerA, distA);
   vAttrProx = influenceA * uAttractorActive;
+
+  // Насколько частица далека от текущей "следующей цели" (0..1).
+  // Это даёт направленную подсказку: где "краснее" — там дальше от цели.
+  float failR = max(uTraceFailRadiusWorld, 1e-6);
+  float warnStart = clamp(uTraceWarnStartFrac, 0.0, 0.99) * failR;
+  float dT = length(pos - uTraceTargetPos);
+  vTargetRisk = smoothstep(warnStart, failR, dT) * uTraceTargetActive;
 
   float phase = hash12(uv * 541.7 + 0.11);
   float tCurve = fract(uBezierPhaseOffset + phase + tTime * max(uBezierTimeScale, 0.0));

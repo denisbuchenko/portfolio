@@ -30,6 +30,10 @@ export type GasUniforms = {
   uPathCount: { value: number };
   uPathUseTexture: { value: number };
   uTraceDanger: { value: number };
+  uTraceTargetActive: { value: number };
+  uTraceTargetPos: { value: THREE.Vector2 };
+  uTraceFailRadiusWorld: { value: number };
+  uTraceWarnStartFrac: { value: number };
 };
 
 export type GasPoints = {
@@ -105,7 +109,11 @@ function _createGasUniforms(opts: CreateGasPointsOpts): GasUniforms {
     uPathUseTexture: { value: 0 },
 
     // Mode 3 (мини‑игра): 0..1 насколько игрок близок к порогу провала
-    uTraceDanger: { value: 0 }
+    uTraceDanger: { value: 0 },
+    uTraceTargetActive: { value: 0 },
+    uTraceTargetPos: { value: new THREE.Vector2(0, 0) },
+    uTraceFailRadiusWorld: { value: 1.0 },
+    uTraceWarnStartFrac: { value: 0.55 }
   };
 }
 

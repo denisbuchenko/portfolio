@@ -52,6 +52,12 @@ export class TraceSplineGame {
     return THREE.MathUtils.clamp(reached / (total - 1), 0, 1);
   }
 
+  getNextTargetWorld(): THREE.Vector2 | null {
+    if (this._phase !== "inPath") return null;
+    if (this._targetIdx < 0 || this._targetIdx >= this._waypoints.length) return null;
+    return this._waypoints[this._targetIdx];
+  }
+
   consumeEndEvent(): { outcome: "failed" | "completed"; reason?: string } | null {
     const ev = this._endEvent;
     this._endEvent = null;

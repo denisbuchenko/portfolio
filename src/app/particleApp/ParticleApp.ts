@@ -358,6 +358,14 @@ export class ParticleApp {
     this._traceDanger = THREE.MathUtils.lerp(this._traceDanger, dangerTarget, kDanger);
     (this._gas.uniforms.uTraceDanger.value as number) = this._traceDanger;
 
+    // Mode 3: следующая цель для "направленной" красноты частиц (в шейдере).
+    const next = this._mode === 3 ? this._traceGame.getNextTargetWorld() : null;
+    (this._gas.uniforms.uTraceTargetActive.value as number) = next ? 1 : 0;
+    if (next) (this._gas.uniforms.uTraceTargetPos.value as THREE.Vector2).copy(next);
+    (this._gas.uniforms.uTraceFailRadiusWorld.value as number) =
+      CONFIG.traceGame.failRadiusPx / Math.max(1e-6, this._pixelsPerWorld);
+    (this._gas.uniforms.uTraceWarnStartFrac.value as number) = CONFIG.traceGame.warnStartFrac;
+
     const pr = this._renderer.getPixelRatio();
     const radiusPx = CONFIG.paintRadiusCssPx * pr;
     const paintSize = this._paint.getSize();
