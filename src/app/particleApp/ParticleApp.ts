@@ -149,6 +149,8 @@ export class ParticleApp {
   }
 
   private _bindUI(): void {
+    this._hud.setUiVisible(CONFIG.ui.showHud);
+
     const setMode = (mode: Mode) => {
       if (this._mode === 0 && mode !== 0) this._pointer.forceRelease(this._renderer.domElement);
       if (this._mode === 2 && mode !== 2) this._paintInput.forceRelease(this._renderer.domElement);
@@ -170,7 +172,7 @@ export class ParticleApp {
     };
 
     this._hud.bindModeToggle(() => this._mode, setMode);
-    setMode(-1);
+    setMode(3);
   }
 
   private _bindEvents(): void {

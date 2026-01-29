@@ -2,6 +2,7 @@ import { assert } from "../../utils/assert";
 import type { Mode } from "../../config";
 
 export class HudController {
+  private _rootEl: HTMLElement | null;
   private _btnAttractor: HTMLButtonElement;
   private _btnSpline: HTMLButtonElement;
   private _btnPaint: HTMLButtonElement;
@@ -9,6 +10,7 @@ export class HudController {
   private _statusEl: HTMLElement | null;
 
   constructor() {
+    this._rootEl = document.getElementById("hud");
     const btn0 = document.getElementById("btn-mode-0") as HTMLButtonElement | null;
     const btn1 = document.getElementById("btn-mode-1") as HTMLButtonElement | null;
     const btn2 = document.getElementById("btn-mode-2") as HTMLButtonElement | null;
@@ -19,6 +21,11 @@ export class HudController {
     this._btnPaint = btn2;
     this._btnTrace = btn3;
     this._statusEl = document.getElementById("hud-status");
+  }
+
+  setUiVisible(show: boolean): void {
+    if (!this._rootEl) return;
+    this._rootEl.style.display = show ? "" : "none";
   }
 
   bindModeToggle(getMode: () => Mode, setMode: (m: Mode) => void): void {
