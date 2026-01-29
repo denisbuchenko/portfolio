@@ -41,6 +41,17 @@ export class TraceSplineGame {
     return this._phase === "inPath";
   }
 
+  getProgress01(): number {
+    const total = this._waypoints.length;
+    if (total < 2) return 0;
+    if (this._phase === "completed") return 1;
+    if (this._phase !== "inPath") return 0;
+    // _targetIdx — индекс "следующей" точки.
+    // Если мы идём к 1-й (targetIdx=1), то 0% уже пройдено.
+    const reached = Math.max(0, this._targetIdx - 1);
+    return THREE.MathUtils.clamp(reached / (total - 1), 0, 1);
+  }
+
   consumeEndEvent(): { outcome: "failed" | "completed"; reason?: string } | null {
     const ev = this._endEvent;
     this._endEvent = null;
@@ -156,8 +167,7 @@ export class TraceSplineGame {
 
   getDebugText(): string {
     const total = this._waypoints.length;
-    const idx = this._phase === "inPath" ? this._targetIdx : Math.min(this._targetIdx, Math.max(0, total - 1));
-    const progress01 = total >= 2 ? THREE.MathUtils.clamp(idx / (total - 1), 0, 1) : 0;
+    const progress01 = this.getProgress01();
 
     const reachWorld = this._reachRadiusPx / this._pixelsPerWorld;
     const failWorld = this._failRadiusPx / this._pixelsPerWorld;

@@ -271,7 +271,18 @@ export class ParticleApp {
   }
 
   private _updateBezierMode(dt: number): void {
-    const target = this._mode === 1 ? 1 : 0;
+    const target =
+      this._mode === 1
+        ? 1
+        : this._mode === 3
+          ? (() => {
+              // Чем ближе к 100% прохождения — тем сильнее "вес" сплайн‑пути.
+              // Сделаем усиление ближе к концу: сначала почти 0, потом быстро растёт к 1.
+              const p = this._traceGame.getProgress01();
+              const t = THREE.MathUtils.smoothstep(p, CONFIG.traceGame.splineBlendStartFrac, 1.0);
+              return t * t; // ускорение к концу
+            })()
+          : 0;
     const k = 1.0 - Math.exp(-dt / 0.12);
     this._bezierActive = THREE.MathUtils.lerp(this._bezierActive, target, k);
 
