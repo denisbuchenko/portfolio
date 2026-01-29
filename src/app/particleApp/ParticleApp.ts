@@ -36,6 +36,9 @@ export class ParticleApp {
   private _viewBounds = new THREE.Vector2(4, 4);
   private _basePointSize = 0;
   private _pixelsPerWorld = 100;
+  private _paintFadeActive = false;
+  private _paintFadeStart = 0;
+  private _paintFadeDuration = 0.65;
 
   private _attractorStrength = 0;
   private _bezierActive = 0;
@@ -153,6 +156,8 @@ export class ParticleApp {
         this._pointer.forceRelease(this._renderer.domElement);
         this._paintInput.forceRelease(this._renderer.domElement);
         this._paint.clear(this._renderer);
+        this._paintFadeActive = false;
+        this._paintFadeStart = 0;
       }
       this._mode = mode;
       this._hud.setMode(mode);
@@ -197,7 +202,7 @@ export class ParticleApp {
       if (end) {
         this._pointer.forceRelease(this._renderer.domElement);
         this._paintInput.forceRelease(this._renderer.domElement);
-        this._paint.clear(this._renderer);
+        this._startPaintFadeOut();
       }
     }
   }
@@ -221,7 +226,7 @@ export class ParticleApp {
     this._paintInput.release(e, this._renderer.domElement);
     this._traceGame.onPointerUp(e, this._renderer.domElement);
     const end = this._traceGame.consumeEndEvent();
-    if (end) this._paint.clear(this._renderer);
+    if (end) this._startPaintFadeOut();
   }
 
   private _onResize(): void {
@@ -285,11 +290,18 @@ export class ParticleApp {
     const k = 1.0 - Math.exp(-dt / 0.08);
     this._attractorStrength = THREE.MathUtils.lerp(this._attractorStrength, targetStrength, k);
 
-    (this._gas.uniforms.uAttractorActive.value as number) = modeOn ? 1 : 0;
+    const active = modeOn || this._attractorStrength > 1e-3;
+    (this._gas.uniforms.uAttractorActive.value as number) = active ? 1 : 0;
     (this._gas.uniforms.uAttractorStrength.value as number) = this._attractorStrength;
     (this._gas.uniforms.uAttractorStartTime.value as number) = this._pointer.startTime;
     (this._gas.uniforms.uAttractorPos.value as THREE.Vector2).set(this._pointer.mouseWorld.x, this._pointer.mouseWorld.y);
     return held;
+  }
+
+  private _startPaintFadeOut(): void {
+    // Плавно “гасим” рисунок, затем чистим в ноль.
+    this._paintFadeActive = true;
+    this._paintFadeStart = this._time;
   }
 
   private _updateHud(attractorHeld: boolean): void {
@@ -330,16 +342,28 @@ export class ParticleApp {
       strength: CONFIG.paintStampStrength
     }));
 
+    const paintDecay = this._paintFadeActive
+      ? Math.exp((-dt * Math.LN2) / Math.max(1e-4, CONFIG.paintHalfLife))
+      : 1.0;
     this._paint.step({
       renderer: this._renderer,
       time: this._time,
       stamps,
+      decay: paintDecay,
       noiseScale: CONFIG.paintNoiseScale,
       edgeAmp: CONFIG.paintEdgeAmp,
       edgeSoftness: CONFIG.paintEdgeSoftness,
       glowIntensity: CONFIG.paintGlowIntensity,
       pulseSpeed: CONFIG.paintPulseSpeed
     });
+    const paintFadeT = this._paintFadeActive
+      ? THREE.MathUtils.clamp((this._time - this._paintFadeStart) / Math.max(1e-6, this._paintFadeDuration), 0, 1)
+      : 0;
+    if (this._paintFadeActive && paintFadeT >= 1.0) {
+      this._paint.clear(this._renderer);
+      this._paintFadeActive = false;
+      this._paintFadeStart = 0;
+    }
 
     // Screen composition order:
     // 1) clear, 2) paint (under), 3) trails + heads + line (over)
@@ -347,6 +371,8 @@ export class ParticleApp {
     this._renderer.autoClear = true;
     this._renderer.clear();
     this._renderer.autoClear = false;
+    // Нелинейное (с ускорением): сначала почти не меняется, затем быстро гаснет.
+    const paintAlphaMul = this._paintFadeActive ? 1 - paintFadeT * paintFadeT : 1.0;
     this._paint.present(this._renderer, {
       time: this._time,
       noiseScale: CONFIG.paintNoiseScale,
@@ -359,7 +385,8 @@ export class ParticleApp {
       warpAmp: CONFIG.paintWarpAmp,
       contourThreshold: CONFIG.paintContourThreshold,
       contourWidth: CONFIG.paintContourWidth,
-      contourNoiseAmp: CONFIG.paintContourNoiseAmp
+      contourNoiseAmp: CONFIG.paintContourNoiseAmp,
+      alphaMul: paintAlphaMul
     });
 
     const decay = Math.exp((-dt * Math.LN2) / Math.max(1e-4, CONFIG.trailHalfLife));

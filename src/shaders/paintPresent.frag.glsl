@@ -13,6 +13,7 @@ uniform float uWarpAmp;
 uniform float uContourThreshold;
 uniform float uContourWidth;
 uniform float uContourNoiseAmp;
+uniform float uAlphaMul;
 
 in vec2 vUv;
 out vec4 outColor;
@@ -108,7 +109,8 @@ void main() {
   vec3 base = paintPalette(hueT);
   float light = clamp(0.55 * a + glow, 0.0, 2.0);
   vec3 col = base * light;
-  outColor = vec4(col, a);
+  float am = clamp(uAlphaMul, 0.0, 1.0);
+  outColor = vec4(col * am, a * am);
 }
 
 

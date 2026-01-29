@@ -79,7 +79,8 @@ export class PaintLayer {
         uWarpAmp: { value: 0.028 },
         uContourThreshold: { value: 0.18 },
         uContourWidth: { value: 0.035 },
-        uContourNoiseAmp: { value: 0.22 }
+        uContourNoiseAmp: { value: 0.22 },
+        uAlphaMul: { value: 1.0 }
       },
       vertexShader: fullscreenVert,
       fragmentShader: paintPresentFrag
@@ -110,6 +111,7 @@ export class PaintLayer {
     renderer: THREE.WebGLRenderer;
     time: number;
     stamps: { uv: THREE.Vector2; radiusUv: number; strength: number }[];
+    decay: number; // 0..1 (мультипликативное затухание)
     noiseScale: number;
     edgeAmp: number;
     edgeSoftness: number;
@@ -118,13 +120,14 @@ export class PaintLayer {
   }): void {
     assert(this._w > 0 && this._h > 0, "PaintLayer not initialized");
 
-    if (opts.stamps.length === 0) {
+    const decay = THREE.MathUtils.clamp(opts.decay, 0.0, 1.0);
+    if (opts.stamps.length === 0 && decay >= 0.9999) {
       (this._presentMat.uniforms.tTex.value as THREE.Texture) = this._read.texture;
       return;
     }
 
     (this._fadeMat.uniforms.tPrev.value as THREE.Texture) = this._read.texture;
-    (this._fadeMat.uniforms.uDecay.value as number) = 1.0;
+    (this._fadeMat.uniforms.uDecay.value as number) = decay;
 
     opts.renderer.setRenderTarget(this._write);
     opts.renderer.autoClear = true;
@@ -163,6 +166,7 @@ export class PaintLayer {
       contourThreshold: number;
       contourWidth: number;
       contourNoiseAmp: number;
+      alphaMul?: number;
     }
   ): void {
     (this._presentMat.uniforms.uTime.value as number) = opts.time;
@@ -177,6 +181,7 @@ export class PaintLayer {
     (this._presentMat.uniforms.uContourThreshold.value as number) = opts.contourThreshold;
     (this._presentMat.uniforms.uContourWidth.value as number) = opts.contourWidth;
     (this._presentMat.uniforms.uContourNoiseAmp.value as number) = opts.contourNoiseAmp;
+    (this._presentMat.uniforms.uAlphaMul.value as number) = THREE.MathUtils.clamp(opts.alphaMul ?? 1.0, 0.0, 1.0);
     renderer.setRenderTarget(null);
     renderer.render(this._presentScene, this._orthoCam);
   }
