@@ -209,7 +209,8 @@ export class ParticleApp {
       if (end) {
         this._pointer.forceRelease(this._renderer.domElement);
         this._paintInput.forceRelease(this._renderer.domElement);
-        this._startPaintFadeOut();
+        const mul = end.outcome === "completed" ? CONFIG.traceGame.paintFadeOutCompleteMul : 1.0;
+        this._startPaintFadeOut(CONFIG.traceGame.paintFadeOutSec * mul);
       }
     }
   }
@@ -233,7 +234,10 @@ export class ParticleApp {
     this._paintInput.release(e, this._renderer.domElement);
     this._traceGame.onPointerUp(e, this._renderer.domElement);
     const end = this._traceGame.consumeEndEvent();
-    if (end) this._startPaintFadeOut();
+    if (end) {
+      const mul = end.outcome === "completed" ? CONFIG.traceGame.paintFadeOutCompleteMul : 1.0;
+      this._startPaintFadeOut(CONFIG.traceGame.paintFadeOutSec * mul);
+    }
   }
 
   private _onResize(): void {
@@ -318,10 +322,11 @@ export class ParticleApp {
     return held;
   }
 
-  private _startPaintFadeOut(): void {
+  private _startPaintFadeOut(durationSec: number): void {
     // Плавно “гасим” рисунок, затем чистим в ноль.
     this._paintFadeActive = true;
     this._paintFadeStart = this._time;
+    this._paintFadeDuration = Math.max(1e-3, durationSec);
   }
 
   private _updateHud(attractorHeld: boolean): void {
