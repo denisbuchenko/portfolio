@@ -26,15 +26,23 @@ export class TraceSplineGame {
   private _failRadiusPx = CONFIG.traceGame.failRadiusPx;
   private _failBacktrackPx = CONFIG.traceGame.failBacktrackPx;
 
-  private _startMarker: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  private _startLabel: THREE.Sprite;
+  private _startLabelOpacity = 1;
+  private _startLabelTargetOpacity = 1;
 
   constructor(opts: { scene: THREE.Scene }) {
-    const geom = new THREE.PlaneGeometry(1, 1);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff2b2b, transparent: true, opacity: 0.95, depthTest: false });
-    this._startMarker = new THREE.Mesh(geom, mat);
-    this._startMarker.renderOrder = 999;
-    this._startMarker.visible = false;
-    opts.scene.add(this._startMarker);
+    const tex = this._createStartTextTexture();
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 1.0,
+      depthTest: false,
+      depthWrite: false
+    });
+    this._startLabel = new THREE.Sprite(mat);
+    this._startLabel.renderOrder = 999;
+    this._startLabel.visible = false;
+    opts.scene.add(this._startLabel);
   }
 
   get isInPath(): boolean {
@@ -64,6 +72,19 @@ export class TraceSplineGame {
     return ev;
   }
 
+  update(dt: number): void {
+    const hasStart = this._enabled && this._waypoints.length >= 1;
+    const shouldShow = hasStart && this._phase !== "inPath";
+    this._startLabelTargetOpacity = shouldShow ? 1 : 0;
+
+    const k = 1.0 - Math.exp(-Math.max(0, dt) / 0.12);
+    this._startLabelOpacity = THREE.MathUtils.lerp(this._startLabelOpacity, this._startLabelTargetOpacity, k);
+
+    const mat = this._startLabel.material as THREE.SpriteMaterial;
+    mat.opacity = this._startLabelOpacity;
+    this._startLabel.visible = hasStart && this._startLabelOpacity > 1e-3;
+  }
+
   getDanger01(): number {
     if (this._phase !== "inPath") return 0;
     if (!Number.isFinite(this._distWorld)) return 0;
@@ -76,7 +97,7 @@ export class TraceSplineGame {
 
   setEnabled(v: boolean): void {
     this._enabled = v;
-    this._startMarker.visible = v && this._waypoints.length >= 1;
+    this._startLabel.visible = v && this._waypoints.length >= 1;
   }
 
   setPixelsPerWorld(ppw: number): void {
@@ -105,6 +126,7 @@ export class TraceSplineGame {
     this._distWorld = Infinity;
     this._failReason = reason;
     this._endEvent = null;
+    this._startLabelTargetOpacity = 1;
   }
 
   onPointerDown(e: PointerEvent, canvas: HTMLCanvasElement, pointerWorld: THREE.Vector3): boolean {
@@ -124,6 +146,7 @@ export class TraceSplineGame {
     this._distWorld = Infinity;
     this._failReason = null;
     this._endEvent = null;
+    this._startLabelTargetOpacity = 0;
 
     canvas.setPointerCapture(e.pointerId);
     return true;
@@ -234,25 +257,50 @@ export class TraceSplineGame {
   private _rebuildWaypoints(): void {
     if (!this._rawPtsWorld || this._rawPtsWorld.length < 2) {
       this._waypoints = [];
-      this._startMarker.visible = false;
+      this._startLabel.visible = false;
       return;
     }
 
     const stepWorld = this._spacingPx / this._pixelsPerWorld;
     this._waypoints = this._resamplePolyline(this._rawPtsWorld, stepWorld);
-    this._updateStartMarker();
-    this._startMarker.visible = this._enabled && this._waypoints.length >= 1;
+    this._updateStartLabel();
+    this._startLabel.visible = this._enabled && this._waypoints.length >= 1;
   }
 
-  private _updateStartMarker(): void {
+  private _updateStartLabel(): void {
     if (this._waypoints.length < 1) return;
 
     const p = this._waypoints[0];
-    this._startMarker.position.set(p.x, p.y, 0.01);
+    this._startLabel.position.set(p.x, p.y, 0.01);
 
-    const sizePx = 10;
-    const sizeWorld = sizePx / this._pixelsPerWorld;
-    this._startMarker.scale.set(sizeWorld, sizeWorld, 1);
+    const hPx = Math.max(6, CONFIG.traceGame.startLabelHeightPx);
+    const aspect = 2.0; // canvas 256x128
+    const wPx = hPx * aspect;
+    this._startLabel.scale.set(wPx / this._pixelsPerWorld, hPx / this._pixelsPerWorld, 1);
+  }
+
+  private _createStartTextTexture(): THREE.Texture {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return new THREE.Texture();
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = "600 56px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    ctx.fillText("start", canvas.width / 2, canvas.height / 2);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    return tex;
   }
 
   private _distToPointWorld(pointerWorld: THREE.Vector3, p: THREE.Vector2): number {

@@ -353,6 +353,8 @@ export class ParticleApp {
     this._time += dt;
     this._gas.uniforms.uTime.value = this._time;
 
+    this._traceGame.update(dt);
+
     this._updateBezierMode(dt);
     const attractorHeld = this._updateAttractorMode(dt);
     this._updateHud(attractorHeld);
