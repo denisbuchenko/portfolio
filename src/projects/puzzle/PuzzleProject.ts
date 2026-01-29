@@ -6,6 +6,8 @@ import type { PieceImage } from "./pieceImage";
 
 type RuntimePiece = {
   img: PieceImage;
+  id: number;
+  groupId: number;
   /**
    * Позиция в мире в пикселях канваса: это top-left клетки (без pad).
    */
@@ -16,6 +18,7 @@ type RuntimePiece = {
 type DragState = {
   pointerId: number;
   piece: RuntimePiece;
+  groupId: number;
   offsetX: number;
   offsetY: number;
 } | null;
@@ -75,6 +78,66 @@ export function mountPuzzleProject(host: HTMLElement): void {
   let geom: PieceGeometry | null = null;
   let drag: DragState = null;
   let rafId = 0;
+
+  const pieceById = new Map<number, RuntimePiece>();
+  const groups = new Map<number, number[]>(); // groupId -> piece ids
+
+  function initGroups(): void {
+    groups.clear();
+    pieceById.clear();
+    for (const p of pieces) {
+      pieceById.set(p.id, p);
+      p.groupId = p.id;
+      groups.set(p.groupId, [p.id]);
+    }
+  }
+
+  function groupMembers(groupId: number): RuntimePiece[] {
+    const ids = groups.get(groupId);
+    if (!ids) return [];
+    const out: RuntimePiece[] = [];
+    for (const id of ids) {
+      const p = pieceById.get(id);
+      if (p) out.push(p);
+    }
+    return out;
+  }
+
+  function moveGroup(groupId: number, dx: number, dy: number): void {
+    const ids = groups.get(groupId);
+    if (!ids) return;
+    for (const id of ids) {
+      const p = pieceById.get(id);
+      if (!p) continue;
+      p.x += dx;
+      p.y += dy;
+    }
+  }
+
+  function mergeGroups(intoGroupId: number, fromGroupId: number): void {
+    if (intoGroupId === fromGroupId) return;
+    const a = groups.get(intoGroupId);
+    const b = groups.get(fromGroupId);
+    if (!a || !b) return;
+    for (const id of b) {
+      const p = pieceById.get(id);
+      if (p) p.groupId = intoGroupId;
+      a.push(id);
+    }
+    groups.delete(fromGroupId);
+  }
+
+  function bringGroupToFront(groupId: number): void {
+    const groupIds = new Set(groups.get(groupId) ?? []);
+    if (groupIds.size === 0) return;
+    const back: RuntimePiece[] = [];
+    const front: RuntimePiece[] = [];
+    for (const p of pieces) {
+      if (groupIds.has(p.id)) front.push(p);
+      else back.push(p);
+    }
+    pieces = back.concat(front);
+  }
 
   function resizeCanvas(): { w: number; h: number; dpr: number } {
     const rect = canvasEl.getBoundingClientRect();
@@ -138,7 +201,7 @@ export function mountPuzzleProject(host: HTMLElement): void {
 
     // небольшой статус
     if (geom) {
-      statusEl.textContent = `Кусочков: ${pieces.length} • DPR: ${dpr.toFixed(2)}`;
+      statusEl.textContent = `Кусочков: ${pieces.length} • Групп: ${groups.size} • DPR: ${dpr.toFixed(2)}`;
     }
   }
 
@@ -162,11 +225,71 @@ export function mountPuzzleProject(host: HTMLElement): void {
     return hitCtx2.isPointInPath(rp.img.path, localX, localY);
   }
 
-  function bringToFront(rp: RuntimePiece): void {
-    const i = pieces.indexOf(rp);
-    if (i < 0) return;
-    pieces.splice(i, 1);
-    pieces.push(rp);
+  function snapThresholdPx(g: PieceGeometry): number {
+    return Math.max(10 * getDpr(), g.cellPx * 0.12);
+  }
+
+  function trySnapGroupOnce(groupId: number): { mergedInto: number } | null {
+    if (!geom) return null;
+    const cell = geom.cellPx;
+    const thr = snapThresholdPx(geom);
+
+    let best:
+      | {
+          score: number;
+          dx: number;
+          dy: number;
+          targetGroupId: number;
+        }
+      | undefined;
+
+    const members = groupMembers(groupId);
+    for (const p of members) {
+      const n = p.img.piece.neighbors;
+      const neighborChecks: Array<{ neighborId: number | null; offX: number; offY: number }> = [
+        { neighborId: n.top, offX: 0, offY: -cell },
+        { neighborId: n.right, offX: +cell, offY: 0 },
+        { neighborId: n.bottom, offX: 0, offY: +cell },
+        { neighborId: n.left, offX: -cell, offY: 0 }
+      ];
+
+      for (const c of neighborChecks) {
+        if (c.neighborId == null) continue;
+        const neighborPiece = pieceById.get(c.neighborId);
+        if (!neighborPiece) continue;
+        if (neighborPiece.groupId === groupId) continue;
+
+        const dx = neighborPiece.x - (p.x + c.offX);
+        const dy = neighborPiece.y - (p.y + c.offY);
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
+        if (adx > thr || ady > thr) continue;
+        const score = Math.hypot(dx, dy);
+        if (!best || score < best.score) {
+          best = {
+            score,
+            dx,
+            dy,
+            targetGroupId: neighborPiece.groupId
+          };
+        }
+      }
+    }
+
+    if (!best) return null;
+
+    // Дотягиваем текущую (перетаскиваемую) группу к стоящей на месте группе.
+    moveGroup(groupId, best.dx, best.dy);
+
+    // Немного стабилизируем координаты после снэпа, чтобы не копилась дробь.
+    for (const p of groupMembers(groupId)) {
+      p.x = Math.round(p.x);
+      p.y = Math.round(p.y);
+    }
+
+    mergeGroups(best.targetGroupId, groupId);
+    bringGroupToFront(best.targetGroupId);
+    return { mergedInto: best.targetGroupId };
   }
 
   function onPointerDown(e: PointerEvent): void {
@@ -177,10 +300,11 @@ export function mountPuzzleProject(host: HTMLElement): void {
     for (let i = pieces.length - 1; i >= 0; i--) {
       const rp = pieces[i];
       if (hitTestPiece(rp, x, y)) {
-        bringToFront(rp);
+        bringGroupToFront(rp.groupId);
         drag = {
           pointerId: e.pointerId,
           piece: rp,
+          groupId: rp.groupId,
           offsetX: x - rp.x,
           offsetY: y - rp.y
         };
@@ -194,18 +318,30 @@ export function mountPuzzleProject(host: HTMLElement): void {
     if (!drag) return;
     if (e.pointerId !== drag.pointerId) return;
     const { x, y } = canvasPointFromEvent(e);
-    drag.piece.x = x - drag.offsetX;
-    drag.piece.y = y - drag.offsetY;
+    const newX = x - drag.offsetX;
+    const newY = y - drag.offsetY;
+    const dx = newX - drag.piece.x;
+    const dy = newY - drag.piece.y;
+    moveGroup(drag.groupId, dx, dy);
   }
 
   function onPointerUpOrCancel(e: PointerEvent): void {
     if (!drag) return;
     if (e.pointerId !== drag.pointerId) return;
+    const releasedGroupId = drag.groupId;
     drag = null;
     try {
       canvasEl.releasePointerCapture(e.pointerId);
     } catch {
       // ignore
+    }
+
+    // После отпускания пробуем пристыковать группу: можно "цеплять" несколько раз подряд.
+    let currentGroupId = releasedGroupId;
+    for (let i = 0; i < 12; i++) {
+      const res = trySnapGroupOnce(currentGroupId);
+      if (!res) break;
+      currentGroupId = res.mergedInto;
     }
   }
 
@@ -234,8 +370,9 @@ export function mountPuzzleProject(host: HTMLElement): void {
     const imgs = await Promise.all(model.pieces.map((piece) => createPieceImage({ model, piece, geom: g, source: sourceImg! })));
     if (token !== rebuildToken) return;
 
-    pieces = imgs.map((img) => ({ img, x: 0, y: 0 }));
+    pieces = imgs.map((img) => ({ img, id: img.piece.id, groupId: img.piece.id, x: 0, y: 0 }));
     scramblePieces(w, h, g);
+    initGroups();
     statusEl.textContent = "Готово";
   }
 
