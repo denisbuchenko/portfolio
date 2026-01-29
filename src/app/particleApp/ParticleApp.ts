@@ -39,6 +39,7 @@ export class ParticleApp {
   private _paintFadeActive = false;
   private _paintFadeStart = 0;
   private _paintFadeDuration = 0.65;
+  private _traceDanger = 0;
 
   private _attractorStrength = 0;
   private _bezierActive = 0;
@@ -158,6 +159,8 @@ export class ParticleApp {
         this._paint.clear(this._renderer);
         this._paintFadeActive = false;
         this._paintFadeStart = 0;
+        this._traceDanger = 0;
+        (this._gas.uniforms.uTraceDanger.value as number) = 0;
       }
       this._mode = mode;
       this._hud.setMode(mode);
@@ -286,7 +289,9 @@ export class ParticleApp {
   private _updateAttractorMode(dt: number): boolean {
     const modeOn = this._mode === 0 || (this._mode === 3 && this._traceGame.isInPath);
     const held = modeOn && this._pointer.isCaptured;
-    const targetStrength = held ? CONFIG.orbitStrength : 0;
+    const danger = this._mode === 3 ? THREE.MathUtils.clamp(this._traceDanger, 0.0, 1.0) : 0.0;
+    const strengthMax = THREE.MathUtils.lerp(CONFIG.orbitStrength, 1.0, danger * danger);
+    const targetStrength = held ? strengthMax : 0;
     const k = 1.0 - Math.exp(-dt / 0.08);
     this._attractorStrength = THREE.MathUtils.lerp(this._attractorStrength, targetStrength, k);
 
@@ -331,6 +336,12 @@ export class ParticleApp {
     this._updateBezierMode(dt);
     const attractorHeld = this._updateAttractorMode(dt);
     this._updateHud(attractorHeld);
+
+    // Mode 3: danger → GPU (плавно затухает обратно в 0 после проигрыша)
+    const dangerTarget = this._mode === 3 ? this._traceGame.getDanger01() : 0;
+    const kDanger = 1.0 - Math.exp(-dt / 0.10);
+    this._traceDanger = THREE.MathUtils.lerp(this._traceDanger, dangerTarget, kDanger);
+    (this._gas.uniforms.uTraceDanger.value as number) = this._traceDanger;
 
     const pr = this._renderer.getPixelRatio();
     const radiusPx = CONFIG.paintRadiusCssPx * pr;

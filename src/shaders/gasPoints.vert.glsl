@@ -13,6 +13,8 @@ uniform float uAttractorInfluenceRadius;
 uniform float uAttractorOmega;
 uniform float uAttractorStrength;
 
+uniform float uTraceDanger;
+
 uniform float uBezierActive;
 uniform vec2 uBezierP0;
 uniform vec2 uBezierP1;
@@ -27,6 +29,7 @@ uniform float uPathCount;
 uniform float uPathUseTexture;
 
 out float vSpeed;
+out float vAttrProx;
 
 // ------------------------------- constants -------------------------------
 const float EPS = 1e-6;
@@ -111,7 +114,10 @@ vec2 applyAttractor(vec2 basePos, vec2 init, vec2 vel, vec2 r01, float bezierW) 
   vec2 v0 = startPos - center;
   float a0 = atan(v0.y, v0.x);
   float dt = max(0.0, uTime - uAttractorStartTime);
-  float a = a0 + uAttractorOmega * dt;
+  float danger = clamp(uTraceDanger, 0.0, 1.0);
+  // Чем ближе к порогу — тем сильнее ускорение вращения (ускорение нелинейное).
+  float omega = uAttractorOmega * (1.0 + 2.6 * danger * danger);
+  float a = a0 + omega * dt;
   vec2 orbitPos = center + uAttractorRadius * vec2(cos(a), sin(a));
 
   return mix(basePos, orbitPos, strength * influence);
@@ -136,6 +142,14 @@ void main() {
 
   float bezierW = clamp(uBezierActive, 0.0, 1.0);
   vec2 pos = applyAttractor(basePos, init, vel, r01, bezierW);
+
+  // Для фрагментного шейдера: насколько частица близко к центру аттрактора (0..1).
+  // Краснеем только рядом с аттрактором, а не по всему экрану.
+  float distA = length(pos - uAttractorPos);
+  float outerA = max(uAttractorInfluenceRadius, 1e-4);
+  float innerA = outerA * 0.35;
+  float influenceA = 1.0 - smoothstep(innerA, outerA, distA);
+  vAttrProx = influenceA * uAttractorActive;
 
   float phase = hash12(uv * 541.7 + 0.11);
   float tCurve = fract(uBezierPhaseOffset + phase + tTime * max(uBezierTimeScale, 0.0));

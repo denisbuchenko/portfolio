@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { CONFIG } from "../../config";
 
 type TracePhase = "idle" | "inPath" | "failed" | "completed";
 
@@ -18,12 +19,12 @@ export class TraceSplineGame {
   private _failReason: string | null = null;
   private _endEvent: { outcome: "failed" | "completed"; reason?: string } | null = null;
 
-  // Тюнинг в CSS-пикселях (чтобы ощущалось одинаково на разных экранах)
-  private _spacingPx = 22; // шаг точек по пути
-  private _startRadiusPx = 26; // насколько близко нужно нажать к старту
-  private _reachRadiusPx = 50; // когда точка считается достигнутой
-  private _failRadiusPx = 300; // если слишком далеко от цели — провал
-  private _failBacktrackPx = 300; // если отдалился от лучшего приближения — провал
+  // Тюнинг (в CSS-пикселях) вынесен в CONFIG.traceGame
+  private _spacingPx = CONFIG.traceGame.spacingPx;
+  private _startRadiusPx = CONFIG.traceGame.startRadiusPx;
+  private _reachRadiusPx = CONFIG.traceGame.reachRadiusPx;
+  private _failRadiusPx = CONFIG.traceGame.failRadiusPx;
+  private _failBacktrackPx = CONFIG.traceGame.failBacktrackPx;
 
   private _startMarker: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 
@@ -44,6 +45,16 @@ export class TraceSplineGame {
     const ev = this._endEvent;
     this._endEvent = null;
     return ev;
+  }
+
+  getDanger01(): number {
+    if (this._phase !== "inPath") return 0;
+    if (!Number.isFinite(this._distWorld)) return 0;
+    const failWorld = this._failRadiusPx / Math.max(1e-6, this._pixelsPerWorld);
+    const warnStart = THREE.MathUtils.clamp(CONFIG.traceGame.warnStartFrac, 0.0, 0.99) * failWorld;
+    const t = THREE.MathUtils.clamp((this._distWorld - warnStart) / Math.max(1e-6, failWorld - warnStart), 0, 1);
+    // smoothstep
+    return t * t * (3.0 - 2.0 * t);
   }
 
   setEnabled(v: boolean): void {
@@ -128,6 +139,9 @@ export class TraceSplineGame {
       this._fail(canvas, "слишком далеко от цели");
       return;
     }
+    // "Отдалился от лучшего приближения":
+    // bestDistWorld — минимальная дистанция до текущей цели, которая была достигнута во время движения.
+    // Если ты пошёл обратно (в сторону от цели) сильнее порога — провал, чтобы нельзя было "гулять" вокруг.
     if (distWorld > this._bestDistWorld + failBacktrackWorld) {
       this._fail(canvas, "отдалился от цели");
       return;

@@ -29,6 +29,7 @@ export type GasUniforms = {
   uPathTex: { value: THREE.Texture | null };
   uPathCount: { value: number };
   uPathUseTexture: { value: number };
+  uTraceDanger: { value: number };
 };
 
 export type GasPoints = {
@@ -101,7 +102,10 @@ function _createGasUniforms(opts: CreateGasPointsOpts): GasUniforms {
 
     uPathTex: { value: null },
     uPathCount: { value: 0 },
-    uPathUseTexture: { value: 0 }
+    uPathUseTexture: { value: 0 },
+
+    // Mode 3 (мини‑игра): 0..1 насколько игрок близок к порогу провала
+    uTraceDanger: { value: 0 }
   };
 }
 
