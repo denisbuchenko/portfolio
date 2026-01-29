@@ -12,6 +12,7 @@ import { TrailComposer } from "./TrailComposer";
 import { SplineSvgPath } from "./SplineSvgPath";
 import { PaintLayer } from "./PaintLayer";
 import { PaintInput } from "./PaintInput";
+import { TraceSplineGame } from "./TraceSplineGame";
 
 export class ParticleApp {
   private _renderer: THREE.WebGLRenderer;
@@ -24,6 +25,7 @@ export class ParticleApp {
   private _pathLine: THREE.Line;
   private _trail: TrailComposer;
   private _splineSvg: SplineSvgPath;
+  private _traceGame: TraceSplineGame;
   private _paint: PaintLayer;
   private _paintInput = new PaintInput();
   private _pointer = new PointerTracker();
@@ -33,6 +35,7 @@ export class ParticleApp {
   private _texSize = 0;
   private _viewBounds = new THREE.Vector2(4, 4);
   private _basePointSize = 0;
+  private _pixelsPerWorld = 100;
 
   private _attractorStrength = 0;
   private _bezierActive = 0;
@@ -67,6 +70,8 @@ export class ParticleApp {
     this._trail.init(this._renderer);
 
     this._splineSvg = new SplineSvgPath({ samples: 512, fit: 0.9 });
+    this._traceGame = new TraceSplineGame({ scene: this._scene });
+    this._traceGame.setPixelsPerWorld(this._pixelsPerWorld);
     this._loadSplineSvg();
 
     this._paint = new PaintLayer();
@@ -126,10 +131,12 @@ export class ParticleApp {
     try {
       await this._splineSvg.load("/paths/treble-clef.svg");
       this._splineSvg.applyToWorld({ viewBounds: this._viewBounds, pathLine: this._pathLine, gas: this._gas });
+      this._traceGame.setSplinePointsWorld(this._splineSvg.worldPoints);
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn("Не удалось загрузить SVG-путь для сплайна:", e);
       this._splineSvg.disable(this._gas);
+      this._traceGame.setSplinePointsWorld(null);
     }
   }
 
@@ -141,9 +148,11 @@ export class ParticleApp {
     const setMode = (mode: Mode) => {
       if (this._mode === 0 && mode !== 0) this._pointer.forceRelease(this._renderer.domElement);
       if (this._mode === 2 && mode !== 2) this._paintInput.forceRelease(this._renderer.domElement);
+      if (this._mode === 3 && mode !== 3) this._traceGame.forceRelease(this._renderer.domElement, "выход из режима");
       this._mode = mode;
       this._hud.setMode(mode);
-      (this._pathLine.material as THREE.LineBasicMaterial).opacity = mode === 1 ? 0.55 : 0.22;
+      this._traceGame.setEnabled(mode === 3);
+      (this._pathLine.material as THREE.LineBasicMaterial).opacity = mode === 1 || mode === 3 ? 0.55 : 0.22;
       this._updateParticleSize();
     };
 
@@ -176,17 +185,20 @@ export class ParticleApp {
   private _onPointerMove(e: PointerEvent): void {
     this._pointer.updateFromEvent(e, this._renderer.domElement, this._camera);
     if (this._mode === 2) this._paintInput.onMove(e, this._renderer.domElement);
+    if (this._mode === 3) this._traceGame.onPointerMove(e, this._renderer.domElement, this._pointer.mouseWorld);
   }
 
   private _onPointerDown(e: PointerEvent): void {
     this._onPointerMove(e);
     if (this._mode === 0) this._pointer.capture(e, this._renderer.domElement, this._time);
     if (this._mode === 2) this._paintInput.capture(e, this._renderer.domElement);
+    if (this._mode === 3) this._traceGame.onPointerDown(e, this._renderer.domElement, this._pointer.mouseWorld);
   }
 
   private _onPointerUp(e: PointerEvent): void {
     this._pointer.release(e, this._renderer.domElement);
     this._paintInput.release(e, this._renderer.domElement);
+    this._traceGame.onPointerUp(e, this._renderer.domElement);
   }
 
   private _onResize(): void {
@@ -202,6 +214,7 @@ export class ParticleApp {
     (this._gas.uniforms.uBounds.value as THREE.Vector2).copy(this._viewBounds);
 
     this._splineSvg.applyToWorld({ viewBounds: this._viewBounds, pathLine: this._pathLine, gas: this._gas });
+    this._traceGame.setSplinePointsWorld(this._splineSvg.worldPoints);
     this._trail.resize(this._renderer);
     this._paint.resize(this._renderer);
     this._updatePixelMetrics();
@@ -219,9 +232,11 @@ export class ParticleApp {
   }
 
   private _updatePixelMetrics(): void {
-    (this._gas.uniforms.uPixelsPerWorld.value as number) = computePixelsPerWorld(this._renderer, this._viewBounds);
+    this._pixelsPerWorld = computePixelsPerWorld(this._renderer, this._viewBounds);
+    (this._gas.uniforms.uPixelsPerWorld.value as number) = this._pixelsPerWorld;
     (this._gas.uniforms.uSpeedPxMin.value as number) = CONFIG.speedPxMin;
     (this._gas.uniforms.uSpeedPxMax.value as number) = CONFIG.speedPxMax;
+    this._traceGame.setPixelsPerWorld(this._pixelsPerWorld);
   }
 
   private _updateBezierMode(dt: number): void {
@@ -262,12 +277,15 @@ export class ParticleApp {
           ? `аттрактор (зажми и води)${attractorHeld ? " • активен" : ""}`
           : this._mode === 1
             ? "сплайн"
-            : "рисование";
+            : this._mode === 2
+              ? "рисование"
+              : "прохождение сплайна";
 
-    this._hud.setStatus(
+    const base =
       `частиц: ${CONFIG.particles} (tex ${this._texSize}×${this._texSize}) • режим: ${modeText}` +
-        ` • область: ${(this._viewBounds.x * 2).toFixed(1)}×${(this._viewBounds.y * 2).toFixed(1)}`
-    );
+      ` • область: ${(this._viewBounds.x * 2).toFixed(1)}×${(this._viewBounds.y * 2).toFixed(1)}`;
+    const extra = this._mode === 3 ? `\n\n${this._traceGame.getDebugText()}` : "";
+    this._hud.setStatus(base + extra);
   }
 
   private _animate = (): void => {

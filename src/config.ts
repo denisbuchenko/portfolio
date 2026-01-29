@@ -1,4 +1,4 @@
-export type Mode = -1 | 0 | 1 | 2;
+export type Mode = -1 | 0 | 1 | 2 | 3;
 
 export const CONFIG = {
   particles: 1024, // 32x32 — >= 1000

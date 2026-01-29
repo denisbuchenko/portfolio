@@ -58,6 +58,8 @@ canvas {
   border: 1px solid var(--panel-border);
   border-radius: 12px;
   backdrop-filter: blur(10px);
+  white-space: pre-wrap;
+  opacity: 0.7;
 }
 
 .btn {
