@@ -148,7 +148,12 @@ export class ParticleApp {
     const setMode = (mode: Mode) => {
       if (this._mode === 0 && mode !== 0) this._pointer.forceRelease(this._renderer.domElement);
       if (this._mode === 2 && mode !== 2) this._paintInput.forceRelease(this._renderer.domElement);
-      if (this._mode === 3 && mode !== 3) this._traceGame.forceRelease(this._renderer.domElement, "выход из режима");
+      if (this._mode === 3 && mode !== 3) {
+        this._traceGame.forceRelease(this._renderer.domElement, "выход из режима");
+        this._pointer.forceRelease(this._renderer.domElement);
+        this._paintInput.forceRelease(this._renderer.domElement);
+        this._paint.clear(this._renderer);
+      }
       this._mode = mode;
       this._hud.setMode(mode);
       this._traceGame.setEnabled(mode === 3);
@@ -185,20 +190,38 @@ export class ParticleApp {
   private _onPointerMove(e: PointerEvent): void {
     this._pointer.updateFromEvent(e, this._renderer.domElement, this._camera);
     if (this._mode === 2) this._paintInput.onMove(e, this._renderer.domElement);
-    if (this._mode === 3) this._traceGame.onPointerMove(e, this._renderer.domElement, this._pointer.mouseWorld);
+    if (this._mode === 3) {
+      this._traceGame.onPointerMove(e, this._renderer.domElement, this._pointer.mouseWorld);
+      if (this._traceGame.isInPath) this._paintInput.onMove(e, this._renderer.domElement);
+      const end = this._traceGame.consumeEndEvent();
+      if (end) {
+        this._pointer.forceRelease(this._renderer.domElement);
+        this._paintInput.forceRelease(this._renderer.domElement);
+        this._paint.clear(this._renderer);
+      }
+    }
   }
 
   private _onPointerDown(e: PointerEvent): void {
     this._onPointerMove(e);
     if (this._mode === 0) this._pointer.capture(e, this._renderer.domElement, this._time);
     if (this._mode === 2) this._paintInput.capture(e, this._renderer.domElement);
-    if (this._mode === 3) this._traceGame.onPointerDown(e, this._renderer.domElement, this._pointer.mouseWorld);
+    if (this._mode === 3) {
+      const started = this._traceGame.onPointerDown(e, this._renderer.domElement, this._pointer.mouseWorld);
+      if (started) {
+        // Внутри мини‑игры запускаем аттрактор + рисование.
+        this._pointer.capture(e, this._renderer.domElement, this._time);
+        this._paintInput.capture(e, this._renderer.domElement);
+      }
+    }
   }
 
   private _onPointerUp(e: PointerEvent): void {
     this._pointer.release(e, this._renderer.domElement);
     this._paintInput.release(e, this._renderer.domElement);
     this._traceGame.onPointerUp(e, this._renderer.domElement);
+    const end = this._traceGame.consumeEndEvent();
+    if (end) this._paint.clear(this._renderer);
   }
 
   private _onResize(): void {
@@ -256,7 +279,7 @@ export class ParticleApp {
   }
 
   private _updateAttractorMode(dt: number): boolean {
-    const modeOn = this._mode === 0;
+    const modeOn = this._mode === 0 || (this._mode === 3 && this._traceGame.isInPath);
     const held = modeOn && this._pointer.isCaptured;
     const targetStrength = held ? CONFIG.orbitStrength : 0;
     const k = 1.0 - Math.exp(-dt / 0.08);

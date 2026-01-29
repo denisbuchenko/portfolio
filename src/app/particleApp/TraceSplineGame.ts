@@ -16,6 +16,7 @@ export class TraceSplineGame {
   private _bestDistWorld = Infinity;
   private _distWorld = Infinity;
   private _failReason: string | null = null;
+  private _endEvent: { outcome: "failed" | "completed"; reason?: string } | null = null;
 
   // Тюнинг в CSS-пикселях (чтобы ощущалось одинаково на разных экранах)
   private _spacingPx = 22; // шаг точек по пути
@@ -33,6 +34,16 @@ export class TraceSplineGame {
     this._startMarker.renderOrder = 999;
     this._startMarker.visible = false;
     opts.scene.add(this._startMarker);
+  }
+
+  get isInPath(): boolean {
+    return this._phase === "inPath";
+  }
+
+  consumeEndEvent(): { outcome: "failed" | "completed"; reason?: string } | null {
+    const ev = this._endEvent;
+    this._endEvent = null;
+    return ev;
   }
 
   setEnabled(v: boolean): void {
@@ -65,17 +76,18 @@ export class TraceSplineGame {
     this._bestDistWorld = Infinity;
     this._distWorld = Infinity;
     this._failReason = reason;
+    this._endEvent = null;
   }
 
-  onPointerDown(e: PointerEvent, canvas: HTMLCanvasElement, pointerWorld: THREE.Vector3): void {
-    if (!this._enabled) return;
-    if (this._pointerId !== null) return;
-    if (this._waypoints.length < 2) return;
+  onPointerDown(e: PointerEvent, canvas: HTMLCanvasElement, pointerWorld: THREE.Vector3): boolean {
+    if (!this._enabled) return false;
+    if (this._pointerId !== null) return false;
+    if (this._waypoints.length < 2) return false;
 
     const start = this._waypoints[0];
     const d = this._distToPointWorld(pointerWorld, start);
     const startRadiusWorld = this._startRadiusPx / this._pixelsPerWorld;
-    if (d > startRadiusWorld) return;
+    if (d > startRadiusWorld) return false;
 
     this._pointerId = e.pointerId;
     this._phase = "inPath";
@@ -83,8 +95,10 @@ export class TraceSplineGame {
     this._bestDistWorld = Infinity;
     this._distWorld = Infinity;
     this._failReason = null;
+    this._endEvent = null;
 
     canvas.setPointerCapture(e.pointerId);
+    return true;
   }
 
   onPointerMove(e: PointerEvent, canvas: HTMLCanvasElement, pointerWorld: THREE.Vector3): void {
@@ -162,12 +176,14 @@ export class TraceSplineGame {
   private _complete(canvas: HTMLCanvasElement): void {
     this._phase = "completed";
     this._failReason = null;
+    this._endEvent = { outcome: "completed" };
     this._release(canvas);
   }
 
   private _fail(canvas: HTMLCanvasElement, reason: string): void {
     this._phase = "failed";
     this._failReason = reason;
+    this._endEvent = { outcome: "failed", reason };
     this._targetIdx = 0;
     this._bestDistWorld = Infinity;
     this._distWorld = Infinity;

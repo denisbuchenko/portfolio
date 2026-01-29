@@ -181,6 +181,31 @@ export class PaintLayer {
     renderer.render(this._presentScene, this._orthoCam);
   }
 
+  clear(renderer: THREE.WebGLRenderer): void {
+    if (!this._read || !this._write) return;
+
+    const prevRT = renderer.getRenderTarget();
+    const prevAutoClear = renderer.autoClear;
+
+    const prevClr = new THREE.Color();
+    renderer.getClearColor(prevClr);
+    const prevAlpha = renderer.getClearAlpha();
+
+    renderer.setClearColor(0x000000, 0);
+    renderer.autoClear = true;
+
+    renderer.setRenderTarget(this._read);
+    renderer.clear(true, true, true);
+    renderer.setRenderTarget(this._write);
+    renderer.clear(true, true, true);
+
+    renderer.setRenderTarget(prevRT);
+    renderer.setClearColor(prevClr, prevAlpha);
+    renderer.autoClear = prevAutoClear;
+
+    (this._presentMat.uniforms.tTex.value as THREE.Texture) = this._read.texture;
+  }
+
   private _computeSize(renderer: THREE.WebGLRenderer): { w: number; h: number } {
     const size = new THREE.Vector2();
     renderer.getDrawingBufferSize(size);
