@@ -23,6 +23,7 @@ export function createPuzzleRenderer(opts: {
     pieceFrag: string;
   };
 }): PuzzleRenderer {
+  const t0 = performance.now();
   const renderer = new THREE.WebGLRenderer({
     canvas: opts.canvas,
     alpha: false,
@@ -53,7 +54,9 @@ export function createPuzzleRenderer(opts: {
     side: THREE.DoubleSide,
     uniforms: {
       tMask: { value: maskTex },
-      uResolution: { value: new THREE.Vector2(2, 2) }
+      uResolution: { value: new THREE.Vector2(2, 2) },
+      uTime: { value: 0.0 },
+      uThreshold: { value: 0.06 }
     },
     vertexShader: opts.shaders.vert,
     fragmentShader: opts.shaders.paintFrag
@@ -134,6 +137,7 @@ export function createPuzzleRenderer(opts: {
     const h = renderer.domElement.height;
 
     (paintMat.uniforms.uResolution.value as THREE.Vector2).set(w, h);
+    (paintMat.uniforms.uTime.value as number) = (performance.now() - t0) * 0.001;
 
     for (let i = 0; i < pieces.length; i++) {
       const rp = pieces[i];
