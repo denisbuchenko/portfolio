@@ -11,6 +11,20 @@ export const CONFIG = {
     showBezierLine: false
   },
 
+  // Puzzle project
+  puzzle: {
+    paint: {
+      // Ширина кисти в CSS-пикселях (на экране). Внутри умножается на DPR.
+      brushSizeCssPx: 48,
+      // Максимальная длина следа (каждый канал отдельно) в CSS-пикселях.
+      maxTrailLengthCssPx: 300
+    },
+    ui: {
+      // Размер кружочков выбора цвета в CSS-пикселях.
+      colorButtonCssPx: 36
+    }
+  },
+
   // Размер "головы" частицы в CSS-пикселях (визуально одинаковый на разных DPR).
   pointSizeCssPx: 4.0,
 

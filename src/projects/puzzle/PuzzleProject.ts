@@ -3,6 +3,9 @@ import { createPieceImage } from "./pieceImage";
 import type { PieceGeometry } from "./path";
 import { XorShift32 } from "./rng";
 import type { PieceImage } from "./pieceImage";
+import { CONFIG } from "../../config";
+
+type ColorKey = "r" | "g" | "b";
 
 type RuntimePiece = {
   img: PieceImage;
@@ -22,6 +25,16 @@ type DragState = {
   offsetX: number;
   offsetY: number;
 } | null;
+
+type DrawState = {
+  pointerId: number;
+  color: ColorKey;
+} | null;
+
+type Trail = {
+  points: Array<{ x: number; y: number }>;
+  lengthPx: number;
+};
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -45,19 +58,28 @@ export function mountPuzzleProject(host: HTMLElement): void {
         <div class="puzzle__title">Пазл 4×4</div>
         <div class="puzzle__hint">Перетаскивай кусочки мышкой или пальцем.</div>
       </div>
+      <div class="puzzle__colors" aria-label="Выбор цвета">
+        <button class="puzzle__color puzzle__color--r puzzle__color--active" data-color="r" type="button" aria-label="Красный"></button>
+        <button class="puzzle__color puzzle__color--g" data-color="g" type="button" aria-label="Зелёный"></button>
+        <button class="puzzle__color puzzle__color--b" data-color="b" type="button" aria-label="Синий"></button>
+      </div>
       <div class="puzzle__status" id="puzzle-status">Загрузка...</div>
     </div>
   `;
 
   const canvas = host.querySelector("canvas.puzzle__canvas") as HTMLCanvasElement | null;
   const status = host.querySelector("#puzzle-status") as HTMLDivElement | null;
+  const colorsEl = host.querySelector(".puzzle__colors") as HTMLDivElement | null;
   if (!canvas) throw new Error("Puzzle canvas not found");
   if (!status) throw new Error("Puzzle status not found");
+  if (!colorsEl) throw new Error("Puzzle colors element not found");
 
   // Важно: TS не сохраняет narrowing внутрь вложенных функций для переменных типа T|null,
   // поэтому сразу фиксируем non-null ссылки в отдельных const.
   const canvasEl: HTMLCanvasElement = canvas;
   const statusEl: HTMLDivElement = status;
+  const colorsRoot: HTMLDivElement = colorsEl;
+  colorsRoot.style.setProperty("--puzzle-color-btn-size", `${CONFIG.puzzle.ui.colorButtonCssPx}px`);
 
   const ctx = canvasEl.getContext("2d");
   if (!ctx) throw new Error("2D context not available");
@@ -71,16 +93,32 @@ export function mountPuzzleProject(host: HTMLElement): void {
   if (!hitCtx) throw new Error("2D hit context not available");
   const hitCtx2: CanvasRenderingContext2D = hitCtx;
 
+  // Слой рисования (offscreen) — рисуем под пазлами, смешивание каналов делаем аддитивным.
+  const paintCanvas = document.createElement("canvas");
+  paintCanvas.width = 2;
+  paintCanvas.height = 2;
+  const paintCtx = paintCanvas.getContext("2d");
+  if (!paintCtx) throw new Error("2D paint context not available");
+  const paintCtx2: CanvasRenderingContext2D = paintCtx;
+
   const rng = new XorShift32(0x0ddba11);
 
   let sourceImg: HTMLImageElement | null = null;
   let pieces: RuntimePiece[] = [];
   let geom: PieceGeometry | null = null;
   let drag: DragState = null;
+  let draw: DrawState = null;
+  let activeColor: ColorKey = "r";
   let rafId = 0;
 
   const pieceById = new Map<number, RuntimePiece>();
   const groups = new Map<number, number[]>(); // groupId -> piece ids
+
+  const trails: Record<ColorKey, Trail> = {
+    r: { points: [], lengthPx: 0 },
+    g: { points: [], lengthPx: 0 },
+    b: { points: [], lengthPx: 0 }
+  };
 
   function initGroups(): void {
     groups.clear();
@@ -146,6 +184,8 @@ export function mountPuzzleProject(host: HTMLElement): void {
     const h = Math.max(1, Math.floor(rect.height * dpr));
     if (canvasEl.width !== w) canvasEl.width = w;
     if (canvasEl.height !== h) canvasEl.height = h;
+    if (paintCanvas.width !== w) paintCanvas.width = w;
+    if (paintCanvas.height !== h) paintCanvas.height = h;
     return { w, h, dpr };
   }
 
@@ -191,6 +231,9 @@ export function mountPuzzleProject(host: HTMLElement): void {
     ctx2.fillStyle = "rgba(0,0,0,0.15)";
     ctx2.fillRect(0, 0, w, h);
 
+    // Рисовалка (ниже пазлов)
+    ctx2.drawImage(paintCanvas, 0, 0);
+
     // кусочки (в порядке массива — последний сверху)
     for (const rp of pieces) {
       const pad = rp.img.geom.padPx;
@@ -201,7 +244,7 @@ export function mountPuzzleProject(host: HTMLElement): void {
 
     // небольшой статус
     if (geom) {
-      statusEl.textContent = `Кусочков: ${pieces.length} • Групп: ${groups.size} • DPR: ${dpr.toFixed(2)}`;
+      statusEl.textContent = `Кусочков: ${pieces.length} • Групп: ${groups.size} • Цвет: ${activeColor.toUpperCase()} • DPR: ${dpr.toFixed(2)}`;
     }
   }
 
@@ -227,6 +270,78 @@ export function mountPuzzleProject(host: HTMLElement): void {
 
   function snapThresholdPx(g: PieceGeometry): number {
     return Math.max(10 * getDpr(), g.cellPx * 0.12);
+  }
+
+  function trailMaxLenPx(): number {
+    // 200 в "логике" = CSS px, переводим в canvas px по DPR.
+    return CONFIG.puzzle.paint.maxTrailLengthCssPx * getDpr();
+  }
+
+  function addTrailPoint(color: ColorKey, x: number, y: number): void {
+    const t = trails[color];
+    const pts = t.points;
+    const maxLen = trailMaxLenPx();
+
+    if (pts.length === 0) {
+      pts.push({ x, y });
+      t.lengthPx = 0;
+      return;
+    }
+
+    const last = pts[pts.length - 1];
+    const dx = x - last.x;
+    const dy = y - last.y;
+    const dist = Math.hypot(dx, dy);
+    // слишком мелкие шаги не добавляем
+    if (dist < 0.5 * getDpr()) return;
+
+    pts.push({ x, y });
+    t.lengthPx += dist;
+
+    while (t.lengthPx > maxLen && pts.length > 1) {
+      const a = pts[0];
+      const b = pts[1];
+      const seg = Math.hypot(b.x - a.x, b.y - a.y);
+      pts.shift();
+      t.lengthPx -= seg;
+    }
+
+    // Перерисовываем слой: следов мало и они ограничены длиной, так что это недорого.
+    redrawPaint();
+  }
+
+  function strokeForColor(color: ColorKey): string {
+    if (color === "r") return "rgba(255,0,0,1)";
+    if (color === "g") return "rgba(0,255,0,1)";
+    return "rgba(0,0,255,1)";
+  }
+
+  function redrawPaint(): void {
+    const w = paintCanvas.width;
+    const h = paintCanvas.height;
+    paintCtx2.setTransform(1, 0, 0, 1, 0, 0);
+    paintCtx2.clearRect(0, 0, w, h);
+
+    paintCtx2.globalCompositeOperation = "lighter";
+    paintCtx2.lineCap = "round";
+    paintCtx2.lineJoin = "round";
+    paintCtx2.imageSmoothingEnabled = true;
+
+    const lw = Math.max(1, CONFIG.puzzle.paint.brushSizeCssPx * getDpr());
+    paintCtx2.lineWidth = lw;
+
+    const order: ColorKey[] = ["r", "g", "b"];
+    for (const c of order) {
+      const pts = trails[c].points;
+      if (pts.length < 2) continue;
+      paintCtx2.strokeStyle = strokeForColor(c);
+      paintCtx2.beginPath();
+      paintCtx2.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) paintCtx2.lineTo(pts[i].x, pts[i].y);
+      paintCtx2.stroke();
+    }
+
+    paintCtx2.globalCompositeOperation = "source-over";
   }
 
   function trySnapGroupOnce(groupId: number): { mergedInto: number } | null {
@@ -295,6 +410,7 @@ export function mountPuzzleProject(host: HTMLElement): void {
   function onPointerDown(e: PointerEvent): void {
     if (!geom) return;
     if (drag) return;
+    if (draw) return;
     const { x, y } = canvasPointFromEvent(e);
 
     for (let i = pieces.length - 1; i >= 0; i--) {
@@ -312,6 +428,11 @@ export function mountPuzzleProject(host: HTMLElement): void {
         return;
       }
     }
+
+    // Если попали не по пазлу — начинаем рисовать.
+    draw = { pointerId: e.pointerId, color: activeColor };
+    canvasEl.setPointerCapture(e.pointerId);
+    addTrailPoint(activeColor, x, y);
   }
 
   function onPointerMove(e: PointerEvent): void {
@@ -325,30 +446,67 @@ export function mountPuzzleProject(host: HTMLElement): void {
     moveGroup(drag.groupId, dx, dy);
   }
 
+  function onPointerMoveDraw(e: PointerEvent): void {
+    if (!draw) return;
+    if (e.pointerId !== draw.pointerId) return;
+    const { x, y } = canvasPointFromEvent(e);
+    addTrailPoint(draw.color, x, y);
+  }
+
   function onPointerUpOrCancel(e: PointerEvent): void {
-    if (!drag) return;
-    if (e.pointerId !== drag.pointerId) return;
-    const releasedGroupId = drag.groupId;
-    drag = null;
+    const wasDrag = drag && e.pointerId === drag.pointerId ? drag : null;
+    const wasDraw = draw && e.pointerId === draw.pointerId ? draw : null;
+
+    if (wasDrag) drag = null;
+    if (wasDraw) draw = null;
+
+    if (!wasDrag && !wasDraw) return;
     try {
       canvasEl.releasePointerCapture(e.pointerId);
     } catch {
       // ignore
     }
 
-    // После отпускания пробуем пристыковать группу: можно "цеплять" несколько раз подряд.
-    let currentGroupId = releasedGroupId;
-    for (let i = 0; i < 12; i++) {
-      const res = trySnapGroupOnce(currentGroupId);
-      if (!res) break;
-      currentGroupId = res.mergedInto;
+    if (wasDrag) {
+      // После отпускания пробуем пристыковать группу: можно "цеплять" несколько раз подряд.
+      let currentGroupId = wasDrag.groupId;
+      for (let i = 0; i < 12; i++) {
+        const res = trySnapGroupOnce(currentGroupId);
+        if (!res) break;
+        currentGroupId = res.mergedInto;
+      }
     }
   }
 
   canvasEl.addEventListener("pointerdown", onPointerDown);
   canvasEl.addEventListener("pointermove", onPointerMove);
+  canvasEl.addEventListener("pointermove", onPointerMoveDraw);
   canvasEl.addEventListener("pointerup", onPointerUpOrCancel);
   canvasEl.addEventListener("pointercancel", onPointerUpOrCancel);
+
+  function setActiveColor(c: ColorKey): void {
+    activeColor = c;
+    const buttons = Array.from(colorsRoot.querySelectorAll("button.puzzle__color"));
+    for (const b of buttons) {
+      const bc = b.getAttribute("data-color") as ColorKey | null;
+      if (bc === activeColor) b.classList.add("puzzle__color--active");
+      else b.classList.remove("puzzle__color--active");
+    }
+  }
+
+  colorsRoot.addEventListener("pointerdown", (e) => {
+    // чтобы нажатия по UI не запускали рисование на канвасе
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  colorsRoot.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement | null;
+    const btn = target?.closest("button.puzzle__color") as HTMLButtonElement | null;
+    if (!btn) return;
+    const c = btn.getAttribute("data-color") as ColorKey | null;
+    if (!c) return;
+    setActiveColor(c);
+  });
 
   let rebuildToken = 0;
   async function rebuild(): Promise<void> {
@@ -373,6 +531,12 @@ export function mountPuzzleProject(host: HTMLElement): void {
     pieces = imgs.map((img) => ({ img, id: img.piece.id, groupId: img.piece.id, x: 0, y: 0 }));
     scramblePieces(w, h, g);
     initGroups();
+    // При ребилде (resize) очищаем рисовалку, чтобы не было несовпадения масштаба.
+    for (const k of ["r", "g", "b"] as const) {
+      trails[k].points = [];
+      trails[k].lengthPx = 0;
+    }
+    redrawPaint();
     statusEl.textContent = "Готово";
   }
 
