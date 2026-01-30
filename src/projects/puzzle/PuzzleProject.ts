@@ -4,6 +4,11 @@ import type { PieceGeometry } from "./path";
 import { XorShift32 } from "./rng";
 import type { PieceImage } from "./pieceImage";
 import { CONFIG } from "../../config";
+import * as THREE from "three";
+
+import puzzleVert from "../../shaders/puzzleTextured.vert.glsl?raw";
+import puzzlePaintFrag from "../../shaders/puzzlePaint.frag.glsl?raw";
+import puzzlePieceMaskFrag from "../../shaders/puzzlePieceMask.frag.glsl?raw";
 
 type ColorKey = "r" | "g" | "b";
 
@@ -11,6 +16,14 @@ type RuntimePiece = {
   img: PieceImage;
   id: number;
   groupId: number;
+  /**
+   * Какой 3-bit цвет (0..7) должен показывать этот пазл.
+   * 0 = (0,0,0) — виден там, где следа нет.
+   * 1 = (1,0,0), 2 = (0,1,0), 4 = (0,0,1),
+   * 3 = (1,1,0), 5 = (1,0,1), 6 = (0,1,1), 7 = (1,1,1)
+   */
+  maskBits: number;
+  mesh?: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   /**
    * Позиция в мире в пикселях канваса: это top-left клетки (без pad).
    */
@@ -81,10 +94,6 @@ export function mountPuzzleProject(host: HTMLElement): void {
   const colorsRoot: HTMLDivElement = colorsEl;
   colorsRoot.style.setProperty("--puzzle-color-btn-size", `${CONFIG.puzzle.ui.colorButtonCssPx}px`);
 
-  const ctx = canvasEl.getContext("2d");
-  if (!ctx) throw new Error("2D context not available");
-  const ctx2: CanvasRenderingContext2D = ctx;
-
   // Отдельный контекст для hit-test’ов по Path2D (transform = identity).
   const hitCanvas = document.createElement("canvas");
   hitCanvas.width = 2;
@@ -100,6 +109,56 @@ export function mountPuzzleProject(host: HTMLElement): void {
   const paintCtx = paintCanvas.getContext("2d");
   if (!paintCtx) throw new Error("2D paint context not available");
   const paintCtx2: CanvasRenderingContext2D = paintCtx;
+
+  // Downsample для быстрых CPU hit-test’ов/ограничения перемещения по маске.
+  const maskSampleCanvas = document.createElement("canvas");
+  maskSampleCanvas.width = 256;
+  maskSampleCanvas.height = 256;
+  const maskSampleCtx = maskSampleCanvas.getContext("2d", { willReadFrequently: true });
+  if (!maskSampleCtx) throw new Error("2D mask sample context not available");
+  const maskSampleCtx2: CanvasRenderingContext2D = maskSampleCtx;
+  let maskSampleData: ImageData | null = null;
+
+  // WebGL (Three.js) рендер
+  const renderer = new THREE.WebGLRenderer({
+    canvas: canvasEl,
+    alpha: false,
+    antialias: false,
+    depth: false,
+    stencil: false,
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: false
+  });
+  renderer.autoClear = true;
+  renderer.setPixelRatio(1); // canvas уже в px, мы сами ресайзим.
+
+  const scene = new THREE.Scene();
+  let camera = new THREE.OrthographicCamera(0, 1, 0, 1, -1, 1);
+
+  const maskTex = new THREE.CanvasTexture(paintCanvas);
+  maskTex.generateMipmaps = false;
+  maskTex.minFilter = THREE.LinearFilter;
+  maskTex.magFilter = THREE.LinearFilter;
+  maskTex.wrapS = THREE.ClampToEdgeWrapping;
+  maskTex.wrapT = THREE.ClampToEdgeWrapping;
+
+  const paintMat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    side: THREE.DoubleSide,
+    uniforms: {
+      tMask: { value: maskTex },
+      uResolution: { value: new THREE.Vector2(2, 2) }
+    },
+    vertexShader: puzzleVert,
+    fragmentShader: puzzlePaintFrag
+  });
+  const paintQuadGeom = new THREE.PlaneGeometry(1, 1);
+  const paintQuad = new THREE.Mesh(paintQuadGeom, paintMat);
+  paintQuad.renderOrder = 0;
+  scene.add(paintQuad);
 
   const rng = new XorShift32(0x0ddba11);
 
@@ -186,6 +245,19 @@ export function mountPuzzleProject(host: HTMLElement): void {
     if (canvasEl.height !== h) canvasEl.height = h;
     if (paintCanvas.width !== w) paintCanvas.width = w;
     if (paintCanvas.height !== h) paintCanvas.height = h;
+    renderer.setSize(w, h, false);
+    camera = new THREE.OrthographicCamera(0, w, 0, h, -10, 10);
+    // y вниз: top=0, bottom=h
+    camera.top = 0;
+    camera.bottom = h;
+    camera.left = 0;
+    camera.right = w;
+    camera.updateProjectionMatrix();
+
+    paintQuad.scale.set(w, h, 1);
+    paintQuad.position.set(w * 0.5, h * 0.5, 0);
+
+    // Обновим sample-буфер (его разрешение фиксированное, но данные будут перерисованы в redrawPaint()).
     return { w, h, dpr };
   }
 
@@ -224,23 +296,27 @@ export function mountPuzzleProject(host: HTMLElement): void {
     const dpr = getDpr();
     const w = canvasEl.width;
     const h = canvasEl.height;
-    ctx2.setTransform(1, 0, 0, 1, 0, 0);
 
-    // фон
-    ctx2.clearRect(0, 0, w, h);
-    ctx2.fillStyle = "rgba(0,0,0,0.15)";
-    ctx2.fillRect(0, 0, w, h);
+    (paintMat.uniforms.uResolution.value as THREE.Vector2).set(w, h);
 
-    // Рисовалка (ниже пазлов)
-    ctx2.drawImage(paintCanvas, 0, 0);
-
-    // кусочки (в порядке массива — последний сверху)
-    for (const rp of pieces) {
+    // порядок отрисовки пазлов = порядок в массиве
+    for (let i = 0; i < pieces.length; i++) {
+      const rp = pieces[i];
+      if (!rp.mesh) continue;
+      rp.mesh.renderOrder = 10 + i;
       const pad = rp.img.geom.padPx;
       const dx = rp.x - pad;
       const dy = rp.y - pad;
-      ctx2.drawImage(rp.img.bitmap, dx, dy);
+      const bw = rp.img.bitmap.width;
+      const bh = rp.img.bitmap.height;
+      rp.mesh.scale.set(bw, bh, 1);
+      rp.mesh.position.set(dx + bw * 0.5, dy + bh * 0.5, 0);
+      // uResolution может меняться на resize.
+      (rp.mesh.material.uniforms.uResolution.value as THREE.Vector2).set(w, h);
     }
+
+    renderer.setClearColor(0x070a10, 1);
+    renderer.render(scene, camera);
 
     // небольшой статус
     if (geom) {
@@ -257,7 +333,27 @@ export function mountPuzzleProject(host: HTMLElement): void {
     };
   }
 
+  function maskBitsAt(x: number, y: number): number {
+    if (!maskSampleData) return 0;
+    const w = canvasEl.width;
+    const h = canvasEl.height;
+    const sw = maskSampleCanvas.width;
+    const sh = maskSampleCanvas.height;
+    const sx = Math.max(0, Math.min(sw - 1, Math.floor((x / Math.max(1, w)) * sw)));
+    const sy = Math.max(0, Math.min(sh - 1, Math.floor((y / Math.max(1, h)) * sh)));
+    const idx = (sy * sw + sx) * 4;
+    const d = maskSampleData.data;
+    // порог в 0..255 (чуть выше нуля, чтобы антиалиас по краю не дрожал)
+    const thr = 12;
+    let bits = 0;
+    if (d[idx + 0] > thr) bits |= 1;
+    if (d[idx + 1] > thr) bits |= 2;
+    if (d[idx + 2] > thr) bits |= 4;
+    return bits;
+  }
+
   function hitTestPiece(rp: RuntimePiece, x: number, y: number): boolean {
+    if (maskBitsAt(x, y) !== rp.maskBits) return false;
     const pad = rp.img.geom.padPx;
     const localX = x - (rp.x - pad);
     const localY = y - (rp.y - pad);
@@ -342,6 +438,15 @@ export function mountPuzzleProject(host: HTMLElement): void {
     }
 
     paintCtx2.globalCompositeOperation = "source-over";
+
+    // обновляем WebGL texture
+    maskTex.needsUpdate = true;
+
+    // обновляем downsample буфер
+    maskSampleCtx2.setTransform(1, 0, 0, 1, 0, 0);
+    maskSampleCtx2.clearRect(0, 0, maskSampleCanvas.width, maskSampleCanvas.height);
+    maskSampleCtx2.drawImage(paintCanvas, 0, 0, maskSampleCanvas.width, maskSampleCanvas.height);
+    maskSampleData = maskSampleCtx2.getImageData(0, 0, maskSampleCanvas.width, maskSampleCanvas.height);
   }
 
   function trySnapGroupOnce(groupId: number): { mergedInto: number } | null {
@@ -439,6 +544,8 @@ export function mountPuzzleProject(host: HTMLElement): void {
     if (!drag) return;
     if (e.pointerId !== drag.pointerId) return;
     const { x, y } = canvasPointFromEvent(e);
+    // двигать можно только внутри "видимых" мест для цвета того пазла, который схватили
+    if (maskBitsAt(x, y) !== drag.piece.maskBits) return;
     const newX = x - drag.offsetX;
     const newY = y - drag.offsetY;
     const dx = newX - drag.piece.x;
@@ -528,7 +635,16 @@ export function mountPuzzleProject(host: HTMLElement): void {
     const imgs = await Promise.all(model.pieces.map((piece) => createPieceImage({ model, piece, geom: g, source: sourceImg! })));
     if (token !== rebuildToken) return;
 
-    pieces = imgs.map((img) => ({ img, id: img.piece.id, groupId: img.piece.id, x: 0, y: 0 }));
+    // 8 комбинаций фиксированы: 0..7.
+    // Пока раскладываем детерминированно по id, чтобы гарантировать присутствие всех комбинаций.
+    pieces = imgs.map((img) => ({
+      img,
+      id: img.piece.id,
+      groupId: img.piece.id,
+      maskBits: img.piece.id % 8,
+      x: 0,
+      y: 0
+    }));
     scramblePieces(w, h, g);
     initGroups();
     // При ребилде (resize) очищаем рисовалку, чтобы не было несовпадения масштаба.
@@ -538,6 +654,46 @@ export function mountPuzzleProject(host: HTMLElement): void {
     }
     redrawPaint();
     statusEl.textContent = "Готово";
+
+    // (пере)создаём меши для пазлов
+    for (const p of pieces) {
+      if (p.mesh) {
+        scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        p.mesh.material.dispose();
+        p.mesh = undefined;
+      }
+      const tex = new THREE.Texture(p.img.bitmap);
+      tex.needsUpdate = true;
+      tex.generateMipmaps = false;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.wrapS = THREE.ClampToEdgeWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+
+      const mat = new THREE.RawShaderMaterial({
+        glslVersion: THREE.GLSL3,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        side: THREE.DoubleSide,
+        uniforms: {
+          tPiece: { value: tex },
+          tMask: { value: maskTex },
+          uResolution: { value: new THREE.Vector2(w, h) },
+          uPieceBits: { value: p.maskBits | 0 },
+          uThreshold: { value: 0.06 }
+        },
+        vertexShader: puzzleVert,
+        fragmentShader: puzzlePieceMaskFrag
+      });
+
+      const geom2 = new THREE.PlaneGeometry(1, 1);
+      const mesh = new THREE.Mesh(geom2, mat);
+      mesh.renderOrder = 10;
+      p.mesh = mesh;
+      scene.add(mesh);
+    }
   }
 
   // старт
