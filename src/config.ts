@@ -15,9 +15,9 @@ export const CONFIG = {
   puzzle: {
     paint: {
       // Ширина кисти в CSS-пикселях (на экране). Внутри умножается на DPR.
-      brushSizeCssPx: 72,
+      brushSizeCssPx: 81,
       // Максимальная длина следа (каждый канал отдельно) в CSS-пикселях.
-      maxTrailLengthCssPx: 600
+      maxTrailLengthCssPx: 700
     },
     ui: {
       // Размер кружочков выбора цвета в CSS-пикселях.
