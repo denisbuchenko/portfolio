@@ -12,6 +12,15 @@
 
 ---
 
+### 3D ассеты (Puzzle backgrounds)
+
+В пазле используется набор 3D моделей еды (glTF) как фоновые “летающие фрукты”.
+
+**Credit (CC‑BY‑4.0)**:
+This work is based on "3D Props - Adorable Foods" (`https://sketchfab.com/3d-models/3d-props-adorable-foods-4377b5bf46234ad4a0b9f69f57d05eea`) by layerlab (`https://sketchfab.com/layerlab`) licensed under CC‑BY‑4.0 (`http://creativecommons.org/licenses/by/4.0/`)
+
+---
+
 ### Карта шейдеров → модулей
 
 - **`src/shaders/gasPoints.vert.glsl` / `src/shaders/gasPoints.frag.glsl`**

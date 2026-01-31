@@ -3,6 +3,7 @@ import { createOverlay } from "./ui/overlay";
 import { tryCreateWebGL2Context } from "./webgl/context";
 import { ParticleApp } from "./projects/particles";
 import { mountPuzzleProject } from "./projects/puzzle/PuzzleProject";
+import { mountFruitsProject } from "./projects/fruits/FruitsProject";
 
 const overlay = createOverlay();
 
@@ -16,6 +17,7 @@ function showPicker(): void {
       <div class="launcher__grid">
         <button id="btn-project-particles" class="btn" type="button">Частицы</button>
         <button id="btn-project-puzzle" class="btn" type="button">Пазл</button>
+        <button id="btn-project-fruits" class="btn" type="button">Фрукты</button>
       </div>
       <p class="launcher__hint">Выбери проект, который нужно открыть.</p>
     </div>
@@ -23,10 +25,12 @@ function showPicker(): void {
 
   const btnParticles = document.getElementById("btn-project-particles") as HTMLButtonElement | null;
   const btnPuzzle = document.getElementById("btn-project-puzzle") as HTMLButtonElement | null;
-  if (!btnParticles || !btnPuzzle) return;
+  const btnFruits = document.getElementById("btn-project-fruits") as HTMLButtonElement | null;
+  if (!btnParticles || !btnPuzzle || !btnFruits) return;
 
   btnParticles.addEventListener("click", () => startParticles());
   btnPuzzle.addEventListener("click", () => startPuzzle());
+  btnFruits.addEventListener("click", () => void startFruits());
 }
 
 function hidePicker(): void {
@@ -72,6 +76,21 @@ function startPuzzle(): void {
   if (!el) return;
   el.style.display = "grid";
   mountPuzzleProject(el);
+}
+
+async function startFruits(): Promise<void> {
+  hidePicker();
+  overlay.hide();
+  const el = document.getElementById("project-picker");
+  if (!el) return;
+  el.style.display = "grid";
+  try {
+    await mountFruitsProject(el);
+  } catch (e) {
+    overlay.show("Ошибка запуска", e instanceof Error ? e.message : String(e));
+    // eslint-disable-next-line no-console
+    console.error(e);
+  }
 }
 
 showPicker();

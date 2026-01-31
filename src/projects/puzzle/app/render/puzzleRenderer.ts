@@ -6,7 +6,6 @@ export type PuzzleRenderer = {
   scene: THREE.Scene;
   camera: THREE.OrthographicCamera;
   maskTex: THREE.CanvasTexture;
-  paintMat: THREE.RawShaderMaterial;
   resize(w: number, h: number): void;
   markMaskDirty(): void;
   render(pieces: RuntimePiece[]): void;
@@ -17,13 +16,16 @@ export type PuzzleRenderer = {
 export function createPuzzleRenderer(opts: {
   canvas: HTMLCanvasElement;
   paintCanvas: HTMLCanvasElement;
+  background: {
+    maskThreshold: number;
+    layers: Record<1 | 2 | 3 | 4 | 5 | 6 | 7, { bg: string }>;
+  };
   shaders: {
     vert: string;
-    paintFrag: string;
+    bgFrag: string;
     pieceFrag: string;
   };
 }): PuzzleRenderer {
-  const t0 = performance.now();
   const renderer = new THREE.WebGLRenderer({
     canvas: opts.canvas,
     alpha: false,
@@ -46,24 +48,31 @@ export function createPuzzleRenderer(opts: {
   maskTex.wrapS = THREE.ClampToEdgeWrapping;
   maskTex.wrapT = THREE.ClampToEdgeWrapping;
 
-  const paintMat = new THREE.RawShaderMaterial({
-    glslVersion: THREE.GLSL3,
-    depthTest: false,
-    depthWrite: false,
-    transparent: true,
-    side: THREE.DoubleSide,
-    uniforms: {
-      tMask: { value: maskTex },
-      uResolution: { value: new THREE.Vector2(2, 2) },
-      uTime: { value: 0.0 },
-      uThreshold: { value: 0.06 }
-    },
-    vertexShader: opts.shaders.vert,
-    fragmentShader: opts.shaders.paintFrag
-  });
-  const paintQuad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), paintMat);
-  paintQuad.renderOrder = 0;
-  scene.add(paintQuad);
+  const resolution = new THREE.Vector2(2, 2);
+  const bgQuads: Array<THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial>> = [];
+  for (let bits = 1; bits <= 7; bits++) {
+    const mat = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      side: THREE.DoubleSide,
+      uniforms: {
+        tMask: { value: maskTex },
+        uResolution: { value: resolution.clone() },
+        uThreshold: { value: opts.background.maskThreshold },
+        uBits: { value: bits },
+        uBgColor: { value: new THREE.Color(opts.background.layers[bits as 1 | 2 | 3 | 4 | 5 | 6 | 7].bg) }
+      },
+      vertexShader: opts.shaders.vert,
+      fragmentShader: opts.shaders.bgFrag
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    mesh.renderOrder = -20 + bits;
+    mesh.position.z = -9;
+    scene.add(mesh);
+    bgQuads.push(mesh);
+  }
 
   function resize(w: number, h: number): void {
     renderer.setSize(w, h, false);
@@ -75,9 +84,12 @@ export function createPuzzleRenderer(opts: {
     camera.right = w;
     camera.updateProjectionMatrix();
 
-    paintQuad.scale.set(w, h, 1);
-    paintQuad.position.set(w * 0.5, h * 0.5, 0);
-    (paintMat.uniforms.uResolution.value as THREE.Vector2).set(w, h);
+    resolution.set(w, h);
+    for (const q of bgQuads) {
+      q.scale.set(w, h, 1);
+      q.position.set(w * 0.5, h * 0.5, -9);
+      (q.material.uniforms.uResolution.value as THREE.Vector2).set(w, h);
+    }
   }
 
   function markMaskDirty(): void {
@@ -119,7 +131,7 @@ export function createPuzzleRenderer(opts: {
           tMask: { value: maskTex },
           uResolution: { value: new THREE.Vector2(2, 2) },
           uPieceBits: { value: p.maskBits | 0 },
-          uThreshold: { value: 0.06 }
+          uThreshold: { value: opts.background.maskThreshold }
         },
         vertexShader: opts.shaders.vert,
         fragmentShader: opts.shaders.pieceFrag
@@ -136,8 +148,14 @@ export function createPuzzleRenderer(opts: {
     const w = renderer.domElement.width;
     const h = renderer.domElement.height;
 
-    (paintMat.uniforms.uResolution.value as THREE.Vector2).set(w, h);
-    (paintMat.uniforms.uTime.value as number) = (performance.now() - t0) * 0.001;
+    resolution.set(w, h);
+    // update background quads
+    for (let i = 0; i < bgQuads.length; i++) {
+      const bits = (i + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
+      const q = bgQuads[i];
+      (q.material.uniforms.uThreshold.value as number) = opts.background.maskThreshold;
+      (q.material.uniforms.uBgColor.value as THREE.Color).set(opts.background.layers[bits].bg);
+    }
 
     for (let i = 0; i < pieces.length; i++) {
       const rp = pieces[i];
@@ -151,6 +169,7 @@ export function createPuzzleRenderer(opts: {
       rp.mesh.scale.set(bw, bh, 1);
       rp.mesh.position.set(dx + bw * 0.5, dy + bh * 0.5, 0);
       (rp.mesh.material.uniforms.uResolution.value as THREE.Vector2).set(w, h);
+      (rp.mesh.material.uniforms.uThreshold.value as number) = opts.background.maskThreshold;
     }
 
     renderer.setClearColor(0x070a10, 1);
@@ -162,7 +181,6 @@ export function createPuzzleRenderer(opts: {
     scene,
     camera,
     maskTex,
-    paintMat,
     resize,
     markMaskDirty,
     render,

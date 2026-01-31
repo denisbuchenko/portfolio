@@ -17,11 +17,47 @@ export const CONFIG = {
       // Ширина кисти в CSS-пикселях (на экране). Внутри умножается на DPR.
       brushSizeCssPx: 81,
       // Максимальная длина следа (каждый канал отдельно) в CSS-пикселях.
-      maxTrailLengthCssPx: 700
+      maxTrailLengthCssPx: 1000
     },
     ui: {
       // Размер кружочков выбора цвета в CSS-пикселях.
       colorButtonCssPx: 36
+    },
+    background3d: {
+      enabled: true,
+      gltfUrl: "/3dmodels/3d_props_-_adorable_foods/scene.gltf",
+      // Порог, после которого канал считается "включенным" (0..1) для получения bits.
+      maskThreshold: 0.06,
+
+      // Свет (простая "мультяшная" Lambert-сцена)
+      lighting: {
+        ambientIntensity: 0.75,
+        dirIntensity: 1.25,
+        dirDirection: { x: -0.35, y: -0.65, z: 1.0 }
+      },
+
+      // Сколько фруктов (типов) показывать в каждом bits-слое (без повторов).
+      // По умолчанию: 4+4+4+4+4+3+3 = 26 типов на 7 фонов.
+      counts: { bits1to5: 4, bits6to7: 3 },
+
+      // Общие параметры движения
+      motion: {
+        wrapMarginCssPx: 80,
+        swayAmpCssPx: 18,
+        swaySpeed: 0.8,
+        spinSpeed: 0.6
+      },
+
+      // Параметры по каждому bits=1..7 (фон, направление, скорость, размеры)
+      layers: {
+        1: { bg: "#00506f", dir: { x: 1.0, y: 0.25 }, speedCssPxPerSec: 80, sizeCssPx: { min: 90, max: 140 } },
+        2: { bg: "#00a38c", dir: { x: 0.65, y: 0.95 }, speedCssPxPerSec: 95, sizeCssPx: { min: 80, max: 130 } },
+        3: { bg: "#ffe400", dir: { x: -0.9, y: 0.35 }, speedCssPxPerSec: 75, sizeCssPx: { min: 85, max: 125 } },
+        4: { bg: "#ff6a52", dir: { x: -0.55, y: -0.95 }, speedCssPxPerSec: 110, sizeCssPx: { min: 95, max: 150 } },
+        5: { bg: "#ff9f2a", dir: { x: 0.15, y: -1.0 }, speedCssPxPerSec: 120, sizeCssPx: { min: 90, max: 150 } },
+        6: { bg: "#5a4cff", dir: { x: 1.0, y: -0.35 }, speedCssPxPerSec: 90, sizeCssPx: { min: 85, max: 135 } },
+        7: { bg: "#00d5ff", dir: { x: -0.35, y: 1.0 }, speedCssPxPerSec: 105, sizeCssPx: { min: 90, max: 140 } }
+      }
     }
   },
 

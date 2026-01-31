@@ -3,7 +3,7 @@ import { XorShift32 } from "./rng";
 import { CONFIG } from "../../config";
 
 import puzzleVert from "../../shaders/puzzleTextured.vert.glsl?raw";
-import puzzlePaintFrag from "../../shaders/puzzlePaint.frag.glsl?raw";
+import puzzleBgFrag from "../../shaders/puzzleBgMasked.frag.glsl?raw";
 import puzzlePieceMaskFrag from "../../shaders/puzzlePieceMask.frag.glsl?raw";
 
 import type { DragState, DrawState, RuntimePiece } from "./app/runtimeTypes";
@@ -47,7 +47,11 @@ export function mountPuzzleProject(host: HTMLElement): void {
   const renderer = createPuzzleRenderer({
     canvas: canvasEl,
     paintCanvas: paint.paintCanvas,
-    shaders: { vert: puzzleVert, paintFrag: puzzlePaintFrag, pieceFrag: puzzlePieceMaskFrag }
+    background: {
+      maskThreshold: CONFIG.puzzle.background3d.maskThreshold,
+      layers: CONFIG.puzzle.background3d.layers
+    },
+    shaders: { vert: puzzleVert, bgFrag: puzzleBgFrag, pieceFrag: puzzlePieceMaskFrag }
   });
   markMaskDirty = () => renderer.markMaskDirty();
 
