@@ -1,23 +1,44 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
+/**
+ * Запись о загруженном фрукте/еде из glTF каталога.
+ * Содержит готовый к использованию объект и нормализованный масштаб.
+ */
 export type FoodEntry = {
+  /** Имя объекта (например "apple", "banana") */
   name: string;
+  /** Клонированный Group с настроенными материалами */
   object: THREE.Group;
-  normalizedScale: number; // 1 / maxDim
+  /** Нормализованный масштаб: 1 / maxDim (чтобы объект был единичного размера) */
+  normalizedScale: number;
 };
 
+/**
+ * Загружает и парсит glTF файл с 3D моделями фруктов/еды.
+ *
+ * Что делает:
+ * 1. Загружает glTF через GLTFLoader
+ * 2. Находит все базовые ноды (без underscore в имени)
+ * 3. Фильтрует мусорные ноды (RootNode, FBX-обёртки и т.п.)
+ * 4. Настраивает материалы (Basic/unlit для чистого цвета из текстуры)
+ * 5. Центрирует и нормализует размер каждого объекта
+ *
+ * @param gltfUrl - URL к .gltf файлу
+ * @returns Массив записей о каждом валидном объекте
+ */
 export async function loadFoodCatalog(gltfUrl: string): Promise<{ entries: FoodEntry[] }> {
   const loader = new GLTFLoader();
   const gltf = await loader.loadAsync(gltfUrl);
   const root = gltf.scene;
 
-  // Base nodes: "apple", "banana", ... (без underscore)
+  // Собираем все базовые ноды: "apple", "banana", ... (без underscore)
+  // Это корневые узлы для каждого типа фрукта
   const bases = new Set<string>();
   root.traverse((o) => {
     const n = o.name || "";
     if (!n) return;
-    if (n.includes("_")) return;
+    if (n.includes("_")) return; // пропускаем дочерние ноды вида "apple_apple_0"
     bases.add(n);
   });
 
@@ -41,10 +62,12 @@ export async function loadFoodCatalog(gltfUrl: string): Promise<{ entries: FoodE
     });
     if (!hasProperMesh) continue;
 
+    // Клонируем ноду для безопасного использования
     const group = node.clone(true) as THREE.Group;
     group.name = base;
 
-    // Дёшево и "как в текстуре": Basic (unlit) + без теней + SRGB для baseColor
+    // Настраиваем материалы: Basic (unlit) для чистого цвета из текстуры
+    // Это даёт "мультяшный" вид без зависимости от освещения
     group.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -64,7 +87,8 @@ export async function loadFoodCatalog(gltfUrl: string): Promise<{ entries: FoodE
       mesh.material = mat;
     });
 
-    // центрируем + нормализуем размер
+    // Центрируем объект и нормализуем размер (чтобы maxDim = 1)
+    // Это позволяет легко масштабировать объекты до нужного размера в пикселях
     const box = new THREE.Box3().setFromObject(group);
     const size = new THREE.Vector3();
     const center = new THREE.Vector3();
@@ -79,4 +103,3 @@ export async function loadFoodCatalog(gltfUrl: string): Promise<{ entries: FoodE
 
   return { entries };
 }
-

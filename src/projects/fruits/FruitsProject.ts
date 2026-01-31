@@ -1,90 +1,80 @@
-import * as THREE from "three";
 import { CONFIG } from "../../config";
 import { getDpr } from "../puzzle/app/utils";
-import { createFruitBackgroundRenderer } from "../shared/fruitBackground/fruitBackgroundRenderer";
+import { createFruitsUI } from "./ui";
+import { createFruitsRenderer, resizeRenderer } from "./renderer";
+import { createSceneComposer } from "./sceneComposer";
 
-function mountUI(host: HTMLElement): { canvas: HTMLCanvasElement; statusEl: HTMLDivElement } {
-  host.classList.add("launcher--puzzle");
-  host.innerHTML = `
-    <div class="puzzle">
-      <canvas class="puzzle__canvas"></canvas>
-      <div class="puzzle__panel">
-        <div class="puzzle__title">Фрукты (debug)</div>
-        <div class="puzzle__hint">Показывает все объекты из glTF рандомно на экране.</div>
-      </div>
-      <div class="puzzle__status" id="puzzle-status">Загрузка...</div>
-    </div>
-  `;
-  const canvas = host.querySelector("canvas.puzzle__canvas") as HTMLCanvasElement | null;
-  const statusEl = host.querySelector("#puzzle-status") as HTMLDivElement | null;
-  if (!canvas) throw new Error("Fruits canvas not found");
-  if (!statusEl) throw new Error("Fruits status not found");
-  return { canvas, statusEl };
-}
-
+/**
+ * Главная функция монтирования проекта фруктов.
+ *
+ * Что делает:
+ * 1. Создаёт UI (canvas + статус)
+ * 2. Настраивает WebGL рендер
+ * 3. Загружает и компонует 3D модели фруктов
+ * 4. Запускает рендер-луп с автопереключением пресетов
+ *
+ * @param host - Родительский элемент для монтирования
+ */
 export async function mountFruitsProject(host: HTMLElement): Promise<void> {
-  const { canvas, statusEl } = mountUI(host);
+  // UI
+  const ui = createFruitsUI(host);
 
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    alpha: false,
-    antialias: true,
-    depth: true,
-    stencil: false,
-    premultipliedAlpha: false,
-    preserveDrawingBuffer: false
-  });
-  renderer.setPixelRatio(1);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.autoClear = true;
+  // Рендер
+  const renderer = createFruitsRenderer(ui.canvas);
 
+  // Компоновщик сцены (загрузка и управление фруктами)
+  const scene = createSceneComposer(CONFIG.puzzle.background3d);
+
+  // Функция resize (обновляет canvas и сцену)
   function resize(): { w: number; h: number; dpr: number } {
-    const rect = canvas.getBoundingClientRect();
-    const dpr = getDpr();
-    const w = Math.max(1, Math.floor(rect.width * dpr));
-    const h = Math.max(1, Math.floor(rect.height * dpr));
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
-    renderer.setSize(w, h, false);
+    const { w, h, dpr } = resizeRenderer(ui.canvas, renderer, getDpr);
+    scene.resize(w, h, dpr);
     return { w, h, dpr };
   }
 
-  statusEl.textContent = "Загружаю пресеты фруктов…";
-  const fruitBg = createFruitBackgroundRenderer({ config: CONFIG.puzzle.background3d });
-  await fruitBg.load();
+  // Загрузка моделей
+  ui.statusEl.textContent = "Загружаю пресеты фруктов…";
+  await scene.load();
 
+  // Состояние для автопереключения пресетов (bits=1..7)
   let activeBits: 1 | 2 | 3 | 4 | 5 | 6 | 7 = 1;
   let lastSwitchSec = 0;
   let lastW = 0;
   let lastH = 0;
 
+  // Рендер-луп
   let lastT = performance.now();
   function frame(tNow: number): void {
     requestAnimationFrame(frame);
+
     const dt = Math.min(0.033, Math.max(0.001, (tNow - lastT) * 0.001));
     lastT = tNow;
     const timeSec = tNow * 0.001;
 
+    // Resize при изменении размеров
     const { w, h, dpr } = resize();
     if (w !== lastW || h !== lastH) {
-      fruitBg.resize(w, h, dpr);
       lastW = w;
       lastH = h;
     }
 
-    // Автопереключение пресетов для превью
+    // Автопереключение пресетов для превью (каждые 2.4 сек)
     if (timeSec - lastSwitchSec > 2.4) {
       activeBits = (((activeBits % 7) + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7);
       lastSwitchSec = timeSec;
     }
 
-    fruitBg.update(timeSec, dpr);
-    fruitBg.renderLayerToScreen(renderer, activeBits);
-    statusEl.textContent = `Пресет bits=${activeBits} • dt=${(dt * 1000).toFixed(1)}ms • DPR=${dpr.toFixed(2)}`;
+    // Обновление анимации и рендер
+    scene.update(timeSec, dpr);
+    scene.renderLayerToScreen(renderer, activeBits);
+
+    // Обновление статуса
+    ui.statusEl.textContent = `Пресет bits=${activeBits} • dt=${(dt * 1000).toFixed(1)}ms • DPR=${dpr.toFixed(2)}`;
   }
 
+  // Запуск рендер-лупа
   requestAnimationFrame(frame);
 
+  // Обработка resize окна
   window.addEventListener("resize", () => resize());
 }
-
