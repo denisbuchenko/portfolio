@@ -188,7 +188,7 @@ export function createPuzzleRenderer(opts: {
 
   fruitBg = opts.background3d.enabled ? createFruitBackgroundRenderer({ config: opts.background3d, ui: undefined }) : null;
   if (fruitBg !== null) {
-    void fruitBg.load().catch((e) => {
+    void fruitBg.load().catch((e: unknown) => {
       // eslint-disable-next-line no-console
       console.error("FruitBackground load failed:", e);
     });

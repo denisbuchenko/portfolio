@@ -1,86 +1,50 @@
-import * as THREE from "three";
-import type { FruitBackgroundPresetsConfig, FruitLayerBits } from "../types";
-import type { FruitsUI } from "../ui";
-import { initializeRenderer } from "./initialization";
-import { loadModelsAndCreateInstances } from "./loading";
-import { resizeRenderer } from "./resize";
-import { updateAnimation } from "./animation";
-import { renderTargets, renderLayerToScreen } from "./rendering";
-import { disposeRenderer } from "./disposal";
-
-// Реэкспорт типов для удобства
-export type { FruitBackgroundPresetsConfig, FruitLayerBits } from "../types";
-export type { FruitInstance, RendererState } from "./state";
-
 /**
- * Главный рендерер фруктов.
- * Управляет загрузкой, анимацией и рендером всех фруктов в 7 слоях (bits=1..7).
+ * Совместимость со старой системой для puzzleRenderer.
+ * Временная заглушка для обратной совместимости.
  */
+
+import * as THREE from "three";
+import type { FruitBackgroundPresetsConfig } from "../types";
+
 export type FruitBackgroundRenderer = {
-  /** Загружены ли модели и готов ли к рендеру */
-  isReady(): boolean;
-  /** Асинхронная загрузка всех 3D моделей и создание инстансов */
   load(): Promise<void>;
-  /** Обновление размеров сцены (вызывать при resize) */
   resize(w: number, h: number, dpr: number): void;
-  /** Обновление анимации (вызывать каждый кадр) */
   update(timeSec: number, dpr: number): void;
-  /** Рендер всех слоёв в offscreen RenderTarget'ы (для пазлов) */
+  renderLayerToScreen(renderer: THREE.WebGLRenderer, bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): void;
   renderTargets(renderer: THREE.WebGLRenderer): void;
-  /** Рендер конкретного слоя на экран (для превью) */
-  renderLayerToScreen(renderer: THREE.WebGLRenderer, bits: FruitLayerBits): void;
-  /** Получить текстуру фона для слоя */
-  getLayerTexture(bits: FruitLayerBits): THREE.Texture;
-  /** Получить fallback текстуру (если слой ещё не загружен) */
-  getFallbackTexture(bits: FruitLayerBits): THREE.Texture;
-  /** Освободить ресурсы */
-  dispose(): void;
+  getLayerTexture(bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): THREE.Texture;
 };
 
 /**
- * Создаёт рендерер фруктов с заданной конфигурацией и опциональным UI.
+ * Заглушка для обратной совместимости.
+ * TODO: Реализовать или удалить puzzleRenderer зависимость от старой системы.
  */
-export function createFruitBackgroundRenderer(
-  opts: { config: FruitBackgroundPresetsConfig; ui?: FruitsUI }
-): FruitBackgroundRenderer {
-  const { config, ui } = opts;
-  
-  // Инициализация состояния
-  const state = initializeRenderer(config, ui);
-  
+export function createFruitBackgroundRenderer(_opts: {
+  config: FruitBackgroundPresetsConfig;
+  ui?: { canvas: HTMLCanvasElement; statusEl: HTMLDivElement } | undefined;
+}): FruitBackgroundRenderer {
+  // Временная заглушка - возвращает объект с методами-заглушками
   return {
-    isReady: () => state.isReady,
-    
-    load: async () => {
-      await loadModelsAndCreateInstances(state, config);
+    async load(): Promise<void> {
+      // Заглушка
     },
-    
-    resize: (w: number, h: number, dpr: number) => {
-      resizeRenderer(state, config, w, h, dpr);
+    resize(_w: number, _h: number, _dpr: number): void {
+      // Заглушка
     },
-    
-    update: (timeSec: number, dpr: number) => {
-      updateAnimation(state, config, timeSec, dpr);
+    update(_timeSec: number, _dpr: number): void {
+      // Заглушка
     },
-    
-    renderTargets: (renderer: THREE.WebGLRenderer) => {
-      renderTargets(state, config, renderer);
+    renderLayerToScreen(_renderer: THREE.WebGLRenderer, _bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): void {
+      // Заглушка
     },
-    
-    renderLayerToScreen: (renderer: THREE.WebGLRenderer, bits: FruitLayerBits) => {
-      renderLayerToScreen(state, config, renderer, bits);
+    renderTargets(_renderer: THREE.WebGLRenderer): void {
+      // Заглушка
     },
-    
-    getLayerTexture: (bits: FruitLayerBits) => {
-      return state.rtByBits.get(bits)?.texture ?? state.fallbackTexByBits[bits];
-    },
-    
-    getFallbackTexture: (bits: FruitLayerBits) => {
-      return state.fallbackTexByBits[bits];
-    },
-    
-    dispose: () => {
-      disposeRenderer(state);
+    getLayerTexture(_bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): THREE.Texture {
+      // Возвращаем пустую текстуру как заглушку
+      const tex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+      tex.needsUpdate = true;
+      return tex;
     }
   };
 }

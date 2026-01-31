@@ -1,102 +1,95 @@
 /**
- * Типы конфигурации для рендера фруктов.
+ * Типы для системы фруктов.
  */
 
-export type FruitLayerBits = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+import * as THREE from "three";
 
 /**
- * Настройки одного слоя (bits=1..7).
- * Каждый слой имеет свой фон, направление движения, скорость, размеры и набор фруктов.
+ * Продукт - загруженный и обработанный объект из GLTF.
  */
+export type Product = {
+  /** Имя продукта */
+  name: string;
+  /** Геометрия продукта */
+  geometry: THREE.BufferGeometry;
+  /** Материалы продукта */
+  materials: THREE.MeshBasicMaterial[];
+  /** Нормализованный масштаб (1 / maxDim) */
+  normalizedScale: number;
+};
+
+/**
+ * Опции для размещения продукта в сцене.
+ */
+export type RenderProductOptions = {
+  /** Позиция */
+  position?: { x: number; y: number; z: number };
+  /** Масштаб */
+  scale?: number;
+  /** Вращение (в радианах) */
+  rotation?: { x: number; y: number; z: number };
+  /** Кватернион (альтернатива rotation) */
+  quaternion?: { x: number; y: number; z: number; w: number };
+};
+
+/**
+ * Параметры анимации для инстанса.
+ */
+export type AnimationParams = {
+  /** Скорость вращения */
+  rotationSpeed: number;
+  /** Амплитуда движения по X */
+  amplitudeX: number;
+  /** Амплитуда движения по Y */
+  amplitudeY: number;
+  /** Скорость движения */
+  movementSpeed: number;
+  /** Фаза анимации (смещение) */
+  phase: number;
+};
+
+// Совместимость со старой системой для puzzleRenderer
+export type FruitLayerBits = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
 export type FruitLayerPreset = {
-  /** Цвет фона в hex формате (например "#00506f") */
   bg: string;
-  /** Направление движения (нормализуется автоматически) */
   dir: { x: number; y: number };
-  /** Скорость движения в CSS-пикселях в секунду */
   speedCssPxPerSec: number;
-  /** Диапазон размеров объектов в CSS-пикселях */
   sizeCssPx: { min: number; max: number };
-  /** Настройки фруктов для этого слоя */
   fruits?: {
-    /** Включить только эти фрукты (если указано, exclude игнорируется) */
     include?: string[];
-    /** Исключить эти фрукты */
     exclude?: string[];
-    /** Кол-во уникальных типов фруктов в слое (по умолчанию берём из counts) */
     countTypes?: number;
-    /** Кол-во инстансов (клонов) в слое. Можно больше, чем countTypes (будут повторы) */
     countInstances?: number;
   };
 };
 
-/**
- * Полная конфигурация рендера фруктов.
- * Используется для создания фона в пазлах и для превью в проекте фруктов.
- */
 export type FruitBackgroundPresetsConfig = {
-  /** Включён ли рендер фруктов */
   enabled: boolean;
-  /** URL к glTF файлу с моделями */
   gltfUrl: string;
-  /** Порог маски (0..1) для получения bits из paint-маски в пазле */
   maskThreshold: number;
-
-  /**
-   * Глобальный множитель количества инстансов.
-   * 1 = как в пресетах, 2 = в 2 раза больше, 0.5 = в 2 раза меньше.
-   */
   instanceMul: number;
-  /**
-   * Глобальный множитель размера.
-   * 1 = как в пресетах, 1.3 = крупнее, 0.8 = мельче.
-   */
   sizeMul: number;
-  /**
-   * Глобальная "беспорядочность" стартовых позиций (0..1).
-   * 0 = ближе к ровной раскладке, 1 = сильный разброс (но без пересечений).
-   */
   positionChaos: number;
-
-  /** Настройки камеры */
   camera: {
-    /** Поле зрения камеры (градусы). Меньше = сильнее «телефото», больше = шире перспектива */
     fovDeg: number;
-    /** Глубина распределения по Z в CSS-пикселях (умножается на DPR) */
     depthCssPx: number;
   };
-
-  /** Масштаб renderTarget'ов относительно основного canvas (0.25..1) */
   rtScale: number;
-  /** Как часто перерендеривать offscreen (например 30). 0 = каждый кадр */
   updateFps: number;
-  /** Seed для детерминированного выбора и размещения фруктов */
   seed: number;
-
-  /** Настройки освещения (для совместимости, но сейчас используется unlit материал) */
   lighting: {
     ambientIntensity: number;
     dirIntensity: number;
     dirDirection: { x: number; y: number; z: number };
   };
-
-  /** Сколько фруктов (типов) показывать в каждом bits-слое (без повторов) */
   counts: { bits1to5: number; bits6to7: number };
-
-  /** Общие параметры движения */
   motion: {
-    /** Отступ для wrap (чтобы объекты не появлялись резко на краю) */
     wrapMarginCssPx: number;
-    /** Амплитуда покачивания (sway) в CSS-пикселях */
     swayAmpCssPx: number;
-    /** Скорость покачивания */
     swaySpeed: number;
-    /** Скорость вращения (legacy, используется для совместимости) */
     spinSpeed: number;
-    /** Скорость 3D-вращения вокруг своей оси (tumble) */
     axisSpinSpeed: number;
   };
-
-  /** Параметры по каждому bits=1..7 */
   layers: Record<FruitLayerBits, FruitLayerPreset>;
 };

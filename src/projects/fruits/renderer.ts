@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { Product, RenderProductOptions } from "./types";
 
 /**
  * Настройки WebGL рендера для фруктов.
@@ -86,4 +87,52 @@ export function resizeRenderer(
   renderer.setSize(w, h, false);
 
   return { w, h, dpr };
+}
+
+/**
+ * Размещает один продукт в сцене.
+ *
+ * @param scene - Сцена для добавления продукта
+ * @param product - Продукт для размещения
+ * @param options - Опции размещения
+ * @returns Созданный mesh
+ */
+export function renderProduct(
+  scene: THREE.Scene,
+  product: Product,
+  options: RenderProductOptions = {}
+): THREE.Mesh {
+  // Используем первый материал (или создаем дефолтный)
+  const material = product.materials.length > 0 
+    ? product.materials[0] 
+    : new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+  const mesh = new THREE.Mesh(product.geometry, material);
+
+  // Применяем опции
+  if (options.position) {
+    mesh.position.set(options.position.x, options.position.y, options.position.z);
+  }
+
+  if (options.scale !== undefined) {
+    mesh.scale.setScalar(options.scale * product.normalizedScale);
+  } else {
+    mesh.scale.setScalar(product.normalizedScale);
+  }
+
+  if (options.rotation) {
+    mesh.rotation.set(options.rotation.x, options.rotation.y, options.rotation.z);
+  }
+
+  if (options.quaternion) {
+    mesh.quaternion.set(
+      options.quaternion.x,
+      options.quaternion.y,
+      options.quaternion.z,
+      options.quaternion.w
+    );
+  }
+
+  scene.add(mesh);
+  return mesh;
 }
