@@ -84,11 +84,12 @@ export function createAnimationAttributes(
 
   // Простая функция для генерации случайных чисел
   function rand(seed: number): number {
-    let x = seed | 0;
-    x ^= x << 13;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    return (x >>> 0) / 0x1_0000_0000;
+      let x = seed ^ (seed >>> 15);
+      x = Math.imul(x, 0x46d31bad);
+      x ^= x >>> 14;
+      x = Math.imul(x, 0x2c1b3c6d);
+      x ^= x >>> 15;
+      return (x >>> 0) / 0x1_0000_0000;
   }
 
   for (let i = 0; i < count; i++) {
@@ -131,6 +132,8 @@ export function createAnimationAttributes(
     const posX = (rand(s + 7) - 0.5) * visibleWidth;
     const posY = (rand(s + 8) - 0.5) * visibleHeight;
     const posZ = (rand(s + 9) - 0.5) * 5.0 - 5.0; // Z от -2.5 до -7.5
+
+    console.log('QQQQQQQQQQQQQ', posX, posY, posZ)
     
     initialPositionArray[i * 3 + 0] = posX;
     initialPositionArray[i * 3 + 1] = posY;
