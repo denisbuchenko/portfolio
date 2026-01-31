@@ -57,24 +57,30 @@ export function updateAnimation(material: THREE.ShaderMaterial, time: number): v
  * Это позволяет каждому инстансу иметь свои уникальные параметры анимации.
  *
  * @param count - Количество инстансов
- * @param seed - Seed для генерации случайных параметров
+ * @param seed - Базовый seed для генерации случайных параметров
+ * @param bounds - Границы видимой области для размещения объектов
+ * @param startInstanceIndex - Начальный индекс инстанса (для глобальной уникальности)
  * @returns Объект с атрибутами для добавления в геометрию
  */
 export function createAnimationAttributes(
   count: number,
-  seed: number
+  seed: number,
+  bounds: { width: number; height: number },
+  startInstanceIndex: number = 0
 ): {
   rotationSpeed: THREE.InstancedBufferAttribute;
   rotationAxis: THREE.InstancedBufferAttribute;
   phase: THREE.InstancedBufferAttribute;
   movementDirection: THREE.InstancedBufferAttribute;
   movementSpeed: THREE.InstancedBufferAttribute;
+  initialPosition: THREE.InstancedBufferAttribute;
 } {
   const rotationSpeedArray = new Float32Array(count);
   const rotationAxisArray = new Float32Array(count * 3);
   const phaseArray = new Float32Array(count);
   const movementDirectionArray = new Float32Array(count * 2);
   const movementSpeedArray = new Float32Array(count);
+  const initialPositionArray = new Float32Array(count * 3);
 
   // Простая функция для генерации случайных чисел
   function rand(seed: number): number {
@@ -86,7 +92,9 @@ export function createAnimationAttributes(
   }
 
   for (let i = 0; i < count; i++) {
-    const s = (seed + i * 31) | 0;
+    // Используем глобальный индекс инстанса для уникальности позиций
+    const globalIndex = startInstanceIndex + i;
+    const s = (seed + globalIndex * 31) | 0;
     
     // Случайная скорость вращения (0.3 - 1.0)
     rotationSpeedArray[i] = 0.3 + rand(s) * 0.7;
@@ -115,6 +123,18 @@ export function createAnimationAttributes(
     
     // Уникальная скорость движения (1.0 - 3.0)
     movementSpeedArray[i] = 1.0 + rand(s + 6) * 2.0;
+    
+    // Случайная начальная 3D позиция в видимой области
+    // Используем только центральную треть для начального размещения
+    const visibleWidth = bounds.width / 3.0;
+    const visibleHeight = bounds.height / 3.0;
+    const posX = (rand(s + 7) - 0.5) * visibleWidth;
+    const posY = (rand(s + 8) - 0.5) * visibleHeight;
+    const posZ = (rand(s + 9) - 0.5) * 5.0 - 5.0; // Z от -2.5 до -7.5
+    
+    initialPositionArray[i * 3 + 0] = posX;
+    initialPositionArray[i * 3 + 1] = posY;
+    initialPositionArray[i * 3 + 2] = posZ;
   }
 
   return {
@@ -122,6 +142,7 @@ export function createAnimationAttributes(
     rotationAxis: new THREE.InstancedBufferAttribute(rotationAxisArray, 3),
     phase: new THREE.InstancedBufferAttribute(phaseArray, 1),
     movementDirection: new THREE.InstancedBufferAttribute(movementDirectionArray, 2),
-    movementSpeed: new THREE.InstancedBufferAttribute(movementSpeedArray, 1)
+    movementSpeed: new THREE.InstancedBufferAttribute(movementSpeedArray, 1),
+    initialPosition: new THREE.InstancedBufferAttribute(initialPositionArray, 3)
   };
 }

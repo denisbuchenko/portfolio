@@ -27,6 +27,7 @@ export class FruitsProject {
   private _meshes: THREE.Mesh[] = [];
   private _seed: number = 0;
   private _bounds: { width: number; height: number } = { width: 20, height: 20 };
+  private _instanceCounter: number = 0; // Глобальный счетчик инстансов для уникальных позиций
 
   /**
    * Загружает GLTF и парсит продукты.
@@ -41,6 +42,7 @@ export class FruitsProject {
    */
   setup(config: FruitsConfig, width: number, height: number): void {
     this._seed = config.seed ?? 0xdecafbad;
+    this._instanceCounter = 0; // Сбрасываем счетчик при настройке
 
     // Вычисляем границы экрана в единицах 3D пространства
     // Камера на z=25, FOV=35°, поэтому видимая область примерно 20x20 единиц
@@ -98,19 +100,29 @@ export class FruitsProject {
     instanced.mesh.material = material;
 
     // Создаем instanced атрибуты для уникальных параметров каждого инстанса
-    const attrs = createAnimationAttributes(config.count, this._seed);
+    // Позиция теперь генерируется в createAnimationAttributes и передается через атрибут
+    // Используем глобальный счетчик инстансов, чтобы каждый инстанс получал уникальную позицию
+    // независимо от того, к какому продукту он относится
+    const startInstanceIndex = this._instanceCounter;
+    const attrs = createAnimationAttributes(
+      config.count, 
+      this._seed, 
+      this._bounds,
+      startInstanceIndex // Передаем начальный индекс для этого продукта
+    );
+    this._instanceCounter += config.count; // Увеличиваем счетчик на количество инстансов
     instanced.mesh.geometry.setAttribute("aRotationSpeed", attrs.rotationSpeed);
     instanced.mesh.geometry.setAttribute("aRotationAxis", attrs.rotationAxis);
     instanced.mesh.geometry.setAttribute("aPhase", attrs.phase);
     instanced.mesh.geometry.setAttribute("aMovementDirection", attrs.movementDirection);
     instanced.mesh.geometry.setAttribute("aMovementSpeed", attrs.movementSpeed);
+    instanced.mesh.geometry.setAttribute("aInitialPosition", attrs.initialPosition);
 
-    // Размещаем инстансы по всему экрану
+    // Размещаем инстансы - позиция теперь в атрибуте, нужно только масштаб
     for (let i = 0; i < config.count; i++) {
-      const position = this._getRandomPosition(config, i);
       const scale = this._getRandomScale(config, i);
-      // Начальное вращение не нужно, так как вращение в шейдере
-      setInstanceTransform(instanced, i, position, scale);
+      // Позиция (0,0,0) так как реальная позиция в атрибуте aInitialPosition
+      setInstanceTransform(instanced, i, { x: 0, y: 0, z: 0 }, scale);
     }
 
     markInstancesDirty(instanced);
