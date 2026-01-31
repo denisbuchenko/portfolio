@@ -1,15 +1,7 @@
 import * as THREE from "three";
 import { CONFIG } from "../../config";
-import { XorShift32 } from "../puzzle/rng";
 import { getDpr } from "../puzzle/app/utils";
-import { loadFoodCatalog } from "./foodCatalog";
-
-type FruitInstance = {
-  name: string;
-  obj: THREE.Group;
-  vel: THREE.Vector2;
-  baseScale: number;
-};
+import { createFruitBackgroundRenderer } from "../shared/fruitBackground/fruitBackgroundRenderer";
 
 function mountUI(host: HTMLElement): { canvas: HTMLCanvasElement; statusEl: HTMLDivElement } {
   host.classList.add("launcher--puzzle");
@@ -46,23 +38,6 @@ export async function mountFruitsProject(host: HTMLElement): Promise<void> {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.autoClear = true;
 
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x070a10);
-
-  const ambient = new THREE.AmbientLight(0xffffff, 0.9);
-  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-  dir.position.set(-0.35, -0.65, 1.0).normalize();
-  scene.add(ambient, dir);
-
-  // Важно: для больших/объёмных моделей нужен адекватный near/far, иначе будет клиппинг/артефакты.
-  const CAMERA_Z = 1000;
-  const CAMERA_NEAR = 0.1;
-  const CAMERA_FAR = 5000;
-  let camera = new THREE.OrthographicCamera(0, 1, 0, 1, CAMERA_NEAR, CAMERA_FAR);
-
-  const rng = new XorShift32(0xfeedcafe);
-  const instances: FruitInstance[] = [];
-
   function resize(): { w: number; h: number; dpr: number } {
     const rect = canvas.getBoundingClientRect();
     const dpr = getDpr();
@@ -71,73 +46,45 @@ export async function mountFruitsProject(host: HTMLElement): Promise<void> {
     if (canvas.width !== w) canvas.width = w;
     if (canvas.height !== h) canvas.height = h;
     renderer.setSize(w, h, false);
-
-    // Фрустум задаётся в пространстве камеры, поэтому делаем его "центрированным",
-    // а саму камеру ставим в центр экрана. Тогда мир в координатах 0..w / 0..h
-    // будет полностью попадать в видимую область.
-    camera = new THREE.OrthographicCamera(-w * 0.5, w * 0.5, h * 0.5, -h * 0.5, CAMERA_NEAR, CAMERA_FAR);
-    camera.position.set(w * 0.5, h * 0.5, CAMERA_Z);
-    camera.lookAt(w * 0.5, h * 0.5, 0);
-    camera.updateProjectionMatrix();
     return { w, h, dpr };
   }
 
-  statusEl.textContent = "Загружаю glTF…";
-  const { entries } = await loadFoodCatalog(CONFIG.puzzle.background3d.gltfUrl);
+  statusEl.textContent = "Загружаю пресеты фруктов…";
+  const fruitBg = createFruitBackgroundRenderer({ config: CONFIG.puzzle.background3d });
+  await fruitBg.load();
 
-  // Раскидываем все объекты по экрану
-  const { w, h, dpr } = resize();
-  const margin = 50 * dpr;
-
-  for (const e of entries) {
-    const obj = e.object.clone(true);
-    obj.position.set(rng.range(margin, w - margin), rng.range(margin, h - margin), 0);
-    obj.rotation.set(rng.range(0, Math.PI), rng.range(0, Math.PI), rng.range(0, Math.PI));
-
-    // размер в пикселях
-    const target = rng.range(90 * dpr, 150 * dpr);
-    const scale = e.normalizedScale * target;
-    obj.scale.setScalar(scale);
-
-    // случайное движение
-    const vel = new THREE.Vector2(rng.range(-1, 1), rng.range(-1, 1));
-    if (vel.length() < 0.1) vel.set(1, 0);
-    vel.normalize().multiplyScalar(rng.range(40, 120) * dpr);
-
-    scene.add(obj);
-    instances.push({ name: e.name, obj, vel, baseScale: scale });
-  }
-
-  statusEl.textContent = `Готово: объектов ${instances.length}`;
+  let activeBits: 1 | 2 | 3 | 4 | 5 | 6 | 7 = 1;
+  let lastSwitchSec = 0;
+  let lastW = 0;
+  let lastH = 0;
 
   let lastT = performance.now();
   function frame(tNow: number): void {
     requestAnimationFrame(frame);
     const dt = Math.min(0.033, Math.max(0.001, (tNow - lastT) * 0.001));
     lastT = tNow;
+    const timeSec = tNow * 0.001;
 
     const { w, h, dpr } = resize();
-    const wrap = 90 * dpr;
-
-    for (const it of instances) {
-      it.obj.position.x += it.vel.x * dt;
-      it.obj.position.y += it.vel.y * dt;
-      it.obj.rotation.z += dt * 0.8;
-
-      if (it.obj.position.x > w + wrap) it.obj.position.x = -wrap;
-      if (it.obj.position.x < -wrap) it.obj.position.x = w + wrap;
-      if (it.obj.position.y > h + wrap) it.obj.position.y = -wrap;
-      if (it.obj.position.y < -wrap) it.obj.position.y = h + wrap;
+    if (w !== lastW || h !== lastH) {
+      fruitBg.resize(w, h, dpr);
+      lastW = w;
+      lastH = h;
     }
 
-    renderer.render(scene, camera);
+    // Автопереключение пресетов для превью
+    if (timeSec - lastSwitchSec > 2.4) {
+      activeBits = (((activeBits % 7) + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7);
+      lastSwitchSec = timeSec;
+    }
+
+    fruitBg.update(timeSec, dpr);
+    fruitBg.renderLayerToScreen(renderer, activeBits);
+    statusEl.textContent = `Пресет bits=${activeBits} • dt=${(dt * 1000).toFixed(1)}ms • DPR=${dpr.toFixed(2)}`;
   }
 
   requestAnimationFrame(frame);
 
   window.addEventListener("resize", () => resize());
-
-  // eslint-disable-next-line no-console
-  console.log("Fruits loaded:", entries.map((e) => e.name));
 }
 

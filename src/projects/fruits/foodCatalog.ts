@@ -28,10 +28,23 @@ export async function loadFoodCatalog(gltfUrl: string): Promise<{ entries: FoodE
     const node = root.getObjectByName(base);
     if (!node) continue;
 
+    // Фильтр от мусорных/служебных root-ноды (RootNode, FBX-обёртки, "material" и т.п.):
+    // берём только те base, у которых реально есть меш вида `${base}_${base}_0`.
+    const baseLower = base.toLowerCase();
+    let hasProperMesh = false;
+    node.traverse((o) => {
+      if (hasProperMesh) return;
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const n = (mesh.name || "").toLowerCase();
+      if (n.startsWith(`${baseLower}_${baseLower}_`)) hasProperMesh = true;
+    });
+    if (!hasProperMesh) continue;
+
     const group = node.clone(true) as THREE.Group;
     group.name = base;
 
-    // мультяшно и дешево: Lambert + без теней + SRGB для baseColor
+    // Дёшево и "как в текстуре": Basic (unlit) + без теней + SRGB для baseColor
     group.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -43,7 +56,7 @@ export async function loadFoodCatalog(gltfUrl: string): Promise<{ entries: FoodE
       const map = (srcMat as unknown as { map?: THREE.Texture }).map ?? undefined;
       if (map) map.colorSpace = THREE.SRGBColorSpace;
 
-      const mat = new THREE.MeshLambertMaterial({ map, color: 0xffffff });
+      const mat = new THREE.MeshBasicMaterial({ map, color: 0xffffff });
       mat.toneMapped = false;
       mat.depthTest = true;
       mat.depthWrite = true;

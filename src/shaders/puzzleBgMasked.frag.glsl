@@ -1,6 +1,7 @@
 precision highp float;
 
 uniform sampler2D tMask;
+uniform sampler2D tBg;
 uniform vec2 uResolution;
 uniform float uThreshold; // 0..1
 uniform float uBits;      // 1..7
@@ -30,7 +31,8 @@ void main() {
   vec2 uv = gl_FragCoord.xy / uResolution;
   vec2 c = uv - 0.5;
   float v = smoothstep(0.9, 0.15, dot(c, c));
-  vec3 col = uBgColor * (0.82 + 0.18 * v);
+  vec3 bg = texture(tBg, uv).rgb;
+  vec3 col = bg * (0.88 + 0.12 * v);
 
   outColor = vec4(col, a);
 }

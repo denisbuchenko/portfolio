@@ -47,10 +47,7 @@ export function mountPuzzleProject(host: HTMLElement): void {
   const renderer = createPuzzleRenderer({
     canvas: canvasEl,
     paintCanvas: paint.paintCanvas,
-    background: {
-      maskThreshold: CONFIG.puzzle.background3d.maskThreshold,
-      layers: CONFIG.puzzle.background3d.layers
-    },
+    background3d: CONFIG.puzzle.background3d,
     shaders: { vert: puzzleVert, bgFrag: puzzleBgFrag, pieceFrag: puzzlePieceMaskFrag }
   });
   markMaskDirty = () => renderer.markMaskDirty();
@@ -63,7 +60,7 @@ export function mountPuzzleProject(host: HTMLElement): void {
     if (canvasEl.width !== w) canvasEl.width = w;
     if (canvasEl.height !== h) canvasEl.height = h;
     paint.resize(w, h);
-    renderer.resize(w, h);
+    renderer.resize(w, h, dpr);
     return { w, h, dpr };
   }
 
@@ -201,7 +198,7 @@ export function mountPuzzleProject(host: HTMLElement): void {
   function frame(): void {
     rafId = window.requestAnimationFrame(frame);
     const dpr = getDpr();
-    renderer.render(pieces);
+    renderer.render(pieces, performance.now() * 0.001, dpr);
     if (geom) {
       statusEl.textContent = `Кусочков: ${pieces.length} • Групп: ${groupSys.groups.size} • Цвет: ${ui
         .getActiveColor()

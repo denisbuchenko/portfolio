@@ -29,6 +29,27 @@ export const CONFIG = {
       // Порог, после которого канал считается "включенным" (0..1) для получения bits.
       maskThreshold: 0.06,
 
+      // Глобальные “усилители” пресетов:
+      // - больше/меньше объектов
+      // - больше/меньше размер
+      // - больше/меньше беспорядка в стартовых позициях
+      instanceMul: 8.0,
+      sizeMul: 2.0,
+      positionChaos: 0.3,
+
+      camera: {
+        fovDeg: 35,
+        depthCssPx: 520
+      },
+
+      // Offscreen рендер пресетов (bits=1..7) в текстуры.
+      // 1.0 = full-res (дороже), 0.5 = обычно выглядит почти так же, но быстрее.
+      rtScale: 0.6,
+      // 0 = каждый кадр, 30 = обновлять ~30fps (часто достаточно для фона).
+      updateFps: 30,
+      // Детерминизм выбора/раскладки фруктов
+      seed: 0xdecafbad,
+
       // Свет (простая "мультяшная" Lambert-сцена)
       lighting: {
         ambientIntensity: 0.75,
@@ -45,7 +66,8 @@ export const CONFIG = {
         wrapMarginCssPx: 80,
         swayAmpCssPx: 18,
         swaySpeed: 0.8,
-        spinSpeed: 0.6
+        spinSpeed: 0.6,
+        axisSpinSpeed: 0.6
       },
 
       // Параметры по каждому bits=1..7 (фон, направление, скорость, размеры)
