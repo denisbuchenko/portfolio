@@ -3,7 +3,7 @@ import { createOverlay } from "./ui/overlay";
 import { tryCreateWebGL2Context } from "./webgl/context";
 import { ParticleApp } from "./projects/particles";
 import { mountPuzzleProject } from "./projects/puzzle/PuzzleProject";
-import { mountFruitsProject } from "./projects/fruits/mount";
+import { mountFruitsProject } from "./projects/fruits";
 
 const overlay = createOverlay();
 

@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import type { RuntimePiece } from "../runtimeTypes";
 import type { FruitBackgroundPresetsConfig, FruitLayerBits } from "../../../fruits/types";
-import type { FruitBackgroundRenderer } from "../../../fruits/core/index";
-import { createFruitBackgroundRenderer } from "../../../fruits/core/index";
+import type { FruitBackgroundRenderer } from "../../../fruits/index";
+import { createFruitBackgroundRenderer } from "../../../fruits/index";
 
 export type PuzzleRenderer = {
   renderer: THREE.WebGLRenderer;

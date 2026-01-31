@@ -93,3 +93,16 @@ export type FruitBackgroundPresetsConfig = {
   };
   layers: Record<FruitLayerBits, FruitLayerPreset>;
 };
+
+/**
+ * Рендерер фона для проекта пазлов.
+ * Рендерит отдельные сцены для каждого слоя (bits 1-7) в RenderTarget.
+ */
+export type FruitBackgroundRenderer = {
+  load(): Promise<void>;
+  resize(w: number, h: number, dpr: number): void;
+  update(timeSec: number, dpr: number): void;
+  renderTargets(renderer: THREE.WebGLRenderer): void;
+  renderLayerToScreen(renderer: THREE.WebGLRenderer, bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): void;
+  getLayerTexture(bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): THREE.Texture;
+};
