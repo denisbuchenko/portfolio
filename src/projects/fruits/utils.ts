@@ -24,11 +24,13 @@ export function norm2(v: THREE.Vector2): THREE.Vector2 {
  * Детерминированный генератор случайных чисел (0..1) на основе seed.
  * Использует xorshift-подобный алгоритм для быстрого и предсказуемого результата.
  */
-export function rand01(seed: number): number {
-  let x = seed | 0;
-  x ^= x << 13;
-  x ^= x >>> 17;
-  x ^= x << 5;
+ // Простая функция для генерации случайных чисел
+ export function rand01(seed: number): number {
+  let x = seed ^ (seed >>> 15);
+  x = Math.imul(x, 0x46d31bad);
+  x ^= x >>> 14;
+  x = Math.imul(x, 0x2c1b3c6d);
+  x ^= x >>> 15;
   return (x >>> 0) / 0x1_0000_0000;
 }
 

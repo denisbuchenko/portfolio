@@ -132,8 +132,6 @@ export function createAnimationAttributes(
     const posX = (rand(s + 7) - 0.5) * visibleWidth;
     const posY = (rand(s + 8) - 0.5) * visibleHeight;
     const posZ = (rand(s + 9) - 0.5) * 5.0 - 5.0; // Z от -2.5 до -7.5
-
-    console.log('QQQQQQQQQQQQQ', posX, posY, posZ)
     
     initialPositionArray[i * 3 + 0] = posX;
     initialPositionArray[i * 3 + 1] = posY;
