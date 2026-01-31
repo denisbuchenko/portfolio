@@ -2,8 +2,7 @@ import { CONFIG } from "../../config";
 import { getDpr } from "../puzzle/app/utils";
 import { createFruitsUI } from "./ui";
 import { createFruitsRenderer, resizeRenderer } from "./renderer";
-import { createFruitBackgroundRenderer } from "./phases/orchestrator";
-import type { FruitBackgroundRenderer } from "./phases/orchestrator";
+import { createFruitBackgroundRenderer, type FruitBackgroundRenderer } from "./core/index";
 
 /**
  * Главная функция монтирования проекта фруктов.
