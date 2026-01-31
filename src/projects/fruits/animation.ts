@@ -3,8 +3,8 @@
  */
 
 import * as THREE from "three";
-import vertexShader from "../../shaders/animatedProduct.vert.glsl?raw";
-import fragmentShader from "../../shaders/animatedProduct.frag.glsl?raw";
+import vertexShader from "./shaders/animatedProduct.vert.glsl?raw";
+import fragmentShader from "./shaders/animatedProduct.frag.glsl?raw";
 import type { Product } from "./types";
 
 /**
