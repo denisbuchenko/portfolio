@@ -4,6 +4,9 @@ import type { FoodEntry } from "../foodCatalog";
 import type { TypeDef, TypeLayer } from "../instancing";
 import type { PlacementState } from "../placement";
 import type { FruitsUI } from "../ui";
+
+// Реэкспорт типов для удобства
+export type { FruitBackgroundPresetsConfig, FruitLayerBits } from "../types";
 import { executeInitialization } from "./initialization";
 import { executeModelLoading } from "./model-loading";
 import { executeDataPreparation } from "./data-preparation";
@@ -91,28 +94,44 @@ export type PhaseFunction = (
 ) => PhaseContext | Promise<PhaseContext>;
 
 /**
- * Результат работы orchestrator.
- * Содержит методы для обновления и рендеринга.
+ * Главный рендерер фруктов.
+ * Управляет загрузкой, анимацией и рендером всех фруктов в 7 слоях (bits=1..7).
+ *
+ * Технические детали:
+ * - Использует InstancedMesh для оптимизации (общая геометрия, отдельные матрицы)
+ * - Рендерит в 7 отдельных RenderTarget для каждого bits-слоя
+ * - Поддерживает PerspectiveCamera для объёмного вида
+ * - Использует spatial hash для размещения без пересечений
  */
-export type OrchestratorResult = {
+export type FruitBackgroundRenderer = {
+  /** Загружены ли модели и готов ли к рендеру */
   isReady(): boolean;
+  /** Асинхронная загрузка всех 3D моделей и создание инстансов */
   load(): Promise<void>;
+  /** Обновление размеров сцены (вызывать при resize) */
   resize(w: number, h: number, dpr: number): void;
+  /** Обновление анимации (вызывать каждый кадр) */
   update(timeSec: number, dpr: number): void;
+  /** Рендер всех слоёв в offscreen RenderTarget'ы (для пазлов) */
   renderTargets(renderer: THREE.WebGLRenderer): void;
+  /** Рендер конкретного слоя на экран (для превью) */
   renderLayerToScreen(renderer: THREE.WebGLRenderer, bits: FruitLayerBits): void;
+  /** Получить текстуру фона для слоя */
   getLayerTexture(bits: FruitLayerBits): THREE.Texture;
+  /** Получить fallback текстуру (если слой ещё не загружен) */
   getFallbackTexture(bits: FruitLayerBits): THREE.Texture;
+  /** Освободить ресурсы */
   dispose(): void;
 };
 
 /**
- * Создаёт orchestrator с заданной конфигурацией и опциональным UI.
+ * Создаёт рендерер фруктов с заданной конфигурацией и опциональным UI.
+ * Внутри использует фазированный подход через orchestrator.
  */
-export function createOrchestrator(
-  config: FruitBackgroundPresetsConfig,
-  ui?: FruitsUI
-): OrchestratorResult {
+export function createFruitBackgroundRenderer(
+  opts: { config: FruitBackgroundPresetsConfig; ui?: FruitsUI }
+): FruitBackgroundRenderer {
+  const { config, ui } = opts;
   // Создаём начальный контекст
   let context: PhaseContext = { ui };
   
@@ -120,7 +139,7 @@ export function createOrchestrator(
   context = executeInitialization(context, config) as PhaseContext;
   
   // Методы для работы с рендерером
-  return {
+  const result: FruitBackgroundRenderer = {
     isReady: () => context.isReadyRef?.v ?? false,
     
     load: async () => {
@@ -163,4 +182,6 @@ export function createOrchestrator(
       context = executeDisposal(context, config) as PhaseContext;
     }
   };
+  
+  return result;
 }

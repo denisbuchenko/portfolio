@@ -25,8 +25,6 @@ fruits/
 ├── utils.ts             # Утилиты (математика, цвета, фильтрация)
 ├── instancing.ts        # Логика InstancedMesh (оптимизация)
 ├── placement.ts         # Размещение объектов без пересечений
-├── fruitRenderer.ts     # Главный рендерер (обёртка над orchestrator)
-├── sceneComposer.ts     # Компоновщик сцены (высокоуровневый API)
 ├── renderer.ts          # Технический слой WebGL
 ├── ui.ts                # UI компоненты
 └── FruitsProject.ts     # Точка входа (связывает всё вместе)
@@ -53,10 +51,6 @@ fruits/
 
 ```
 FruitsProject.ts
-    ↓
-sceneComposer.ts (обёртка над fruitRenderer)
-    ↓
-fruitRenderer.ts (обёртка над orchestrator)
     ↓
 phases/orchestrator.ts (координатор фаз)
     ├→ phases/initialization.ts
@@ -92,7 +86,7 @@ phases/orchestrator.ts (координатор фаз)
 - `FoodEntry` — тип записи о фрукте (name, object, normalizedScale)
 - `loadFoodCatalog(gltfUrl)` — функция загрузки
 
-**Используется в:** `fruitRenderer.ts`
+**Используется в:** `phases/orchestrator.ts`
 
 ---
 
@@ -105,7 +99,7 @@ phases/orchestrator.ts (координатор фаз)
 - `FruitLayerPreset` — настройки одного слоя (фон, направление, скорость, размеры, набор фруктов)
 - `FruitBackgroundPresetsConfig` — полная конфигурация (камера, освещение, движение, 7 слоёв)
 
-**Используется в:** `fruitRenderer.ts`, `sceneComposer.ts`, `puzzleRenderer.ts`
+**Используется в:** `phases/orchestrator.ts`, `puzzleRenderer.ts`
 
 ---
 
@@ -123,7 +117,7 @@ phases/orchestrator.ts (координатор фаз)
 - `filterCatalogEntries(entries, include?, exclude?)` — фильтрация записей каталога
 - `pickUnique(entries, count, seed)` — выбор уникальных записей (Fisher-Yates)
 
-**Используется в:** `fruitRenderer.ts`, `instancing.ts`, `placement.ts`
+**Используется в:** `phases/orchestrator.ts`, `instancing.ts`, `placement.ts`
 
 ---
 
@@ -150,7 +144,7 @@ phases/orchestrator.ts (координатор фаз)
 - `TypeDef` — определение типа (геометрия + материалы)
 - `TypeLayer` — слой инстансов для типа (меши, количество, baseScale)
 
-**Используется в:** `fruitRenderer.ts`
+**Используется в:** `phases/orchestrator.ts`
 
 ---
 
@@ -179,22 +173,13 @@ phases/orchestrator.ts (координатор фаз)
 - Для каждой размещённой позиции добавляет ID в соответствующую клетку и соседние
 - При проверке коллизий проверяет только соседние клетки (быстро)
 
-**Используется в:** `fruitRenderer.ts`
+**Используется в:** `phases/orchestrator.ts`
 
 ---
 
-### `fruitRenderer.ts` — Главный рендерер
+### `phases/orchestrator.ts` — Координатор фаз и главный рендерер
 
-**Назначение:** Обёртка над фазированным orchestrator. Сохраняет публичный API `FruitBackgroundRenderer` для обратной совместимости.
-
-**Архитектура:**
-- Использует `createOrchestrator` из `phases/orchestrator.ts`
-- Делегирует всю логику фазированной структуре
-- Сохраняет публичный API без изменений
-
-### `phases/orchestrator.ts` — Координатор фаз
-
-**Назначение:** Координирует выполнение всех фаз, управляет контекстом между фазами, предоставляет единый API.
+**Назначение:** Координирует выполнение всех фаз, управляет контекстом между фазами, предоставляет единый API `FruitBackgroundRenderer`.
 
 **Что делает:**
 - Создаёт начальный контекст с UI (опционально)
@@ -206,7 +191,8 @@ phases/orchestrator.ts (координатор фаз)
 - `PhaseContext` — контекст, передаваемый между фазами (содержит все данные рендерера)
 - `FruitInstance` — данные одного инстанса фрукта
 - `PhaseFunction` — тип функции фазы
-- `OrchestratorResult` — результат работы orchestrator (публичный API)
+- `FruitBackgroundRenderer` — публичный API рендерера фруктов
+- `createFruitBackgroundRenderer()` — функция создания рендерера
 
 ### Фазы (`phases/0X-*.ts`)
 
@@ -278,20 +264,10 @@ phases/orchestrator.ts (координатор фаз)
 **Внутренние типы:**
 - `FruitInstance` — данные одного инстанса (позиция, вращение, скорость, etc.)
 
-**Используется в:** `sceneComposer.ts`, `puzzleRenderer.ts`
+**Используется в:** `FruitsProject.ts`, `puzzleRenderer.ts`
 
 ---
 
-### `sceneComposer.ts` — Компоновщик сцены
-
-**Назначение:** Высокоуровневый API для работы с фруктами. Обёртка над `fruitRenderer` с удобными методами.
-
-**Что делает:**
-- Создаёт `FruitBackgroundRenderer` через `createFruitBackgroundRenderer`
-- Предоставляет простой интерфейс: `load()`, `resize()`, `update()`, `renderLayerToScreen()`, `getLayerTexture()`
-- Скрывает детали реализации от пользователя
-
-**Используется в:** `FruitsProject.ts`
 
 ---
 
@@ -352,30 +328,27 @@ phases/orchestrator.ts (координатор фаз)
 
 ```
 1. FruitsProject.ts создаёт UI и рендер
-2. FruitsProject.ts создаёт sceneComposer
-3. sceneComposer создаёт fruitRenderer
-4. fruitRenderer создаёт orchestrator (фаза 1: инициализация)
-5. fruitRenderer.load() → orchestrator.load():
+2. FruitsProject.ts создаёт FruitBackgroundRenderer через createFruitBackgroundRenderer (фаза 1: инициализация)
+3. fruitRenderer.load() → фазы 2-4:
    a. Фаза 2: загрузка моделей (foodCatalog.loadFoodCatalog())
    b. Фаза 3: подготовка данных
       - instancing.buildTypeDefs() → собирает геометрию
       - instancing.assignInstancesToTypes() → распределяет инстансы
       - instancing.createTypeLayersForBits() → создаёт InstancedMesh
    c. Фаза 4: создание инстансов
-6. fruitRenderer.resize() → orchestrator.resize() → фаза 5: настройка размеров
-7. Рендер-луп:
-   a. fruitRenderer.update() → orchestrator.update() → фаза 7: анимация
+4. fruitRenderer.resize() → фаза 5: настройка размеров
+5. Рендер-луп:
+   a. fruitRenderer.update() → фаза 7 (анимация):
       - Фаза 6: размещение объектов (при первом обновлении инстанса)
         - placement.getPlacementState() → получает состояние размещения
         - placement.tryPlace() → размещает объекты
-   b. fruitRenderer.renderLayerToScreen() → orchestrator.renderLayerToScreen() → фаза 8: рендеринг
+   b. fruitRenderer.renderLayerToScreen() → фаза 8 (рендеринг)
 ```
 
 ### Зависимости:
 
-- `FruitsProject.ts` → `sceneComposer.ts`, `renderer.ts`, `ui.ts`
-- `sceneComposer.ts` → `fruitRenderer.ts`, `types.ts`
-- `fruitRenderer.ts` → `foodCatalog.ts`, `instancing.ts`, `placement.ts`, `utils.ts`, `types.ts`
+- `FruitsProject.ts` → `phases/orchestrator.ts`, `renderer.ts`, `ui.ts`
+- `phases/orchestrator.ts` → все фазы, `foodCatalog.ts`, `instancing.ts`, `placement.ts`, `utils.ts`, `types.ts`
 - `instancing.ts` → `utils.ts`
 - `placement.ts` → `utils.ts`, `types.ts`
 

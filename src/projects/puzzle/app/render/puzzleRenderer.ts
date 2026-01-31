@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import type { RuntimePiece } from "../runtimeTypes";
 import type { FruitBackgroundPresetsConfig, FruitLayerBits } from "../../../fruits/types";
-import type { FruitBackgroundRenderer } from "../../../fruits/fruitRenderer";
-import { createFruitBackgroundRenderer } from "../../../fruits/fruitRenderer";
+import type { FruitBackgroundRenderer } from "../../../fruits/phases/orchestrator";
+import { createFruitBackgroundRenderer } from "../../../fruits/phases/orchestrator";
 
 export type PuzzleRenderer = {
   renderer: THREE.WebGLRenderer;
@@ -186,7 +186,7 @@ export function createPuzzleRenderer(opts: {
     }
   }
 
-  fruitBg = opts.background3d.enabled ? createFruitBackgroundRenderer({ config: opts.background3d }) : null;
+  fruitBg = opts.background3d.enabled ? createFruitBackgroundRenderer({ config: opts.background3d, ui: undefined }) : null;
   if (fruitBg !== null) {
     void fruitBg.load().catch((e) => {
       // eslint-disable-next-line no-console

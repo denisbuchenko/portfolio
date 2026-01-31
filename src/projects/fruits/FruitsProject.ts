@@ -2,7 +2,8 @@ import { CONFIG } from "../../config";
 import { getDpr } from "../puzzle/app/utils";
 import { createFruitsUI } from "./ui";
 import { createFruitsRenderer, resizeRenderer } from "./renderer";
-import { createSceneComposer } from "./sceneComposer";
+import { createFruitBackgroundRenderer } from "./phases/orchestrator";
+import type { FruitBackgroundRenderer } from "./phases/orchestrator";
 
 /**
  * Главная функция монтирования проекта фруктов.
@@ -22,8 +23,8 @@ export async function mountFruitsProject(host: HTMLElement): Promise<void> {
   // Рендер
   const renderer = createFruitsRenderer(ui.canvas);
 
-  // Компоновщик сцены (загрузка и управление фруктами)
-  const scene = createSceneComposer(CONFIG.puzzle.background3d);
+  // Рендерер фруктов (загрузка и управление фруктами)
+  const scene: FruitBackgroundRenderer = createFruitBackgroundRenderer({ config: CONFIG.puzzle.background3d, ui });
 
   // Функция resize (обновляет canvas и сцену)
   function resize(): { w: number; h: number; dpr: number } {
