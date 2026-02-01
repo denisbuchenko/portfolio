@@ -22,6 +22,7 @@ export class FruitsProject {
   private _scene: FruitsScene | null = null;
   private _factory: ProductFactory | null = null;
   private _seed: number = 0;
+  private _config: FruitsConfig | null = null;
 
   /**
    * Загружает GLTF и парсит продукты.
@@ -35,6 +36,7 @@ export class FruitsProject {
    * Настраивает сцену, камеру и создает продукты.
    */
   setup(config: FruitsConfig, width: number, height: number): void {
+    this._config = config;
     this._seed = config.seed ?? 0xdecafbad;
 
     // Создаем сцену
@@ -97,6 +99,41 @@ export class FruitsProject {
   resize(width: number, height: number): void {
     if (!this._scene) return;
     this._scene.resize(width, height);
+  }
+
+  /**
+   * Возвращает сцену Three.js.
+   */
+  get scene(): THREE.Scene | null {
+    return this._scene?.scene ?? null;
+  }
+
+  /**
+   * Возвращает камеру.
+   */
+  get camera(): THREE.PerspectiveCamera | null {
+    return this._scene?.camera ?? null;
+  }
+
+  /**
+   * Возвращает продукты.
+   */
+  get products(): Product[] {
+    return this._products;
+  }
+
+  /**
+   * Возвращает конфигурацию.
+   */
+  get config(): FruitsConfig | null {
+    return this._config;
+  }
+
+  /**
+   * Возвращает инстансированные продукты.
+   */
+  get instancedProducts(): InstancedProductResult[] {
+    return this._instancedProducts;
   }
 
   /**

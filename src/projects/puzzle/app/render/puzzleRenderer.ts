@@ -39,6 +39,14 @@ export function createPuzzleRenderer(opts: {
   renderer.setPixelRatio(1); // canvas уже в px, мы сами ресайзим.
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
+  
+  // Логирование контекста WebGL при инициализации
+  const mainGl = renderer.getContext();
+  console.log('🔧 PuzzleRenderer WebGL контекст:', {
+    contextType: mainGl ? 'WebGLRenderingContext' : 'null',
+    canvas: opts.canvas,
+    rendererInfo: renderer.info
+  });
 
   const scene = new THREE.Scene();
   let camera = new THREE.OrthographicCamera(0, 1, 0, 1, -10, 10);
@@ -210,10 +218,59 @@ export function createPuzzleRenderer(opts: {
     if (fruitBg) {
       fruitBg.update(timeSec, dpr);
       fruitBg.renderTargets(renderer);
+      
+      // Логирование каждые 60 кадров для слоя 1
+      const shouldLog = Math.floor(timeSec * 60) % 60 === 0;
+      
       for (let i = 0; i < bgQuads.length; i++) {
         const bits = (i + 1) as FruitLayerBits;
         const q = bgQuads[i];
-        (q.material.uniforms.tBg.value as THREE.Texture) = fruitBg.getLayerTexture(bits);
+        const texture = fruitBg.getLayerTexture(bits);
+        const oldTexture = q.material.uniforms.tBg.value as THREE.Texture;
+        
+        // Подробное логирование для слоя 1
+        if (bits === 1 && shouldLog) {
+          const img = texture.image as { width?: number; height?: number } | null;
+          const sourceData = texture.source?.data as { width?: number; height?: number } | null;
+          const texWidth = img?.width || sourceData?.width || 'unknown';
+          const texHeight = img?.height || sourceData?.height || 'unknown';
+          
+          console.log('🎨 puzzleRenderer: обновление текстуры для слоя 1:', {
+            textureChanged: oldTexture !== texture,
+            texture: {
+              uuid: texture.uuid,
+              width: texWidth,
+              height: texHeight,
+              format: texture.format,
+              type: texture.type,
+              flipY: texture.flipY,
+              needsUpdate: texture.needsUpdate,
+              isRenderTargetTexture: texture.isRenderTargetTexture
+            },
+            material: {
+              type: q.material.type,
+              uniformsNeedUpdate: q.material.uniformsNeedUpdate,
+              visible: q.material.visible,
+              transparent: q.material.transparent
+            },
+            mesh: {
+              visible: q.visible,
+              renderOrder: q.renderOrder,
+              position: q.position.clone(),
+              scale: q.scale.clone()
+            },
+            uniform: {
+              tBg: q.material.uniforms.tBg.value ? 'установлен' : 'НЕ УСТАНОВЛЕН!',
+              uResolution: q.material.uniforms.uResolution.value,
+              uBits: q.material.uniforms.uBits.value,
+              uThreshold: q.material.uniforms.uThreshold.value
+            }
+          });
+        }
+        
+        (q.material.uniforms.tBg.value as THREE.Texture) = texture;
+        // Убеждаемся, что uniform обновлен
+        q.material.uniformsNeedUpdate = true;
       }
     } else {
       for (let i = 0; i < bgQuads.length; i++) {
@@ -239,6 +296,85 @@ export function createPuzzleRenderer(opts: {
     }
 
     renderer.setClearColor(0x070a10, 1);
+    
+    // Логирование каждые 60 кадров
+    const shouldLog = Math.floor(timeSec * 60) % 60 === 0;
+    if (shouldLog) {
+      // Проверяем маску для слоя 1
+      const maskCanvas = maskTex.image as HTMLCanvasElement;
+      let maskSample = { r: 0, g: 0, b: 0 };
+      if (maskCanvas) {
+        const ctx = maskCanvas.getContext('2d');
+        if (ctx) {
+          const imgData = ctx.getImageData(Math.floor(w / 2), Math.floor(h / 2), 1, 1);
+          maskSample = { r: imgData.data[0], g: imgData.data[1], b: imgData.data[2] };
+        }
+      }
+      
+      console.log('🖼️ puzzleRenderer.render:', {
+        canvasSize: { w, h },
+        sceneChildren: scene.children.length,
+        bgQuadsCount: bgQuads.length,
+        bgQuadsVisible: bgQuads.filter(q => q.visible).length,
+        piecesCount: pieces.length,
+        piecesWithMesh: pieces.filter(p => p.mesh).length,
+        fruitBgEnabled: fruitBg !== null,
+        maskSample: maskSample,
+        maskThreshold: opts.background3d.maskThreshold,
+        camera: {
+          type: camera.type,
+          left: camera.left,
+          right: camera.right,
+          top: camera.top,
+          bottom: camera.bottom,
+          near: camera.near,
+          far: camera.far
+        }
+      });
+      
+      // Проверяем текстуры для всех слоёв
+      for (let i = 0; i < bgQuads.length; i++) {
+        const bits = (i + 1) as FruitLayerBits;
+        const q = bgQuads[i];
+        const tex = q.material.uniforms.tBg.value as THREE.Texture;
+        if (bits === 1) {
+          // Вычисляем ожидаемое значение bits из маски
+          const threshold = opts.background3d.maskThreshold;
+          const br = maskSample.r >= threshold * 255 ? 1 : 0;
+          const bg = maskSample.g >= threshold * 255 ? 1 : 0;
+          const bb = maskSample.b >= threshold * 255 ? 1 : 0;
+          const computedBits = br + 2 * bg + 4 * bb;
+          
+          console.log(`🔍 Проверка текстуры слоя ${bits}:`, {
+            texture: tex ? {
+              uuid: tex.uuid,
+              isRenderTargetTexture: tex.isRenderTargetTexture,
+              needsUpdate: tex.needsUpdate,
+              format: tex.format,
+              type: tex.type,
+              image: tex.image ? 'has image' : 'no image',
+              source: tex.source ? 'has source' : 'no source'
+            } : 'NULL!',
+            uniformSet: tex !== null && tex !== undefined,
+            uniformValue: q.material.uniforms.tBg.value ? 'set' : 'NOT SET!',
+            uBits: q.material.uniforms.uBits.value,
+            uThreshold: q.material.uniforms.uThreshold.value,
+            uResolution: q.material.uniforms.uResolution.value,
+            maskAnalysis: {
+              maskSample: maskSample,
+              threshold: threshold,
+              computedBits: computedBits,
+              expectedBits: bits,
+              willDiscard: Math.abs(computedBits - bits) > 0.1,
+              message: Math.abs(computedBits - bits) > 0.1 
+                ? '⚠️ ВСЕ ПИКСЕЛИ БУДУТ ОТБРОШЕНЫ ЧЕРЕЗ discard!' 
+                : '✅ Маска соответствует слою'
+            }
+          });
+        }
+      }
+    }
+    
     renderer.render(scene, camera);
   }
 
