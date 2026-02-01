@@ -103,6 +103,6 @@ export type FruitBackgroundRenderer = {
   resize(w: number, h: number, dpr: number): void;
   update(timeSec: number, dpr: number): void;
   renderTargets(renderer: THREE.WebGLRenderer): void;
-  renderLayerToScreen(renderer: THREE.WebGLRenderer, bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): void;
+  getLayerTexture(bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): THREE.Texture;
   getLayerTexture(bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): THREE.Texture;
 };

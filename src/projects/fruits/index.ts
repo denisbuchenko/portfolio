@@ -11,9 +11,12 @@ import { getDpr } from "../puzzle/app/utils";
 import { CONFIG } from "../../config";
 import type { FruitsConfig } from "./config";
 import type { FruitBackgroundPresetsConfig, FruitLayerBits, FruitBackgroundRenderer } from "./types";
+import { showTextureDebug } from "./utils";
 
 // Экспортируем тип для использования в других модулях
 export type { FruitBackgroundRenderer };
+// Экспортируем утилиту для дебага текстур
+export { showTextureDebug };
 
 /**
  * Создает конфигурацию для проекта фруктов на основе глобального конфига.
@@ -82,6 +85,15 @@ function createLayerConfig(
   };
 }
 
+function dbeugTex(renderTargetsMap: any) {
+  setTimeout(() => {
+    const lol = renderTargetsMap.get(1)?.texture
+
+    if (lol === undefined) {return;}
+    showTextureDebug(lol, "Layer 1");
+  }, 5000);
+}
+
 /**
  * Создает рендерер фона для проекта пазлов.
  * Рендерит отдельные сцены для каждого слоя (bits 1-7) в RenderTarget.
@@ -97,6 +109,8 @@ export function createFruitBackgroundRenderer(opts: {
   let height = 0;
   let lastUpdateTime = 0;
   let isLoaded = false;
+
+  dbeugTex(renderTargetsMap)
 
   // Создаем offscreen renderer для рендеринга в текстуры
   const offscreenCanvas = document.createElement("canvas");
@@ -212,10 +226,6 @@ export function createFruitBackgroundRenderer(opts: {
     offscreenRenderer.setRenderTarget(null);
   }
 
-  function renderLayerToScreen(_rendererInstance: THREE.WebGLRenderer, _bits: FruitLayerBits): void {
-    // Заглушка - не используется в puzzleRenderer
-  }
-
   function getLayerTexture(bits: FruitLayerBits): THREE.Texture {
     const rt = renderTargetsMap.get(bits);
     if (!rt) {
@@ -232,7 +242,6 @@ export function createFruitBackgroundRenderer(opts: {
     resize,
     update,
     renderTargets,
-    renderLayerToScreen,
     getLayerTexture
   };
 }
