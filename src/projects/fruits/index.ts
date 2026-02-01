@@ -1,7 +1,3 @@
-/**
- * Главный модуль проекта фруктов.
- * Экспортирует функции для создания рендерера фона и монтирования проекта.
- */
 
 import * as THREE from "three";
 import { FruitsProject } from "./products";
@@ -10,87 +6,93 @@ import { createFruitsRenderer, resizeRenderer } from "./renderer";
 import { getDpr } from "../puzzle/app/utils";
 import { CONFIG } from "../../config";
 import type { FruitsConfig } from "./config";
-import type { FruitBackgroundPresetsConfig, FruitLayerBits, FruitBackgroundRenderer } from "./types";
+import type { 
+  FruitBackgroundPresetsConfig, 
+  FruitLayerBits, 
+  FruitBackgroundRenderer 
+} from "./types";
 import { showTextureDebug } from "./utils";
 
-// Экспортируем тип для использования в других модулях
 export type { FruitBackgroundRenderer };
-// Экспортируем утилиту для дебага текстур
-export { showTextureDebug };
+export { showTextureDebug }; // Утилита отладки текстур (вызывается вручную при необходимости)
+
 
 /**
- * Создает конфигурацию для слоя фона на основе пресетов.
+ * Формирует конфигурацию слоя фона на основе пресета и битовой маски
+ * @param preset - Глобальный пресет фона
+ * @param layerBits - Битовая маска слоя (1-7)
+ * @param allProducts - Список всех доступных продуктов
  */
 function createLayerConfig(
   preset: FruitBackgroundPresetsConfig,
-  bits: FruitLayerBits,
-  products: Array<{ name: string }>
+  layerBits: FruitLayerBits,
+  allProducts: Array<{ name: string }>
 ): FruitsConfig {
-  const layer = preset.layers[bits];
-  const allProductNames = products.map(p => p.name);
+  const layer = preset.layers[layerBits];
+  const productNames = allProducts.map(p => p.name);
   
-  // Фильтруем продукты согласно конфигу слоя
-  let filteredProducts = allProductNames;
+  // ─── ФИЛЬТРАЦИЯ ПРОДУКТОВ ────────────────────────────────────────────────────
+  let filtered = productNames;
+  
   if (layer.fruits?.include) {
-    filteredProducts = filteredProducts.filter(name => layer.fruits!.include!.includes(name));
+    filtered = filtered.filter(name => layer.fruits!.include!.includes(name));
   }
   if (layer.fruits?.exclude) {
-    filteredProducts = filteredProducts.filter(name => !layer.fruits!.exclude!.includes(name));
+    filtered = filtered.filter(name => !layer.fruits!.exclude!.includes(name));
   }
   
-  // Ограничиваем количество типов продуктов
-  const countTypes = layer.fruits?.countTypes ?? preset.counts.bits1to5;
-  const selectedProducts = filteredProducts.slice(0, countTypes);
+  // ─── ОГРАНИЧЕНИЕ КОЛИЧЕСТВА ТИПОВ ─────────────────────────────────────────────
+  const maxTypes = layer.fruits?.countTypes ?? preset.counts.bits1to5;
+  const selectedProducts = filtered.slice(0, maxTypes);
   
-  // Количество инстансов на продукт
-  const countInstances = layer.fruits?.countInstances ?? Math.floor(10 * preset.instanceMul);
+  // ─── РАСЧЁТ ПАРАМЕТРОВ ИНСТАНСОВ ──────────────────────────────────────────────
+  const instancesPerProduct = layer.fruits?.countInstances 
+    ? Math.floor(layer.fruits.countInstances * preset.instanceMul) 
+    : Math.floor(10 * preset.instanceMul);
+  
+  const sizeMultiplier = preset.sizeMul * 0.01;
   
   return {
     gltfUrl: preset.gltfUrl,
     backgroundColor: layer.bg,
-    camera: {
-      fov: preset.camera.fovDeg
-    },
+    camera: { fov: preset.camera.fovDeg },
     products: selectedProducts.map(name => ({
       productName: name,
-      count: countInstances,
+      count: instancesPerProduct,
       size: {
-        min: layer.sizeCssPx.min * preset.sizeMul * 0.01,
-        max: layer.sizeCssPx.max * preset.sizeMul * 0.01
+        min: layer.sizeCssPx.min * sizeMultiplier,
+        max: layer.sizeCssPx.max * sizeMultiplier
       }
     })),
     seed: preset.seed
   };
 }
 
-function dbeugTex(renderTargetsMap: any) {
-  setTimeout(() => {
-    const lol = renderTargetsMap.get(1)?.texture
-
-    if (lol === undefined) {return;}
-    showTextureDebug(lol, "Layer 1");
-  }, 5000);
-}
+// ─── ОСНОВНОЙ РЕНДЕРЕР ФОНА ─────────────────────────────────────────────────────
 
 /**
- * Создает рендерер фона для проекта пазлов.
- * Рендерит отдельные сцены для каждого слоя (bits 1-7) в RenderTarget.
+ * Создаёт рендерер многослойного фруктового фона
+ * Рендерит 7 независимых слоёв (битовые маски 1-7) в отдельные текстуры
+ * @param config - Конфигурация пресетов фона
+ * @param ui - Опциональный UI-контейнер (для отладки)
  */
-export function createFruitBackgroundRenderer(opts: {
+export function createFruitBackgroundRenderer({
+  config,
+  ui
+}: {
   config: FruitBackgroundPresetsConfig;
-  ui?: { canvas: HTMLCanvasElement; statusEl: HTMLDivElement } | undefined;
+  ui?: { canvas: HTMLCanvasElement; statusEl: HTMLDivElement };
 }): FruitBackgroundRenderer {
-  const { config } = opts;
-  let projects: Map<FruitLayerBits, FruitsProject> = new Map();
-  let renderTargetsMap: Map<FruitLayerBits, THREE.WebGLRenderTarget> = new Map();
+  
+  // ─── ВНУТРЕННЕЕ СОСТОЯНИЕ ─────────────────────────────────────────────────────
+  const projects = new Map<FruitLayerBits, FruitsProject>();
+  const renderTargets = new Map<FruitLayerBits, THREE.WebGLRenderTarget>();
   let width = 0;
   let height = 0;
   let lastUpdateTime = 0;
   let isLoaded = false;
-
-  dbeugTex(renderTargetsMap)
-
-  // Создаем offscreen renderer для рендеринга в текстуры
+  
+  // ─── OFFSCREEN РЕНДЕРЕР ───────────────────────────────────────────────────────
   const offscreenCanvas = document.createElement("canvas");
   const offscreenRenderer = new THREE.WebGLRenderer({
     canvas: offscreenCanvas,
@@ -101,189 +103,215 @@ export function createFruitBackgroundRenderer(opts: {
     premultipliedAlpha: false,
     preserveDrawingBuffer: false
   });
+  
   offscreenRenderer.setPixelRatio(1);
   offscreenRenderer.outputColorSpace = THREE.SRGBColorSpace;
   offscreenRenderer.autoClear = true;
-
+  
+  // ─── ЗАГРУЗКА РЕСУРСОВ ────────────────────────────────────────────────────────
   async function load(): Promise<void> {
     if (isLoaded) return;
-
-    // Инициализируем размеры если еще не установлены
+    
+    // Устанавливаем дефолтные размеры при первой загрузке
     if (width === 0 || height === 0) {
-      width = 1920; // Дефолтные размеры
+      width = 1920;
       height = 1080;
     }
-
-    // Загружаем продукты один раз
-    const tempProject = new FruitsProject();
-    const products = await tempProject.load(config.gltfUrl);
-    console.log(`Загружено продуктов для фона: ${products.length}`);
-
-    // Создаем проекты для каждого слоя
-    for (let bits = 1; bits <= 7; bits++) {
-      const b = bits as FruitLayerBits;
-      const layerConfig = createLayerConfig(config, b, products);
+    
+    // Загружаем модели один раз для всех слоёв
+    const loaderProject = new FruitsProject();
+    const products = await loaderProject.load(config.gltfUrl);
+    console.log(`✅ Загружено ${products.length} типов фруктов для фона`);
+    
+    // Создаём проект и рендер-таргет для каждого слоя (1-7)
+    for (let bits = 1 as FruitLayerBits; bits <= 7; bits++) {
+      const layerConfig = createLayerConfig(config, bits, products);
       
+      // Инициализация проекта слоя
       const project = new FruitsProject();
-      // Загружаем продукты в проект
-      await project.load(config.gltfUrl);
+      await project.load(config.gltfUrl); // Повторная загрузка оптимизируется кэшем
       
-      // Настраиваем проект с размером на основе rtScale
+      // Расчёт размеров рендер-таргета
       const rtWidth = Math.max(1, Math.floor(width * config.rtScale));
       const rtHeight = Math.max(1, Math.floor(height * config.rtScale));
+      
       project.setup(layerConfig, rtWidth, rtHeight);
+      projects.set(bits, project);
       
-      projects.set(b, project);
-      
-      // Создаем RenderTarget для этого слоя
-      const rt = new THREE.WebGLRenderTarget(rtWidth, rtHeight, {
+      // Создание текстуры для слоя
+      const renderTarget = new THREE.WebGLRenderTarget(rtWidth, rtHeight, {
         minFilter: THREE.LinearFilter,
         magFilter: THREE.LinearFilter,
         format: THREE.RGBAFormat,
         colorSpace: THREE.SRGBColorSpace
       });
-      renderTargetsMap.set(b, rt);
+      renderTargets.set(bits, renderTarget);
     }
-
+    
     isLoaded = true;
+    if (ui?.statusEl) {
+      ui.statusEl.textContent = "Фон загружен";
+    }
   }
-
-  function resize(w: number, h: number, _dprValue: number): void {
+  
+  // ─── ОБРАБОТКА ИЗМЕНЕНИЯ РАЗМЕРОВ ─────────────────────────────────────────────
+  function resize(w: number, h: number, _dpr: number): void {
     width = w;
     height = h;
-
+    
     const rtWidth = Math.floor(w * config.rtScale);
     const rtHeight = Math.floor(h * config.rtScale);
-
-    // Обновляем размеры RenderTarget
-    for (const rt of renderTargetsMap.values()) {
+    
+    // Обновляем все рендер-таргеты
+    for (const rt of renderTargets.values()) {
       rt.setSize(rtWidth, rtHeight);
     }
-
-    // Обновляем размеры проектов
+    
+    // Обновляем размеры всех проектов-слоёв
     for (const project of projects.values()) {
       project.resize(rtWidth, rtHeight);
     }
-
+    
     offscreenRenderer.setSize(rtWidth, rtHeight, false);
   }
-
-  function update(timeSec: number, _dprValue: number): void {
+  
+  // ─── ОБНОВЛЕНИЕ АНИМАЦИИ ──────────────────────────────────────────────────────
+  function update(timeSec: number, _dpr: number): void {
     if (!isLoaded) return;
-
-    // Обновляем анимацию с учетом updateFps
-    const targetFps = config.updateFps > 0 ? config.updateFps : 60;
-    const frameTime = 1.0 / targetFps;
-    const now = timeSec;
     
-    if (now - lastUpdateTime >= frameTime) {
-      lastUpdateTime = now;
+    const targetFrameTime = config.updateFps > 0 
+      ? 1.0 / config.updateFps 
+      : 1.0 / 60;
+    
+    if (timeSec - lastUpdateTime >= targetFrameTime) {
+      lastUpdateTime = timeSec;
       
+      // Обновляем анимацию всех слоёв
       for (const project of projects.values()) {
-        project.update(now);
+        project.update(timeSec);
       }
     }
   }
-
-  function renderTargets(_rendererInstance: THREE.WebGLRenderer): void {
+  
+  // ─── РЕНДЕРИНГ СЛОЁВ В ТЕКСТУРЫ ───────────────────────────────────────────────
+  function renderTargetsToTextures(): void {
     if (!isLoaded) return;
-
-    // Рендерим каждый слой в свой RenderTarget
-    for (let bits = 1; bits <= 7; bits++) {
-      const b = bits as FruitLayerBits;
-      const project = projects.get(b);
-      const rt = renderTargetsMap.get(b);
+    
+    // Рендерим каждый слой в свою текстуру
+    for (let bits = 1 as FruitLayerBits; bits <= 7; bits++) {
+      const project = projects.get(bits);
+      const renderTarget = renderTargets.get(bits);
       
-      if (!project || !rt) continue;
-
-      // Рендерим в RenderTarget
-      offscreenRenderer.setRenderTarget(rt);
+      if (!project || !renderTarget) continue;
+      
+      offscreenRenderer.setRenderTarget(renderTarget);
       project.render(offscreenRenderer);
     }
-
+    
+    // Возвращаем рендерер в основной буфер
     offscreenRenderer.setRenderTarget(null);
   }
-
+  
+  // ─── ПОЛУЧЕНИЕ ТЕКСТУРЫ СЛОЯ ──────────────────────────────────────────────────
   function getLayerTexture(bits: FruitLayerBits): THREE.Texture {
-    const rt = renderTargetsMap.get(bits);
-    if (!rt) {
-      // Возвращаем пустую текстуру как заглушку
-      const tex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
-      tex.needsUpdate = true;
-      return tex;
+    const renderTarget = renderTargets.get(bits);
+    
+    if (!renderTarget) {
+      // Возвращаем чёрную заглушку при отсутствии текстуры
+      const placeholder = new THREE.DataTexture(
+        new Uint8Array([0, 0, 0, 255]), 
+        1, 
+        1
+      );
+      placeholder.needsUpdate = true;
+      return placeholder;
     }
-    return rt.texture;
+    
+    return renderTarget.texture;
   }
-
+  
+  // ─── ПУБЛИЧНЫЙ ИНТЕРФЕЙС ──────────────────────────────────────────────────────
   return {
     load,
     resize,
     update,
-    renderTargets,
+    renderTargets: renderTargetsToTextures,
     getLayerTexture
   };
 }
 
+// ─── УТИЛИТА МОНТИРОВАНИЯ ───────────────────────────────────────────────────────
+
 /**
- * Монтирует проект фруктов в указанный элемент.
- * Используется для прямого запуска проекта фруктов (не через puzzle).
- *
- * @param host - Родительский элемент для монтирования
+ * Монтирует интерактивный фруктовый проект в DOM-элемент
+ * (Используется для автономного запуска, не через пазл)
+ * @param host - Контейнер для встраивания проекта
  */
 export async function mountFruitsProject(host: HTMLElement): Promise<void> {
-  // UI
+  // ─── КОНСТАНТЫ ────────────────────────────────────────────────────────────────
+  const MAX_FRAME_TIME = 0.033; // ~30 FPS (максимальный шаг)
+  const MIN_FRAME_TIME = 0.001; // ~1000 FPS (минимальный шаг)
+  
+  // ─── ИНИЦИАЛИЗАЦИЯ UI И РЕНДЕРЕРА ─────────────────────────────────────────────
   const ui = createFruitsUI(host);
-
-  // Рендер
   const renderer = createFruitsRenderer(ui.canvas);
-
-  // Создаем проект
+  
+  // ─── НАСТРОЙКА ПРОЕКТА ────────────────────────────────────────────────────────
   const project = new FruitsProject();
-
-  // Функция resize
-  function resize(): { w: number; h: number; dpr: number } {
+  
+  // Функция обработки ресайза
+  function handleResize() {
     const { w, h, dpr } = resizeRenderer(ui.canvas, renderer, getDpr);
     project.resize(w, h);
     return { w, h, dpr };
   }
-
+  
   // Загрузка моделей
-  ui.statusEl.textContent = "Загружаю модели фруктов…";
+  ui.statusEl.textContent = "Загрузка моделей фруктов...";
   const products = await project.load(CONFIG.puzzle.background3d.gltfUrl);
-  console.log(`Загружено продуктов: ${products.length}`);
-
-  // Создаем конфиг
-  const fruitsConfig = createLayerConfig(CONFIG.puzzle.background3d as FruitBackgroundPresetsConfig, 1, products);
-
-  // Настройка
-  const { w, h } = resize();
+  console.log(`✅ Загружено ${products.length} типов фруктов`);
+  
+  // Формирование конфигурации (используем слой 1 как пример)
+  const fruitsConfig = createLayerConfig(
+    CONFIG.puzzle.background3d as FruitBackgroundPresetsConfig,
+    1,
+    products
+  );
+  
+  // Применение конфигурации
+  const { w, h } = handleResize();
   project.setup(fruitsConfig, w, h);
-
   ui.statusEl.textContent = "Готово!";
-
-  // Рендер-луп
-  let lastT = performance.now();
-  function frame(tNow: number): void {
-    requestAnimationFrame(frame);
-
-    const dt = Math.min(0.033, Math.max(0.001, (tNow - lastT) * 0.001));
-    lastT = tNow;
-    const timeSec = tNow * 0.001;
-
-    // Resize при изменении размеров
-    const { dpr } = resize();
-
-    // Обновление анимации и рендер
+  
+  // ─── РЕНДЕР-ЦИКЛ ──────────────────────────────────────────────────────────────
+  let lastTimestamp = performance.now();
+  
+  function renderLoop(timestamp: number): void {
+    requestAnimationFrame(renderLoop);
+    
+    // Расчёт дельты с ограничениями
+    const deltaSeconds = Math.min(
+      MAX_FRAME_TIME,
+      Math.max(MIN_FRAME_TIME, (timestamp - lastTimestamp) * 0.001)
+    );
+    lastTimestamp = timestamp;
+    const timeSec = timestamp * 0.001;
+    
+    // Обработка ресайза
+    const { dpr } = handleResize();
+    
+    // Обновление и рендер
     project.update(timeSec);
     project.render(renderer);
-
+    
     // Обновление статуса
-    ui.statusEl.textContent = `Фрукты • dt=${(dt * 1000).toFixed(1)}ms • DPR=${dpr.toFixed(2)}`;
+    ui.statusEl.textContent = 
+      `Фрукты • Δt=${(deltaSeconds * 1000).toFixed(1)}мс • DPR=${dpr.toFixed(2)}`;
   }
-
-  // Запуск рендер-лупа
-  requestAnimationFrame(frame);
-
-  // Обработка resize окна
-  window.addEventListener("resize", () => resize());
+  
+  // Запуск цикла
+  requestAnimationFrame(renderLoop);
+  
+  // Слушатель ресайза окна
+  window.addEventListener("resize", () => handleResize());
 }
