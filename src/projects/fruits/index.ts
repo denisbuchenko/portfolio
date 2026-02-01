@@ -165,12 +165,11 @@ function scheduleTextureDebug(
   setTimeout(() => {
     console.log('🔍 Отладка текстур фона');
     
-    for (let bits = 1 as FruitLayerBits; bits <= 7; bits++) {
-      const renderTarget = renderTargets.get(bits);
+      const renderTarget = renderTargets.get(1);
+
       if (renderTarget) {
-        showTextureDebug(renderTarget.texture, `Layer ${bits}`);
+        showTextureDebug(renderTarget.texture, `Layer ${1}`);
       }
-    }
   }, delayMs);
 }
 
@@ -182,15 +181,15 @@ function scheduleTextureDebug(
  */
 export function createFruitBackgroundRenderer({
   config,
-  debug = false
 }: {
   config: FruitBackgroundPresetsConfig;
-  debug?: boolean;
 }): FruitBackgroundRenderer {
   
   // ─── СОСТОЯНИЕ ────────────────────────────────────────────────────────────────
   const projects = new Map<FruitLayerBits, FruitsProject>();
   const renderTargets = new Map<FruitLayerBits, THREE.WebGLRenderTarget>();
+
+  scheduleTextureDebug(renderTargets);
   
   const offscreenCanvas = document.createElement("canvas");
   const offscreenRenderer = new THREE.WebGLRenderer({
@@ -229,11 +228,6 @@ export function createFruitBackgroundRenderer({
     
     // Запуск рендер-цикла
     runBackgroundRenderLoop(projects, renderTargets, offscreenRenderer, isLoaded);
-    
-    // Отладка текстур
-    if (debug) {
-      scheduleTextureDebug(renderTargets);
-    }
   })();
   
   // ─── ПОЛУЧЕНИЕ ТЕКСТУРЫ СЛОЯ ──────────────────────────────────────────────────
