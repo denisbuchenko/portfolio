@@ -19,28 +19,6 @@ export type { FruitBackgroundRenderer };
 export { showTextureDebug };
 
 /**
- * Создает конфигурацию для проекта фруктов на основе глобального конфига.
- */
-function createFruitsConfig(products: Array<{ name: string }>): FruitsConfig {
-  const sampleProducts = products.slice(0, Math.min(5, products.length));
-  console.log(`Используем продуктов: ${sampleProducts.length}`, sampleProducts.map(p => p.name));
-
-  return {
-    gltfUrl: CONFIG.puzzle.background3d.gltfUrl,
-    backgroundColor: "#00506f",
-    camera: {
-      fov: CONFIG.puzzle.background3d.camera.fovDeg
-    },
-    products: sampleProducts.map((p, i) => ({
-      productName: p.name,
-      count: 3 + i * 2,
-      size: { min: 2.0, max: 4.0 }
-    })),
-    seed: CONFIG.puzzle.background3d.seed
-  };
-}
-
-/**
  * Создает конфигурацию для слоя фона на основе пресетов.
  */
 function createLayerConfig(
@@ -275,11 +253,11 @@ export async function mountFruitsProject(host: HTMLElement): Promise<void> {
   console.log(`Загружено продуктов: ${products.length}`);
 
   // Создаем конфиг
-  const config = createFruitsConfig(products);
+  const fruitsConfig = createLayerConfig(CONFIG.puzzle.background3d as FruitBackgroundPresetsConfig, 1, products);
 
   // Настройка
   const { w, h } = resize();
-  project.setup(config, w, h);
+  project.setup(fruitsConfig, w, h);
 
   ui.statusEl.textContent = "Готово!";
 
