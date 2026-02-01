@@ -1,4 +1,3 @@
-
 import * as THREE from "three";
 import { FruitsProject } from "./products";
 import { createFruitsUI } from "./ui";
@@ -14,14 +13,19 @@ import type {
 import { showTextureDebug } from "./utils";
 
 export type { FruitBackgroundRenderer };
-export { showTextureDebug }; // Утилита отладки текстур (вызывается вручную при необходимости)
+export { showTextureDebug };
 
+// ─── КОНСТАНТЫ ──────────────────────────────────────────────────────────────────
+const DEBUG_DELAY_MS = 5000; // Задержка для отладки текстур
+const DEFAULT_WIDTH = 1920;
+const DEFAULT_HEIGHT = 1080;
+const MAX_FRAME_TIME = 0.033;
+const MIN_FRAME_TIME = 0.001;
+
+// ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ────────────────────────────────────────────────────
 
 /**
- * Формирует конфигурацию слоя фона на основе пресета и битовой маски
- * @param preset - Глобальный пресет фона
- * @param layerBits - Битовая маска слоя (1-7)
- * @param allProducts - Список всех доступных продуктов
+ * Формирует конфигурацию слоя фона
  */
 function createLayerConfig(
   preset: FruitBackgroundPresetsConfig,
@@ -31,9 +35,8 @@ function createLayerConfig(
   const layer = preset.layers[layerBits];
   const productNames = allProducts.map(p => p.name);
   
-  // ─── ФИЛЬТРАЦИЯ ПРОДУКТОВ ────────────────────────────────────────────────────
+  // Фильтрация продуктов
   let filtered = productNames;
-  
   if (layer.fruits?.include) {
     filtered = filtered.filter(name => layer.fruits!.include!.includes(name));
   }
@@ -41,11 +44,11 @@ function createLayerConfig(
     filtered = filtered.filter(name => !layer.fruits!.exclude!.includes(name));
   }
   
-  // ─── ОГРАНИЧЕНИЕ КОЛИЧЕСТВА ТИПОВ ─────────────────────────────────────────────
+  // Ограничение количества типов
   const maxTypes = layer.fruits?.countTypes ?? preset.counts.bits1to5;
   const selectedProducts = filtered.slice(0, maxTypes);
   
-  // ─── РАСЧЁТ ПАРАМЕТРОВ ИНСТАНСОВ ──────────────────────────────────────────────
+  // Расчёт параметров инстансов
   const instancesPerProduct = layer.fruits?.countInstances 
     ? Math.floor(layer.fruits.countInstances * preset.instanceMul) 
     : Math.floor(10 * preset.instanceMul);
@@ -68,31 +71,127 @@ function createLayerConfig(
   };
 }
 
+/**
+ * Создаёт рендер-таргет для слоя
+ */
+function createLayerRenderTarget(
+  width: number,
+  height: number
+): THREE.WebGLRenderTarget {
+  return new THREE.WebGLRenderTarget(width, height, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    colorSpace: THREE.SRGBColorSpace
+  });
+}
+
+/**
+ * Инициализирует все 7 слоёв фона
+ */
+async function initializeBackgroundLayers(
+  config: FruitBackgroundPresetsConfig,
+  projects: Map<FruitLayerBits, FruitsProject>,
+  renderTargets: Map<FruitLayerBits, THREE.WebGLRenderTarget>,
+  targetWidth: number,
+  targetHeight: number
+): Promise<void> {
+  // Загрузка моделей один раз
+  const loaderProject = new FruitsProject();
+  const products = await loaderProject.load(config.gltfUrl);
+  console.log(`✅ Загружено ${products.length} типов фруктов для фона`);
+  
+  // Создание проектов для всех 7 слоёв
+  for (let bits = 1 as FruitLayerBits; bits <= 7; bits++) {
+    const layerConfig = createLayerConfig(config, bits, products);
+    
+    const project = new FruitsProject();
+    await project.load(config.gltfUrl);
+    
+    project.setup(layerConfig, targetWidth, targetHeight);
+    projects.set(bits, project);
+    
+    // Создание рендер-таргета
+    const renderTarget = createLayerRenderTarget(targetWidth, targetHeight);
+    renderTargets.set(bits, renderTarget);
+  }
+}
+
+/**
+ * Внутренний рендер-цикл для фруктового фона
+ */
+function runBackgroundRenderLoop(
+  projects: Map<FruitLayerBits, FruitsProject>,
+  renderTargets: Map<FruitLayerBits, THREE.WebGLRenderTarget>,
+  renderer: THREE.WebGLRenderer,
+  isLoadedRef: { value: boolean }
+): void {
+  function loop(timestamp: number): void {
+    requestAnimationFrame(loop);
+    
+    if (!isLoadedRef.value) return;
+    
+    const timeSec = timestamp * 0.001;
+    
+    // Обновление анимации всех слоёв
+    for (const project of projects.values()) {
+      project.update(timeSec);
+    }
+    
+    // Рендеринг каждого слоя в свою текстуру
+    for (let bits = 1 as FruitLayerBits; bits <= 7; bits++) {
+      const project = projects.get(bits);
+      const renderTarget = renderTargets.get(bits);
+      
+      if (!project || !renderTarget) continue;
+      
+      renderer.setRenderTarget(renderTarget);
+      project.render(renderer);
+    }
+    
+    renderer.setRenderTarget(null);
+  }
+  
+  requestAnimationFrame(loop);
+}
+
+/**
+ * Запускает отладку текстур через задержку
+ */
+function scheduleTextureDebug(
+  renderTargets: Map<FruitLayerBits, THREE.WebGLRenderTarget>,
+  delayMs: number = DEBUG_DELAY_MS
+): void {
+  setTimeout(() => {
+    console.log('🔍 Отладка текстур фона');
+    
+    for (let bits = 1 as FruitLayerBits; bits <= 7; bits++) {
+      const renderTarget = renderTargets.get(bits);
+      if (renderTarget) {
+        showTextureDebug(renderTarget.texture, `Layer ${bits}`);
+      }
+    }
+  }, delayMs);
+}
+
 // ─── ОСНОВНОЙ РЕНДЕРЕР ФОНА ─────────────────────────────────────────────────────
 
 /**
- * Создаёт рендерер многослойного фруктового фона
- * Рендерит 7 независимых слоёв (битовые маски 1-7) в отдельные текстуры
- * @param config - Конфигурация пресетов фона
- * @param ui - Опциональный UI-контейнер (для отладки)
+ * Создаёт рендерер фруктового фона с автономным рендер-циклом
+ * Возвращает только метод получения текстуры слоя
  */
 export function createFruitBackgroundRenderer({
   config,
-  ui
+  debug = false
 }: {
   config: FruitBackgroundPresetsConfig;
-  ui?: { canvas: HTMLCanvasElement; statusEl: HTMLDivElement };
+  debug?: boolean;
 }): FruitBackgroundRenderer {
   
-  // ─── ВНУТРЕННЕЕ СОСТОЯНИЕ ─────────────────────────────────────────────────────
+  // ─── СОСТОЯНИЕ ────────────────────────────────────────────────────────────────
   const projects = new Map<FruitLayerBits, FruitsProject>();
   const renderTargets = new Map<FruitLayerBits, THREE.WebGLRenderTarget>();
-  let width = 0;
-  let height = 0;
-  let lastUpdateTime = 0;
-  let isLoaded = false;
   
-  // ─── OFFSCREEN РЕНДЕРЕР ───────────────────────────────────────────────────────
   const offscreenCanvas = document.createElement("canvas");
   const offscreenRenderer = new THREE.WebGLRenderer({
     canvas: offscreenCanvas,
@@ -108,119 +207,44 @@ export function createFruitBackgroundRenderer({
   offscreenRenderer.outputColorSpace = THREE.SRGBColorSpace;
   offscreenRenderer.autoClear = true;
   
-  // ─── ЗАГРУЗКА РЕСУРСОВ ────────────────────────────────────────────────────────
-  async function load(): Promise<void> {
-    if (isLoaded) return;
-    
-    // Устанавливаем дефолтные размеры при первой загрузке
-    if (width === 0 || height === 0) {
-      width = 1920;
-      height = 1080;
-    }
-    
-    // Загружаем модели один раз для всех слоёв
-    const loaderProject = new FruitsProject();
-    const products = await loaderProject.load(config.gltfUrl);
-    console.log(`✅ Загружено ${products.length} типов фруктов для фона`);
-    
-    // Создаём проект и рендер-таргет для каждого слоя (1-7)
-    for (let bits = 1 as FruitLayerBits; bits <= 7; bits++) {
-      const layerConfig = createLayerConfig(config, bits, products);
-      
-      // Инициализация проекта слоя
-      const project = new FruitsProject();
-      await project.load(config.gltfUrl); // Повторная загрузка оптимизируется кэшем
-      
-      // Расчёт размеров рендер-таргета
-      const rtWidth = Math.max(1, Math.floor(width * config.rtScale));
-      const rtHeight = Math.max(1, Math.floor(height * config.rtScale));
-      
-      project.setup(layerConfig, rtWidth, rtHeight);
-      projects.set(bits, project);
-      
-      // Создание текстуры для слоя
-      const renderTarget = new THREE.WebGLRenderTarget(rtWidth, rtHeight, {
-        minFilter: THREE.LinearFilter,
-        magFilter: THREE.LinearFilter,
-        format: THREE.RGBAFormat,
-        colorSpace: THREE.SRGBColorSpace
-      });
-      renderTargets.set(bits, renderTarget);
-    }
-    
-    isLoaded = true;
-    if (ui?.statusEl) {
-      ui.statusEl.textContent = "Фон загружен";
-    }
-  }
+  const isLoaded = { value: false };
   
-  // ─── ОБРАБОТКА ИЗМЕНЕНИЯ РАЗМЕРОВ ─────────────────────────────────────────────
-  function resize(w: number, h: number, _dpr: number): void {
-    width = w;
-    height = h;
+  // ─── ИНИЦИАЛИЗАЦИЯ ────────────────────────────────────────────────────────────
+  (async () => {
+    // Расчёт размеров рендер-таргетов
+    const rtWidth = Math.max(1, Math.floor(DEFAULT_WIDTH * config.rtScale));
+    const rtHeight = Math.max(1, Math.floor(DEFAULT_HEIGHT * config.rtScale));
     
-    const rtWidth = Math.floor(w * config.rtScale);
-    const rtHeight = Math.floor(h * config.rtScale);
-    
-    // Обновляем все рендер-таргеты
-    for (const rt of renderTargets.values()) {
-      rt.setSize(rtWidth, rtHeight);
-    }
-    
-    // Обновляем размеры всех проектов-слоёв
-    for (const project of projects.values()) {
-      project.resize(rtWidth, rtHeight);
-    }
+    // Инициализация слоёв
+    await initializeBackgroundLayers(
+      config,
+      projects,
+      renderTargets,
+      rtWidth,
+      rtHeight
+    );
     
     offscreenRenderer.setSize(rtWidth, rtHeight, false);
-  }
-  
-  // ─── ОБНОВЛЕНИЕ АНИМАЦИИ ──────────────────────────────────────────────────────
-  function update(timeSec: number, _dpr: number): void {
-    if (!isLoaded) return;
+    isLoaded.value = true;
     
-    const targetFrameTime = config.updateFps > 0 
-      ? 1.0 / config.updateFps 
-      : 1.0 / 60;
+    // Запуск рендер-цикла
+    runBackgroundRenderLoop(projects, renderTargets, offscreenRenderer, isLoaded);
     
-    if (timeSec - lastUpdateTime >= targetFrameTime) {
-      lastUpdateTime = timeSec;
-      
-      // Обновляем анимацию всех слоёв
-      for (const project of projects.values()) {
-        project.update(timeSec);
-      }
+    // Отладка текстур
+    if (debug) {
+      scheduleTextureDebug(renderTargets);
     }
-  }
-  
-  // ─── РЕНДЕРИНГ СЛОЁВ В ТЕКСТУРЫ ───────────────────────────────────────────────
-  function renderTargetsToTextures(): void {
-    if (!isLoaded) return;
-    
-    // Рендерим каждый слой в свою текстуру
-    for (let bits = 1 as FruitLayerBits; bits <= 7; bits++) {
-      const project = projects.get(bits);
-      const renderTarget = renderTargets.get(bits);
-      
-      if (!project || !renderTarget) continue;
-      
-      offscreenRenderer.setRenderTarget(renderTarget);
-      project.render(offscreenRenderer);
-    }
-    
-    // Возвращаем рендерер в основной буфер
-    offscreenRenderer.setRenderTarget(null);
-  }
+  })();
   
   // ─── ПОЛУЧЕНИЕ ТЕКСТУРЫ СЛОЯ ──────────────────────────────────────────────────
   function getLayerTexture(bits: FruitLayerBits): THREE.Texture {
     const renderTarget = renderTargets.get(bits);
     
     if (!renderTarget) {
-      // Возвращаем чёрную заглушку при отсутствии текстуры
+      // Заглушка
       const placeholder = new THREE.DataTexture(
-        new Uint8Array([0, 0, 0, 255]), 
-        1, 
+        new Uint8Array([0, 0, 0, 255]),
+        1,
         1
       );
       placeholder.needsUpdate = true;
@@ -230,66 +254,59 @@ export function createFruitBackgroundRenderer({
     return renderTarget.texture;
   }
   
-  // ─── ПУБЛИЧНЫЙ ИНТЕРФЕЙС ──────────────────────────────────────────────────────
+  // ─── ИНТЕРФЕЙС ────────────────────────────────────────────────────────────────
   return {
-    load,
-    resize,
-    update,
-    renderTargets: renderTargetsToTextures,
-    getLayerTexture
+    load: async () => {},           // Заглушка
+    resize: () => {},         // Заглушка
+    update: () => {},         // Заглушка
+    renderTargets: () => {},  // Заглушка
+    getLayerTexture           // Единственный рабочий метод
   };
 }
 
 // ─── УТИЛИТА МОНТИРОВАНИЯ ───────────────────────────────────────────────────────
 
 /**
- * Монтирует интерактивный фруктовый проект в DOM-элемент
- * (Используется для автономного запуска, не через пазл)
- * @param host - Контейнер для встраивания проекта
+ * Монтирует фруктовый проект в DOM (для автономного запуска)
  */
 export async function mountFruitsProject(host: HTMLElement): Promise<void> {
-  // ─── КОНСТАНТЫ ────────────────────────────────────────────────────────────────
-  const MAX_FRAME_TIME = 0.033; // ~30 FPS (максимальный шаг)
-  const MIN_FRAME_TIME = 0.001; // ~1000 FPS (минимальный шаг)
-  
-  // ─── ИНИЦИАЛИЗАЦИЯ UI И РЕНДЕРЕРА ─────────────────────────────────────────────
+  // UI и рендерер
   const ui = createFruitsUI(host);
   const renderer = createFruitsRenderer(ui.canvas);
   
-  // ─── НАСТРОЙКА ПРОЕКТА ────────────────────────────────────────────────────────
+  // Проект
   const project = new FruitsProject();
   
-  // Функция обработки ресайза
+  // Ресайз
   function handleResize() {
     const { w, h, dpr } = resizeRenderer(ui.canvas, renderer, getDpr);
     project.resize(w, h);
     return { w, h, dpr };
   }
   
-  // Загрузка моделей
+  // Загрузка
   ui.statusEl.textContent = "Загрузка моделей фруктов...";
   const products = await project.load(CONFIG.puzzle.background3d.gltfUrl);
   console.log(`✅ Загружено ${products.length} типов фруктов`);
   
-  // Формирование конфигурации (используем слой 1 как пример)
+  // Конфигурация (слой 1)
   const fruitsConfig = createLayerConfig(
     CONFIG.puzzle.background3d as FruitBackgroundPresetsConfig,
     1,
     products
   );
   
-  // Применение конфигурации
+  // Настройка
   const { w, h } = handleResize();
   project.setup(fruitsConfig, w, h);
   ui.statusEl.textContent = "Готово!";
   
-  // ─── РЕНДЕР-ЦИКЛ ──────────────────────────────────────────────────────────────
+  // Рендер-цикл
   let lastTimestamp = performance.now();
   
   function renderLoop(timestamp: number): void {
     requestAnimationFrame(renderLoop);
     
-    // Расчёт дельты с ограничениями
     const deltaSeconds = Math.min(
       MAX_FRAME_TIME,
       Math.max(MIN_FRAME_TIME, (timestamp - lastTimestamp) * 0.001)
@@ -297,21 +314,15 @@ export async function mountFruitsProject(host: HTMLElement): Promise<void> {
     lastTimestamp = timestamp;
     const timeSec = timestamp * 0.001;
     
-    // Обработка ресайза
     const { dpr } = handleResize();
     
-    // Обновление и рендер
     project.update(timeSec);
     project.render(renderer);
     
-    // Обновление статуса
     ui.statusEl.textContent = 
       `Фрукты • Δt=${(deltaSeconds * 1000).toFixed(1)}мс • DPR=${dpr.toFixed(2)}`;
   }
   
-  // Запуск цикла
   requestAnimationFrame(renderLoop);
-  
-  // Слушатель ресайза окна
   window.addEventListener("resize", () => handleResize());
 }
