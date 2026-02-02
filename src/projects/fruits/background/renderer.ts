@@ -9,7 +9,9 @@ import type { FruitsConfig } from "../config";
 import { FruitsProject } from "../project";
 
 const LAYER_BITS = [1, 2, 3, 4, 5, 6, 7] as const;
-const MAX_TEXTURE_SIZE = 2048;
+// Не ограничиваемся искусственным 2048 — используем аппаратный лимит (renderer.capabilities.maxTextureSize),
+// а до первого render() держим “широкий” дефолт.
+const DEFAULT_MAX_TEXTURE_SIZE = 16384;
 const DEFAULT_WIDTH = 1920;
 const DEFAULT_HEIGHT = 1080;
 
@@ -94,6 +96,7 @@ export function createFruitBackgroundRenderer({
   const projects = new Map<FruitLayerBits, FruitsProject>();
   const renderTargets = new Map<FruitLayerBits, THREE.WebGLRenderTarget>();
   const activeLayers = { value: new Set<FruitLayerBits>(LAYER_BITS) }; // По умолчанию все слои активны
+  let maxTextureSize = DEFAULT_MAX_TEXTURE_SIZE;
 
   const isLoaded = { value: false };
   let loadPromise: Promise<void> | null = null;
@@ -110,11 +113,11 @@ export function createFruitBackgroundRenderer({
   loadPromise = (async () => {
     try {
       const rtWidth = Math.min(
-        MAX_TEXTURE_SIZE,
+        maxTextureSize,
         Math.max(1, Math.floor(DEFAULT_WIDTH * config.rtScale))
       );
       const rtHeight = Math.min(
-        MAX_TEXTURE_SIZE,
+        maxTextureSize,
         Math.max(1, Math.floor(DEFAULT_HEIGHT * config.rtScale))
       );
 
@@ -181,11 +184,11 @@ export function createFruitBackgroundRenderer({
     if (!isLoaded.value) return;
 
     const rtWidth = Math.min(
-      MAX_TEXTURE_SIZE,
+      maxTextureSize,
       Math.max(1, Math.floor(w * config.rtScale))
     );
     const rtHeight = Math.min(
-      MAX_TEXTURE_SIZE,
+      maxTextureSize,
       Math.max(1, Math.floor(h * config.rtScale))
     );
 
@@ -245,6 +248,19 @@ export function createFruitBackgroundRenderer({
   function renderTargetsFn(renderer: THREE.WebGLRenderer): Map<FruitLayerBits, THREE.WebGLRenderTarget> {
     if (!isLoaded.value) return renderTargets;
     if (!renderer) return renderTargets;
+
+    // Узнаём реальный лимит GPU и (если надо) ужимаем RT/проекты один раз.
+    maxTextureSize = Math.max(1, renderer.capabilities.maxTextureSize || maxTextureSize);
+    if (currentWidth > maxTextureSize || currentHeight > maxTextureSize) {
+      const clampedW = Math.min(currentWidth, maxTextureSize);
+      const clampedH = Math.min(currentHeight, maxTextureSize);
+      if (clampedW !== currentWidth || clampedH !== currentHeight) {
+        currentWidth = clampedW;
+        currentHeight = clampedH;
+        for (const rt of renderTargets.values()) rt.setSize(clampedW, clampedH);
+        for (const project of projects.values()) project.resize(clampedW, clampedH);
+      }
+    }
 
     // Доп. защита: не рендерим чаще, чем нужно (config.updateFps)
     if (!isRenderDue) return renderTargets;

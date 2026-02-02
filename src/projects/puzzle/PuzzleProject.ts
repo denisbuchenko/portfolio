@@ -159,12 +159,6 @@ export function mountPuzzleProject(host: HTMLElement): void {
     }
   }
 
-  canvasEl.addEventListener("pointerdown", onPointerDown);
-  canvasEl.addEventListener("pointermove", onPointerMove);
-  canvasEl.addEventListener("pointermove", onPointerMoveDraw);
-  canvasEl.addEventListener("pointerup", onPointerUpOrCancel);
-  canvasEl.addEventListener("pointercancel", onPointerUpOrCancel);
-
   let rebuildToken = 0;
   let sourceImg: HTMLImageElement | null = null;
 
@@ -210,6 +204,16 @@ export function mountPuzzleProject(host: HTMLElement): void {
     try {
       sourceImg = await loadImage("/img-lol.jpg");
       await rebuild();
+      // Важно: прогреваем 3D-фон ДО старта RAF и до включения рисования,
+      // чтобы компиляция/первый рендер RT не совпал с первым штрихом.
+      await renderer.loadAndPrewarm(getDpr());
+
+      canvasEl.addEventListener("pointerdown", onPointerDown);
+      canvasEl.addEventListener("pointermove", onPointerMove);
+      canvasEl.addEventListener("pointermove", onPointerMoveDraw);
+      canvasEl.addEventListener("pointerup", onPointerUpOrCancel);
+      canvasEl.addEventListener("pointercancel", onPointerUpOrCancel);
+
       if (!rafId) rafId = window.requestAnimationFrame(frame);
       statusEl.classList.add("puzzle__status--ready");
     } catch (e) {

@@ -9,6 +9,7 @@ export type PuzzleRenderer = {
   scene: THREE.Scene;
   camera: THREE.OrthographicCamera;
   maskTex: THREE.CanvasTexture;
+  loadAndPrewarm(dpr: number): Promise<void>;
   resize(w: number, h: number, dpr: number): void;
   markMaskDirty(): void;
   render(pieces: RuntimePiece[], timeSec: number, dpr: number): void;
@@ -52,6 +53,8 @@ export function createPuzzleRenderer(opts: {
 
   const resolution = new THREE.Vector2(2, 2);
   let fruitBg: FruitBackgroundRenderer | null = null;
+  let isPrewarmed = false;
+  let isCompiled = false;
 
   const fallbackBgTexByBits: Record<FruitLayerBits, THREE.DataTexture> = {
     1: new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat),
@@ -139,6 +142,52 @@ export function createPuzzleRenderer(opts: {
     isMaskDirty = true;
   }
 
+  async function loadAndPrewarm(dpr: number): Promise<void> {
+    if (isPrewarmed) return;
+
+    fruitBg = opts.background3d.enabled ? createFruitBackgroundRenderer({ config: opts.background3d }) : null;
+    if (!fruitBg) {
+      isPrewarmed = true;
+      return;
+    }
+
+    await fruitBg.load();
+
+    const w = renderer.domElement.width;
+    const h = renderer.domElement.height;
+    if (w > 0 && h > 0) {
+      fruitBg.resize(w, h, dpr);
+    }
+
+    // Прогреваем все 7 слоёв сразу, чтобы компиляция шейдеров и первый рендер RT
+    // не происходили в момент первого штриха.
+    const all = new Set<FruitLayerBits>([1, 2, 3, 4, 5, 6, 7]);
+    fruitBg.setActiveLayers(all);
+    lastActiveLayers = all;
+    for (const q of bgQuads) q.visible = true;
+
+    const t0 = performance.now() * 0.001;
+    for (let i = 0; i < 3; i++) {
+      fruitBg.update(t0 + i * (1 / 60), dpr);
+      fruitBg.renderTargets(renderer);
+    }
+
+    // Обновим ссылки на текстуры заранее (избегаем “свопа” в первом кадре).
+    for (let i = 0; i < bgQuads.length; i++) {
+      const bits = (i + 1) as FruitLayerBits;
+      const q = bgQuads[i];
+      (q.material.uniforms.tBg.value as THREE.Texture) = fruitBg.getLayerTexture(bits);
+    }
+
+    // Прогреваем компиляцию материалов пазла (фон/кусочки) один раз.
+    if (!isCompiled) {
+      renderer.compile(scene, camera);
+      isCompiled = true;
+    }
+
+    isPrewarmed = true;
+  }
+
   function disposePiecesMeshes(pieces: RuntimePiece[]): void {
     for (const p of pieces) {
       if (!p.mesh) continue;
@@ -187,13 +236,7 @@ export function createPuzzleRenderer(opts: {
     }
   }
 
-  fruitBg = opts.background3d.enabled ? createFruitBackgroundRenderer({ config: opts.background3d }) : null;
-  if (fruitBg !== null) {
-    void fruitBg.load().catch((e: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error("FruitBackground load failed:", e);
-    });
-  }
+  // fruitBg создаём/грузим через loadAndPrewarm(), чтобы контролировать “когда” случится тяжёлая работа.
 
   // Анализ маски для определения активных слоев (оптимизация)
   let lastMaskAnalysisFrame = 0;
@@ -351,6 +394,7 @@ export function createPuzzleRenderer(opts: {
     scene,
     camera,
     maskTex,
+    loadAndPrewarm,
     resize,
     markMaskDirty,
     render,
