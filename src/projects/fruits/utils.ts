@@ -1,7 +1,10 @@
 import * as THREE from "three";
+import type { Product, RenderProductOptions } from "./types";
+import vertexShader from "./shaders/animatedProduct.vert.glsl?raw";
+import fragmentShader from "./shaders/animatedProduct.frag.glsl?raw";
 
 /**
- * Утилиты для работы с фруктами.
+ * Утилиты и системы для работы с фруктами (анимация, instancing, рендер, сцена).
  */
 
 /**
@@ -24,8 +27,7 @@ export function norm2(v: THREE.Vector2): THREE.Vector2 {
  * Детерминированный генератор случайных чисел (0..1) на основе seed.
  * Использует xorshift-подобный алгоритм для быстрого и предсказуемого результата.
  */
- // Простая функция для генерации случайных чисел
- export function rand01(seed: number): number {
+export function rand01(seed: number): number {
   let x = seed ^ (seed >>> 15);
   x = Math.imul(x, 0x46d31bad);
   x ^= x >>> 14;
@@ -125,18 +127,15 @@ export function showTextureDebug(texture: THREE.Texture, label?: string): () => 
   let texWidth = 256;
   let texHeight = 256;
   
-  if (texture.image) {
-    const img = texture.image as { width?: number; height?: number };
-    if (img.width && img.height) {
-      texWidth = img.width;
-      texHeight = img.height;
-    }
-  } else if (texture.source?.data) {
-    const data = texture.source.data as { width?: number; height?: number };
-    if (data.width && data.height) {
-      texWidth = data.width;
-      texHeight = data.height;
-    }
+  const img = (texture as any).image as { width?: number; height?: number } | undefined;
+  const data = (texture as any).source?.data as { width?: number; height?: number } | undefined;
+
+  if (img?.width && img.height) {
+    texWidth = img.width;
+    texHeight = img.height;
+  } else if (data?.width && data.height) {
+    texWidth = data.width;
+    texHeight = data.height;
   }
 
   // Создаем контейнер overlay
@@ -214,11 +213,11 @@ export function showTextureDebug(texture: THREE.Texture, label?: string): () => 
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
   const geometry = new THREE.PlaneGeometry(1, 1);
-  const material = new THREE.MeshBasicMaterial({ 
+  const debugMaterial = new THREE.MeshBasicMaterial({ 
     map: texture,
     toneMapped: false
   });
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(geometry, debugMaterial);
   scene.add(mesh);
 
   // Рендерим текстуру
@@ -280,7 +279,7 @@ export function showTextureDebug(texture: THREE.Texture, label?: string): () => 
     document.body.removeChild(overlay);
     tempRenderer.dispose();
     geometry.dispose();
-    material.dispose();
+    debugMaterial.dispose();
   };
 
   closeBtn.onclick = close;
@@ -300,4 +299,445 @@ export function showTextureDebug(texture: THREE.Texture, label?: string): () => 
   document.addEventListener("keydown", handleKeyDown);
 
   return close;
+}
+
+/**
+ * Система анимации через шейдеры для продуктов.
+ */
+
+/**
+ * Создает ShaderMaterial для анимированного продукта.
+ *
+ * @param product - Продукт
+ * @param bounds - Границы для uBounds
+ * @returns ShaderMaterial
+ */
+export function createAnimatedMaterial(
+  product: Product,
+  bounds: { width: number; height: number }
+): THREE.ShaderMaterial {
+  // Используем первую текстуру из материалов
+  const map = product.materials.length > 0 && product.materials[0].map 
+    ? product.materials[0].map 
+    : null;
+
+  const material = new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    uniforms: {
+      uTime: { value: 0 },
+      map: { value: map },
+      color: { value: new THREE.Color(0xffffff) },
+      uBounds: { value: new THREE.Vector2(bounds.width, bounds.height) }
+    },
+    side: THREE.DoubleSide,
+    depthTest: true,
+    depthWrite: true
+  });
+
+  return material;
+}
+
+/**
+ * Обновляет uniforms шейдера для анимации.
+ *
+ * @param material - ShaderMaterial
+ * @param time - Время в секундах
+ */
+export function updateAnimation(material: THREE.ShaderMaterial, time: number): void {
+  if (material.uniforms && (material.uniforms as any).uTime) {
+    (material.uniforms as any).uTime.value = time;
+  }
+}
+
+/**
+ * Создает InstancedBufferAttribute для передачи параметров анимации каждому инстансу.
+ * Это позволяет каждому инстансу иметь свои уникальные параметры анимации.
+ *
+ * @param count - Количество инстансов
+ * @param seed - Базовый seed для генерации случайных параметров
+ * @param bounds - Границы видимой области для размещения объектов
+ * @param startInstanceIndex - Начальный индекс инстанса (для глобальной уникальности)
+ * @returns Объект с атрибутами для добавления в геометрию
+ */
+export function createAnimationAttributes(
+  count: number,
+  seed: number,
+  bounds: { width: number; height: number },
+  startInstanceIndex: number = 0
+): {
+  rotationSpeed: THREE.InstancedBufferAttribute;
+  rotationAxis: THREE.InstancedBufferAttribute;
+  phase: THREE.InstancedBufferAttribute;
+  movementDirection: THREE.InstancedBufferAttribute;
+  movementSpeed: THREE.InstancedBufferAttribute;
+  initialPosition: THREE.InstancedBufferAttribute;
+} {
+  const rotationSpeedArray = new Float32Array(count);
+  const rotationAxisArray = new Float32Array(count * 3);
+  const phaseArray = new Float32Array(count);
+  const movementDirectionArray = new Float32Array(count * 2);
+  const movementSpeedArray = new Float32Array(count);
+  const initialPositionArray = new Float32Array(count * 3);
+
+  // Простая функция для генерации случайных чисел
+  function _rand(seedLocal: number): number {
+    let x = seedLocal ^ (seedLocal >>> 15);
+    x = Math.imul(x, 0x46d31bad);
+    x ^= x >>> 14;
+    x = Math.imul(x, 0x2c1b3c6d);
+    x ^= x >>> 15;
+    return (x >>> 0) / 0x1_0000_0000;
+  }
+
+  for (let i = 0; i < count; i++) {
+    // Используем глобальный индекс инстанса для уникальности позиций
+    const globalIndex = startInstanceIndex + i;
+    const s = (seed + globalIndex * 31) | 0;
+    
+    // Случайная скорость вращения (0.3 - 1.0)
+    rotationSpeedArray[i] = 0.3 + _rand(s) * 0.7;
+    
+    // Случайная ось вращения (нормализованная)
+    const axisX = (_rand(s + 1) - 0.5) * 2.0;
+    const axisY = (_rand(s + 2) - 0.5) * 2.0;
+    const axisZ = (_rand(s + 3) - 0.5) * 2.0;
+    const axisLen = Math.sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ);
+    const invLen = axisLen > 0.001 ? 1.0 / axisLen : 1.0;
+    
+    rotationAxisArray[i * 3 + 0] = axisX * invLen;
+    rotationAxisArray[i * 3 + 1] = axisY * invLen;
+    rotationAxisArray[i * 3 + 2] = axisZ * invLen;
+    
+    // Случайная фаза (0 - 2π)
+    phaseArray[i] = _rand(s + 4) * 6.28318530718;
+    
+    // Уникальное направление движения для каждого инстанса
+    // Генерируем случайный угол и преобразуем в направление
+    const angle = _rand(s + 5) * 6.28318530718; // 0 - 2π
+    const dirX = Math.cos(angle);
+    const dirY = Math.sin(angle);
+    movementDirectionArray[i * 2 + 0] = dirX;
+    movementDirectionArray[i * 2 + 1] = dirY;
+    
+    // Уникальная скорость движения (1.0 - 3.0)
+    movementSpeedArray[i] = 1.0 + _rand(s + 6) * 2.0;
+    
+    // Случайная начальная 3D позиция в видимой области
+    // Используем только центральную треть для начального размещения
+    const visibleWidth = bounds.width / 3.0;
+    const visibleHeight = bounds.height / 3.0;
+    const posX = (_rand(s + 7) - 0.5) * visibleWidth;
+    const posY = (_rand(s + 8) - 0.5) * visibleHeight;
+    const posZ = (_rand(s + 9) - 0.5) * 5.0 - 5.0; // Z от -2.5 до -7.5
+    
+    initialPositionArray[i * 3 + 0] = posX;
+    initialPositionArray[i * 3 + 1] = posY;
+    initialPositionArray[i * 3 + 2] = posZ;
+  }
+
+  return {
+    rotationSpeed: new THREE.InstancedBufferAttribute(rotationSpeedArray, 1),
+    rotationAxis: new THREE.InstancedBufferAttribute(rotationAxisArray, 3),
+    phase: new THREE.InstancedBufferAttribute(phaseArray, 1),
+    movementDirection: new THREE.InstancedBufferAttribute(movementDirectionArray, 2),
+    movementSpeed: new THREE.InstancedBufferAttribute(movementSpeedArray, 1),
+    initialPosition: new THREE.InstancedBufferAttribute(initialPositionArray, 3)
+  };
+}
+
+/**
+ * InstancedMesh для продукта с управлением матрицами.
+ */
+export type InstancedProduct = {
+  /** InstancedMesh */
+  mesh: THREE.InstancedMesh;
+  /** Количество инстансов */
+  count: number;
+  /** Продукт */
+  product: Product;
+};
+
+/**
+ * Создает InstancedMesh для продукта.
+ *
+ * @param product - Продукт для создания инстансов
+ * @param count - Количество инстансов
+ * @returns InstancedProduct
+ */
+export function createInstancedProduct(product: Product, count: number): InstancedProduct {
+  // Используем первый материал (или создаем дефолтный)
+  const material = product.materials.length > 0 
+    ? product.materials[0] 
+    : new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+  const mesh = new THREE.InstancedMesh(product.geometry, material, count);
+  mesh.frustumCulled = false;
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // Будем обновлять каждый кадр
+
+  return {
+    mesh,
+    count,
+    product
+  };
+}
+
+/**
+ * Устанавливает матрицу для инстанса.
+ *
+ * @param instancedProduct - InstancedProduct
+ * @param index - Индекс инстанса
+ * @param matrix - Матрица трансформации
+ */
+export function setInstanceMatrix(
+  instancedProduct: InstancedProduct,
+  index: number,
+  matrix: THREE.Matrix4
+): void {
+  if (index < 0 || index >= instancedProduct.count) {
+    console.warn(`Index ${index} out of range for instanced product`);
+    return;
+  }
+  instancedProduct.mesh.setMatrixAt(index, matrix);
+}
+
+/**
+ * Устанавливает позицию, масштаб и вращение для инстанса.
+ *
+ * @param instancedProduct - InstancedProduct
+ * @param index - Индекс инстанса
+ * @param position - Позиция
+ * @param scale - Масштаб (опционально)
+ * @param rotation - Вращение в радианах (опционально)
+ */
+export function setInstanceTransform(
+  instancedProduct: InstancedProduct,
+  index: number,
+  position: { x: number; y: number; z: number },
+  scale?: number,
+  rotation?: { x: number; y: number; z: number }
+): void {
+  if (index < 0 || index >= instancedProduct.count) {
+    console.warn(`Index ${index} out of range for instanced product`);
+    return;
+  }
+
+  const matrix = new THREE.Matrix4();
+  const pos = new THREE.Vector3(position.x, position.y, position.z);
+  const scl = scale !== undefined ? scale * instancedProduct.product.normalizedScale : instancedProduct.product.normalizedScale;
+  const rot = rotation 
+    ? new THREE.Euler(rotation.x, rotation.y, rotation.z)
+    : new THREE.Euler(0, 0, 0);
+
+  // Создаем матрицу без вращения (вращение будет в шейдере)
+  matrix.compose(pos, new THREE.Quaternion().setFromEuler(rot), new THREE.Vector3(scl, scl, scl));
+  instancedProduct.mesh.setMatrixAt(index, matrix);
+}
+
+/**
+ * Помечает матрицы инстансов как требующие обновления.
+ *
+ * @param instancedProduct - InstancedProduct
+ */
+export function markInstancesDirty(instancedProduct: InstancedProduct): void {
+  instancedProduct.mesh.instanceMatrix.needsUpdate = true;
+}
+
+/**
+ * Настройки WebGL рендера для фруктов.
+ */
+export type RendererSettings = {
+  /** Включить альфа-канал (прозрачность) */
+  alpha: boolean;
+  /** Включить сглаживание (antialiasing) */
+  antialias: boolean;
+  /** Включить буфер глубины (для 3D) */
+  depth: boolean;
+  /** Включить буфер трафарета */
+  stencil: boolean;
+  /** Premultiplied alpha */
+  premultipliedAlpha: boolean;
+  /** Сохранять буфер после рендера (для readPixels) */
+  preserveDrawingBuffer: boolean;
+  /** Цветовое пространство вывода (SRGB для корректных цветов) */
+  outputColorSpace: THREE.ColorSpace;
+  /** Автоматическая очистка перед каждым рендером */
+  autoClear: boolean;
+};
+
+/**
+ * Дефолтные настройки рендера для фруктов.
+ */
+const DEFAULT_SETTINGS: RendererSettings = {
+  alpha: false,
+  antialias: true,
+  depth: true,
+  stencil: false,
+  premultipliedAlpha: false,
+  preserveDrawingBuffer: false,
+  outputColorSpace: THREE.SRGBColorSpace,
+  autoClear: true
+};
+
+/**
+ * Создаёт и настраивает WebGLRenderer для рендера фруктов.
+ *
+ * @param canvas - Canvas элемент для рендера
+ * @param settings - Настройки рендера (по умолчанию используются DEFAULT_SETTINGS)
+ * @returns Настроенный WebGLRenderer
+ */
+export function createFruitsRenderer(
+  canvas: HTMLCanvasElement,
+  settings: Partial<RendererSettings> = {}
+): THREE.WebGLRenderer {
+  const opts = { ...DEFAULT_SETTINGS, ...settings };
+
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    alpha: opts.alpha,
+    antialias: opts.antialias,
+    depth: opts.depth,
+    stencil: opts.stencil,
+    premultipliedAlpha: opts.premultipliedAlpha,
+    preserveDrawingBuffer: opts.preserveDrawingBuffer
+  });
+
+  renderer.setPixelRatio(1); // Управляем размером вручную через resize
+  renderer.outputColorSpace = opts.outputColorSpace;
+  renderer.autoClear = opts.autoClear;
+
+  return renderer;
+}
+
+/**
+ * Вычисляет размеры canvas с учётом DPR и обновляет рендер.
+ *
+ * @param canvas - Canvas элемент
+ * @param renderer - WebGLRenderer
+ * @param getDpr - Функция получения device pixel ratio
+ * @returns Размеры {w, h, dpr}
+ */
+export function resizeRenderer(
+  canvas: HTMLCanvasElement,
+  renderer: THREE.WebGLRenderer,
+  getDpr: () => number
+): { w: number; h: number; dpr: number } {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = getDpr();
+  const w = Math.max(1, Math.floor(rect.width * dpr));
+  const h = Math.max(1, Math.floor(rect.height * dpr));
+
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  renderer.setSize(w, h, false);
+
+  return { w, h, dpr };
+}
+
+/**
+ * Размещает один продукт в сцене.
+ *
+ * @param scene - Сцена для добавления продукта
+ * @param product - Продукт для размещения
+ * @param options - Опции размещения
+ * @returns Созданный mesh
+ */
+export function renderProduct(
+  scene: THREE.Scene,
+  product: Product,
+  options: RenderProductOptions = {}
+): THREE.Mesh {
+  // Используем первый материал (или создаем дефолтный)
+  const material = product.materials.length > 0 
+    ? product.materials[0] 
+    : new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+  const mesh = new THREE.Mesh(product.geometry, material);
+
+  // Применяем опции
+  if (options.position) {
+    mesh.position.set(options.position.x, options.position.y, options.position.z);
+  }
+
+  if (options.scale !== undefined) {
+    mesh.scale.setScalar(options.scale * product.normalizedScale);
+  } else {
+    mesh.scale.setScalar(product.normalizedScale);
+  }
+
+  if (options.rotation) {
+    mesh.rotation.set(options.rotation.x, options.rotation.y, options.rotation.z);
+  }
+
+  if (options.quaternion) {
+    mesh.quaternion.set(
+      options.quaternion.x,
+      options.quaternion.y,
+      options.quaternion.z,
+      options.quaternion.w
+    );
+  }
+
+  scene.add(mesh);
+  return mesh;
+}
+
+/**
+ * Создает сцену с заданным цветом фона.
+ *
+ * @param backgroundColor - Цвет фона (hex строка)
+ * @returns Созданная сцена
+ */
+export function createScene(backgroundColor: string): THREE.Scene {
+  const scene = new THREE.Scene();
+  const color = new THREE.Color(backgroundColor);
+  scene.background = color;
+  return scene;
+}
+
+/**
+ * Настройки камеры.
+ */
+export type CameraSetup = {
+  /** Камера */
+  camera: THREE.PerspectiveCamera;
+  /** Ширина экрана */
+  width: number;
+  /** Высота экрана */
+  height: number;
+};
+
+/**
+ * Создает и настраивает камеру для корректного отображения на весь экран.
+ *
+ * @param width - Ширина экрана
+ * @param height - Высота экрана
+ * @param fov - Поле зрения (градусы)
+ * @returns Настроенная камера и размеры
+ */
+export function setupCamera(width: number, height: number, fov: number): CameraSetup {
+  const camera = new THREE.PerspectiveCamera(fov, width / height, 0.1, 1000);
+
+  // Позиционируем камеру на фиксированном расстоянии от центра сцены
+  // Объекты размещены в диапазоне примерно от -10 до +10, поэтому камера на расстоянии 20-30
+  camera.position.set(0, 0, 25);
+  camera.lookAt(0, 0, 0);
+
+  return { camera, width, height };
+}
+
+/**
+ * Обновляет размеры камеры при изменении размеров экрана.
+ *
+ * @param camera - Камера для обновления
+ * @param width - Новая ширина
+ * @param height - Новая высота
+ */
+export function updateCameraSize(
+  camera: THREE.PerspectiveCamera,
+  width: number,
+  height: number
+): void {
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
 }

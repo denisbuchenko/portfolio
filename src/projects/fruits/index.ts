@@ -1,19 +1,17 @@
 import * as THREE from "three";
 import { FruitsProject } from "./products/FruitsProject";
 import { createFruitsUI } from "./ui";
-import { createFruitsRenderer, resizeRenderer } from "./renderer";
+import { createFruitsRenderer, resizeRenderer, showTextureDebug } from "./utils";
 import { getDpr } from "../puzzle/app/utils";
 import { CONFIG } from "../../config";
 import type { FruitsConfig } from "./config";
-import type { 
-  FruitBackgroundPresetsConfig, 
-  FruitLayerBits, 
-  FruitBackgroundRenderer 
+import type {
+  FruitBackgroundPresetsConfig,
+  FruitLayerBits,
+  FruitBackgroundRenderer
 } from "./types";
-import { showTextureDebug } from "./utils";
 
 export type { FruitBackgroundRenderer };
-export { showTextureDebug };
 
 // ─── КОНСТАНТЫ ──────────────────────────────────────────────────────────────────
 const DEBUG_DELAY_MS = 5000;

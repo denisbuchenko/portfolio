@@ -8,19 +8,19 @@ import { parseGLTF } from "../gltfParser";
 import {
   updateAnimation,
   createAnimatedMaterial,
-  createAnimationAttributes
-} from "../animation";
-import type { FruitsConfig, ProductConfig } from "../config";
-import type { Product } from "../types";
-import { createScene, setupCamera, updateCameraSize } from "../scene";
-import { rand01 } from "../utils";
-import {
+  createAnimationAttributes,
+  createScene,
+  setupCamera,
+  updateCameraSize,
+  rand01,
   createInstancedProduct,
   setInstanceTransform,
-  markInstancesDirty
-} from "../instancing";
-import type { InstancedProduct } from "../instancing";
-import { renderProduct } from "../renderer";
+  markInstancesDirty,
+  renderProduct,
+  type InstancedProduct
+} from "../utils";
+import type { FruitsConfig, ProductConfig } from "../config";
+import type { Product } from "../types";
 
 // ======================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -51,7 +51,7 @@ function calculateVisibleBounds(
  */
 function disposeMaterials(material: THREE.Material | THREE.Material[]): void {
   if (Array.isArray(material)) {
-    material.forEach(m => m.dispose());
+    material.forEach((m: THREE.Material) => m.dispose());
   } else {
     material.dispose();
   }
@@ -416,7 +416,7 @@ export class FruitsProject {
   private _disposeProducts(): void {
     for (const product of this._products) {
       product.geometry.dispose();
-      product.materials.forEach(m => m.dispose());
+      product.materials.forEach((m: THREE.Material) => m.dispose());
     }
   }
 }
