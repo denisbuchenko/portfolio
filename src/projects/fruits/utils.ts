@@ -4,148 +4,147 @@ import vertexShader from "./shaders/animatedProduct.vert.glsl?raw";
 import fragmentShader from "./shaders/animatedProduct.frag.glsl?raw";
 
 /**
- * Утилиты и системы для работы с фруктами (анимация, instancing, рендер, сцена).
+ * =============
+ * БАЗОВЫЕ УТИЛИТЫ
+ * =============
  */
 
-/**
- * Ограничивает значение между min и max.
- */
-export function clamp(v: number, a: number, b: number): number {
-  return Math.max(a, Math.min(b, v));
-}
+/** Ограничивает значение в диапазоне [min, max] */
+export const clamp = (v: number, min: number, max: number): number =>
+  Math.max(min, Math.min(max, v));
 
-/**
- * Нормализует 2D вектор. Если длина < 1e-6, возвращает (1, 0).
- */
-export function norm2(v: THREE.Vector2): THREE.Vector2 {
-  const n = v.length();
-  if (n < 1e-6) return new THREE.Vector2(1, 0);
-  return v.multiplyScalar(1 / n);
-}
+/** Нормализует 2D-вектор. При нулевой длине возвращает (1, 0) */
+export const normalizeVector2 = (v: THREE.Vector2): THREE.Vector2 => {
+  const length = v.length();
+  return length < 1e-6 
+    ? new THREE.Vector2(1, 0) 
+    : v.clone().multiplyScalar(1 / length);
+};
 
-/**
- * Детерминированный генератор случайных чисел (0..1) на основе seed.
- * Использует xorshift-подобный алгоритм для быстрого и предсказуемого результата.
- */
-export function rand01(seed: number): number {
+/** Детерминированный ГСЧ (xorshift) → [0, 1) */
+export const deterministicRandom = (seed: number): number => {
   let x = seed ^ (seed >>> 15);
   x = Math.imul(x, 0x46d31bad);
   x ^= x >>> 14;
   x = Math.imul(x, 0x2c1b3c6d);
   x ^= x >>> 15;
   return (x >>> 0) / 0x1_0000_0000;
-}
+};
 
-/**
- * Конвертирует hex цвет в RGB компоненты (0..255).
- */
-export function hexToRgb8(hex: string): { r: number; g: number; b: number } {
-  const c = new THREE.Color(hex);
+/** Конвертирует hex в RGB (0–255) */
+export const hexToRgb8 = (hex: string): { r: number; g: number; b: number } => {
+  const color = new THREE.Color(hex);
   return {
-    r: Math.round(clamp(c.r, 0, 1) * 255),
-    g: Math.round(clamp(c.g, 0, 1) * 255),
-    b: Math.round(clamp(c.b, 0, 1) * 255)
+    r: Math.round(clamp(color.r, 0, 1) * 255),
+    g: Math.round(clamp(color.g, 0, 1) * 255),
+    b: Math.round(clamp(color.b, 0, 1) * 255),
   };
-}
+};
 
 /**
- * Создаёт простую текстуру из одного цвета (для fallback).
+ * =============
+ * РАБОТА С ТЕКСТУРАМИ
+ * =============
  */
-export function createSolidTexture(hex: string): THREE.DataTexture {
+
+/** Создаёт однотонную текстуру RGBA (fallback) */
+export const createSolidTexture = (hex: string): THREE.DataTexture => {
   const { r, g, b } = hexToRgb8(hex);
   const data = new Uint8Array([r, g, b, 255]);
-  const tex = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
-  tex.needsUpdate = true;
-  tex.generateMipmaps = false;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
-  return tex;
-}
+  const texture = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
+  
+  texture.needsUpdate = true;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+  
+  return texture;
+};
 
-/**
- * Настраивает Basic материал для фона (unlit, цвет строго из текстуры).
- */
-export function patchMaterialForBackground(mat: THREE.MeshBasicMaterial): void {
+/** Настраивает материал для фона (без освещения, строгий цвет) */
+export const configureBackgroundMaterial = (mat: THREE.MeshBasicMaterial): void => {
   mat.toneMapped = false;
   mat.depthTest = true;
   mat.depthWrite = true;
   mat.side = THREE.DoubleSide;
-}
+};
 
 /**
- * Фильтрует записи каталога по include/exclude спискам.
+ * =============
+ * ФИЛЬТРАЦИЯ И ВЫБОР
+ * =============
  */
-export function filterCatalogEntries<T extends { name: string }>(
+
+/** Фильтрует записи по include/exclude спискам имён */
+export const filterCatalogEntries = <T extends { name: string }>(
   entries: T[],
   include?: string[],
   exclude?: string[]
-): T[] {
-  const inc = (include ?? []).filter(Boolean);
-  const exc = new Set((exclude ?? []).filter(Boolean));
-  if (inc.length > 0) {
-    const incSet = new Set(inc);
-    return entries.filter((e) => incSet.has(e.name));
-  }
-  if (exc.size > 0) return entries.filter((e) => !exc.has(e.name));
-  return entries;
-}
-
-/**
- * Выбирает уникальные записи (детерминированная тасовка Fisher-Yates до k элементов).
- */
-export function pickUnique<T>(entries: T[], count: number, seed: number): T[] {
-  const n = entries.length;
-  if (n <= 0) return [];
-  const k = Math.max(0, Math.min(n, count | 0));
-  if (k <= 0) return [];
-
-  const idx: number[] = Array.from({ length: n }, (_, i) => i);
-  let s = seed | 0;
-  for (let i = 0; i < k; i++) {
-    s = (s * 1664525 + 1013904223) | 0; // LCG
-    const r = ((s >>> 0) % (n - i)) | 0;
-    const j = i + r;
-    const tmp = idx[i];
-    idx[i] = idx[j];
-    idx[j] = tmp;
-  }
-  return idx.slice(0, k).map((i) => entries[i]);
-}
-
-/**
- * Визуализирует Three.js текстуру поверх всех элементов в отдельном canvas.
- * Создает overlay с canvas, на котором отрисовывается текстура.
- * 
- * @param texture - Текстура для визуализации
- * @param label - Опциональная метка для отображения
- * @returns Функция для закрытия overlay
- */
-export function showTextureDebug(texture: THREE.Texture, label?: string): () => void {
-  // Определяем размеры текстуры
-  let texWidth = 256;
-  let texHeight = 256;
+): T[] => {
+  const includeSet = new Set((include ?? []).filter(Boolean));
+  const excludeSet = new Set((exclude ?? []).filter(Boolean));
   
-  const img = (texture as any).image as { width?: number; height?: number } | undefined;
-  const data = (texture as any).source?.data as { width?: number; height?: number } | undefined;
-
-  if (img?.width && img.height) {
-    texWidth = img.width;
-    texHeight = img.height;
-  } else if (data?.width && data.height) {
-    texWidth = data.width;
-    texHeight = data.height;
+  if (includeSet.size > 0) {
+    return entries.filter(entry => includeSet.has(entry.name));
   }
+  if (excludeSet.size > 0) {
+    return entries.filter(entry => !excludeSet.has(entry.name));
+  }
+  return entries;
+};
 
-  // Создаем контейнер overlay
-  const overlay = document.createElement("div");
-  overlay.style.cssText = `
+/** Детерминированно выбирает `count` уникальных элементов (Fisher-Yates до k) */
+export const pickUnique = <T>(entries: T[], count: number, seed: number): T[] => {
+  const n = entries.length;
+  if (n <= 0 || count <= 0) return [];
+  
+  const k = Math.min(n, count);
+  const indices = Array.from({ length: n }, (_, i) => i);
+  let currentSeed = seed | 0;
+  
+  for (let i = 0; i < k; i++) {
+    currentSeed = (currentSeed * 1664525 + 1013904223) | 0; // LCG
+    const j = i + (((currentSeed >>> 0) % (n - i)) | 0);
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  
+  return indices.slice(0, k).map(i => entries[i]);
+};
+
+/**
+ * =============
+ * ОТЛАДКА ТЕКСТУР (UI)
+ * =============
+ */
+
+/** Вспомогательная функция: создаёт элемент с заданными стилями */
+const _createStyledElement = (
+  tag: string,
+  styles: string,
+  text?: string
+): HTMLElement => {
+  const el = document.createElement(tag);
+  el.style.cssText = styles;
+  if (text) el.textContent = text;
+  return el;
+};
+
+/** Отображает текстуру в оверлее для отладки */
+export const showTextureDebug = (
+  texture: THREE.Texture,
+  label?: string
+): (() => void) => {
+  // --- Определение размеров текстуры ---
+  const img = (texture as any).image;
+  const sourceData = (texture as any).source?.data;
+  const texWidth = img?.width || sourceData?.width || 256;
+  const texHeight = img?.height || sourceData?.height || 256;
+
+  // --- Создание элементов UI ---
+  const overlay = _createStyledElement("div", `
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     z-index: 9999;
     background: rgba(0, 0, 0, 0.8);
     display: flex;
@@ -153,11 +152,9 @@ export function showTextureDebug(texture: THREE.Texture, label?: string): () => 
     justify-content: center;
     padding: 20px;
     box-sizing: border-box;
-  `;
+  `);
 
-  // Создаем внутренний контейнер
-  const container = document.createElement("div");
-  container.style.cssText = `
+  const container = _createStyledElement("div", `
     position: relative;
     max-width: 90vw;
     max-height: 90vh;
@@ -166,83 +163,70 @@ export function showTextureDebug(texture: THREE.Texture, label?: string): () => 
     border-radius: 12px;
     padding: 16px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  `;
+  `);
 
-  // Добавляем заголовок если есть
   if (label) {
-    const title = document.createElement("div");
-    title.textContent = label;
-    title.style.cssText = `
+    const title = _createStyledElement("div", `
       font-size: 14px;
       font-weight: bold;
       color: rgba(255, 255, 255, 0.88);
       margin-bottom: 12px;
       padding-bottom: 8px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    `;
+    `, label);
     container.appendChild(title);
   }
 
-  // Создаем canvas для отрисовки
-  const canvas = document.createElement("canvas");
-  const displayWidth = Math.min(texWidth, 800);
-  const displayHeight = Math.min(texHeight, 600);
-  const scale = Math.min(displayWidth / texWidth, displayHeight / texHeight);
-  
-  canvas.width = Math.floor(texWidth * scale);
-  canvas.height = Math.floor(texHeight * scale);
-  canvas.style.cssText = `
+  // --- Рендер текстуры во временный canvas ---
+  const displayScale = Math.min(
+    Math.min(texWidth, 800) / texWidth,
+    Math.min(texHeight, 600) / texHeight
+  );
+  const canvasWidth = Math.floor(texWidth * displayScale);
+  const canvasHeight = Math.floor(texHeight * displayScale);
+
+  const tempRenderer = new THREE.WebGLRenderer({ 
+    preserveDrawingBuffer: true, 
+    antialias: false 
+  });
+  tempRenderer.setSize(canvasWidth, canvasHeight);
+  tempRenderer.setPixelRatio(1);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ 
+      map: texture,
+      toneMapped: false 
+    })
+  );
+  scene.add(plane);
+  tempRenderer.render(scene, camera);
+
+  // --- Основной canvas для отображения ---
+  const canvas = _createStyledElement("canvas", `
     display: block;
     max-width: 100%;
     max-height: 70vh;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 4px;
-  `;
+  `) as HTMLCanvasElement;
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
 
-  // Создаем временный рендерер для отрисовки текстуры
-  const tempCanvas = document.createElement("canvas");
-  const tempRenderer = new THREE.WebGLRenderer({
-    canvas: tempCanvas,
-    preserveDrawingBuffer: true,
-    antialias: false
-  });
-  tempRenderer.setSize(canvas.width, canvas.height);
-  tempRenderer.setPixelRatio(1);
-
-  // Создаем сцену с плоскостью и текстурой
-  const scene = new THREE.Scene();
-  const camera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
-  const geometry = new THREE.PlaneGeometry(1, 1);
-  const debugMaterial = new THREE.MeshBasicMaterial({ 
-    map: texture,
-    toneMapped: false
-  });
-  const mesh = new THREE.Mesh(geometry, debugMaterial);
-  scene.add(mesh);
-
-  // Рендерим текстуру
-  tempRenderer.render(scene, camera);
-
-  // Копируем результат в canvas
   const ctx = canvas.getContext("2d");
-  if (ctx) {
-    ctx.drawImage(tempRenderer.domElement, 0, 0, canvas.width, canvas.height);
-  }
+  if (ctx) ctx.drawImage(tempRenderer.domElement, 0, 0);
 
-  // Добавляем информацию о размерах
-  const info = document.createElement("div");
-  info.textContent = `Размер: ${texWidth} × ${texHeight}px`;
-  info.style.cssText = `
+  // --- Информация и кнопка закрытия ---
+  const info = _createStyledElement("div", `
     font-size: 11px;
     color: rgba(255, 255, 255, 0.6);
     margin-top: 8px;
     text-align: center;
-  `;
+  `, `Размер: ${texWidth} × ${texHeight}px`);
 
-  // Кнопка закрытия
-  const closeBtn = document.createElement("button");
-  closeBtn.textContent = "✕";
-  closeBtn.style.cssText = `
+  const closeBtn = _createStyledElement("button", `
     position: absolute;
     top: 8px;
     right: 8px;
@@ -254,321 +238,227 @@ export function showTextureDebug(texture: THREE.Texture, label?: string): () => 
     border-radius: 4px;
     cursor: pointer;
     font-size: 18px;
-    line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background 0.2s;
-  `;
-  closeBtn.onmouseenter = () => {
-    closeBtn.style.background = "rgba(255, 255, 255, 0.2)";
-  };
-  closeBtn.onmouseleave = () => {
-    closeBtn.style.background = "rgba(255, 255, 255, 0.1)";
-  };
+  `, "✕") as HTMLButtonElement;
 
-  // Собираем всё вместе
+  closeBtn.onmouseenter = () => { closeBtn.style.background = "rgba(255, 255, 255, 0.2)"; };
+  closeBtn.onmouseleave = () => { closeBtn.style.background = "rgba(255, 255, 255, 0.1)"; };
+
+  // --- Сборка и монтирование ---
   container.appendChild(closeBtn);
   container.appendChild(canvas);
   container.appendChild(info);
   overlay.appendChild(container);
   document.body.appendChild(overlay);
 
-  // Функция закрытия
-  const close = () => {
+  // --- Очистка ресурсов ---
+  const cleanup = () => {
     document.body.removeChild(overlay);
     tempRenderer.dispose();
-    geometry.dispose();
-    debugMaterial.dispose();
+    plane.geometry.dispose();
+    (plane.material as THREE.Material).dispose();
+    document.removeEventListener("keydown", handleKeyDown);
   };
 
-  closeBtn.onclick = close;
-  overlay.onclick = (e) => {
-    if (e.target === overlay) {
-      close();
-    }
-  };
-
-  // Закрытие по Escape
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      close();
-      document.removeEventListener("keydown", handleKeyDown);
-    }
+    if (e.key === "Escape") cleanup();
   };
+
+  closeBtn.onclick = cleanup;
+  overlay.onclick = (e) => e.target === overlay && cleanup();
   document.addEventListener("keydown", handleKeyDown);
 
-  return close;
-}
+  return cleanup;
+};
 
 /**
- * Система анимации через шейдеры для продуктов.
+ * =============
+ * АНИМАЦИЯ ПРОДУКТОВ (ШЕЙДЕРЫ + INSTANCING)
+ * =============
  */
 
-/**
- * Создает ShaderMaterial для анимированного продукта.
- *
- * @param product - Продукт
- * @param bounds - Границы для uBounds
- * @returns ShaderMaterial
- */
-export function createAnimatedMaterial(
+/** Создаёт шейдерный материал для анимированного продукта */
+export const createAnimatedMaterial = (
   product: Product,
   bounds: { width: number; height: number }
-): THREE.ShaderMaterial {
-  // Используем первую текстуру из материалов
-  const map = product.materials.length > 0 && product.materials[0].map 
-    ? product.materials[0].map 
-    : null;
-
-  const material = new THREE.ShaderMaterial({
+): THREE.ShaderMaterial => {
+  const baseMap = product.materials[0]?.map ?? null;
+  
+  return new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
     uniforms: {
       uTime: { value: 0 },
-      map: { value: map },
+      map: { value: baseMap },
       color: { value: new THREE.Color(0xffffff) },
-      uBounds: { value: new THREE.Vector2(bounds.width, bounds.height) }
+      uBounds: { value: new THREE.Vector2(bounds.width, bounds.height) },
     },
     side: THREE.DoubleSide,
     depthTest: true,
-    depthWrite: true
+    depthWrite: true,
   });
+};
 
-  return material;
-}
-
-/**
- * Обновляет uniforms шейдера для анимации.
- *
- * @param material - ShaderMaterial
- * @param time - Время в секундах
- */
-export function updateAnimation(material: THREE.ShaderMaterial, time: number): void {
-  if (material.uniforms && (material.uniforms as any).uTime) {
-    (material.uniforms as any).uTime.value = time;
+/** Обновляет время анимации в материале */
+export const updateAnimationTime = (
+  material: THREE.ShaderMaterial, 
+  time: number
+): void => {
+  if (material.uniforms.uTime) {
+    material.uniforms.uTime.value = time;
   }
-}
+};
 
-/**
- * Создает InstancedBufferAttribute для передачи параметров анимации каждому инстансу.
- * Это позволяет каждому инстансу иметь свои уникальные параметры анимации.
- *
- * @param count - Количество инстансов
- * @param seed - Базовый seed для генерации случайных параметров
- * @param bounds - Границы видимой области для размещения объектов
- * @param startInstanceIndex - Начальный индекс инстанса (для глобальной уникальности)
- * @returns Объект с атрибутами для добавления в геометрию
- */
-export function createAnimationAttributes(
+/** Обёртка для обратной совместимости: обновление анимации по времени */
+export const updateAnimation = updateAnimationTime;
+
+/** Генерирует параметры анимации для каждого инстанса */
+export const createAnimationAttributes = (
   count: number,
   seed: number,
   bounds: { width: number; height: number },
-  startInstanceIndex: number = 0
-): {
-  rotationSpeed: THREE.InstancedBufferAttribute;
-  rotationAxis: THREE.InstancedBufferAttribute;
-  phase: THREE.InstancedBufferAttribute;
-  movementDirection: THREE.InstancedBufferAttribute;
-  movementSpeed: THREE.InstancedBufferAttribute;
-  initialPosition: THREE.InstancedBufferAttribute;
-} {
-  const rotationSpeedArray = new Float32Array(count);
-  const rotationAxisArray = new Float32Array(count * 3);
-  const phaseArray = new Float32Array(count);
-  const movementDirectionArray = new Float32Array(count * 2);
-  const movementSpeedArray = new Float32Array(count);
-  const initialPositionArray = new Float32Array(count * 3);
-
-  // Простая функция для генерации случайных чисел
-  function _rand(seedLocal: number): number {
-    let x = seedLocal ^ (seedLocal >>> 15);
-    x = Math.imul(x, 0x46d31bad);
-    x ^= x >>> 14;
-    x = Math.imul(x, 0x2c1b3c6d);
-    x ^= x >>> 15;
-    return (x >>> 0) / 0x1_0000_0000;
-  }
+  startInstanceIndex = 0
+) => {
+  const rotationSpeed = new Float32Array(count);
+  const rotationAxis = new Float32Array(count * 3);
+  const phase = new Float32Array(count);
+  const movementDirection = new Float32Array(count * 2);
+  const movementSpeed = new Float32Array(count);
+  const initialPosition = new Float32Array(count * 3);
 
   for (let i = 0; i < count; i++) {
-    // Используем глобальный индекс инстанса для уникальности позиций
-    const globalIndex = startInstanceIndex + i;
-    const s = (seed + globalIndex * 31) | 0;
+    const globalIdx = startInstanceIndex + i;
+    const s = (seed + globalIdx * 31) | 0;
+    const rand = (offset: number) => deterministicRandom(s + offset);
+
+    // Вращение
+    rotationSpeed[i] = 0.3 + rand(0) * 0.7;
     
-    // Случайная скорость вращения (0.3 - 1.0)
-    rotationSpeedArray[i] = 0.3 + _rand(s) * 0.7;
+    const ax = (rand(1) - 0.5) * 2;
+    const ay = (rand(2) - 0.5) * 2;
+    const az = (rand(3) - 0.5) * 2;
+    const len = Math.hypot(ax, ay, az) || 1;
+    rotationAxis.set([ax / len, ay / len, az / len], i * 3);
     
-    // Случайная ось вращения (нормализованная)
-    const axisX = (_rand(s + 1) - 0.5) * 2.0;
-    const axisY = (_rand(s + 2) - 0.5) * 2.0;
-    const axisZ = (_rand(s + 3) - 0.5) * 2.0;
-    const axisLen = Math.sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ);
-    const invLen = axisLen > 0.001 ? 1.0 / axisLen : 1.0;
-    
-    rotationAxisArray[i * 3 + 0] = axisX * invLen;
-    rotationAxisArray[i * 3 + 1] = axisY * invLen;
-    rotationAxisArray[i * 3 + 2] = axisZ * invLen;
-    
-    // Случайная фаза (0 - 2π)
-    phaseArray[i] = _rand(s + 4) * 6.28318530718;
-    
-    // Уникальное направление движения для каждого инстанса
-    // Генерируем случайный угол и преобразуем в направление
-    const angle = _rand(s + 5) * 6.28318530718; // 0 - 2π
-    const dirX = Math.cos(angle);
-    const dirY = Math.sin(angle);
-    movementDirectionArray[i * 2 + 0] = dirX;
-    movementDirectionArray[i * 2 + 1] = dirY;
-    
-    // Уникальная скорость движения (1.0 - 3.0)
-    movementSpeedArray[i] = 1.0 + _rand(s + 6) * 2.0;
-    
-    // Случайная начальная 3D позиция в видимой области
-    // Используем только центральную треть для начального размещения
-    const visibleWidth = bounds.width / 3.0;
-    const visibleHeight = bounds.height / 3.0;
-    const posX = (_rand(s + 7) - 0.5) * visibleWidth;
-    const posY = (_rand(s + 8) - 0.5) * visibleHeight;
-    const posZ = (_rand(s + 9) - 0.5) * 5.0 - 5.0; // Z от -2.5 до -7.5
-    
-    initialPositionArray[i * 3 + 0] = posX;
-    initialPositionArray[i * 3 + 1] = posY;
-    initialPositionArray[i * 3 + 2] = posZ;
+    phase[i] = rand(4) * Math.PI * 2;
+
+    // Движение
+    const angle = rand(5) * Math.PI * 2;
+    movementDirection.set([Math.cos(angle), Math.sin(angle)], i * 2);
+    movementSpeed[i] = 1.0 + rand(6) * 2.0;
+
+    // Позиция (в центральной трети области)
+    const visibleW = bounds.width / 3;
+    const visibleH = bounds.height / 3;
+    initialPosition.set([
+      (rand(7) - 0.5) * visibleW,
+      (rand(8) - 0.5) * visibleH,
+      (rand(9) - 0.5) * 5 - 5 // Z: [-7.5, -2.5]
+    ], i * 3);
   }
 
   return {
-    rotationSpeed: new THREE.InstancedBufferAttribute(rotationSpeedArray, 1),
-    rotationAxis: new THREE.InstancedBufferAttribute(rotationAxisArray, 3),
-    phase: new THREE.InstancedBufferAttribute(phaseArray, 1),
-    movementDirection: new THREE.InstancedBufferAttribute(movementDirectionArray, 2),
-    movementSpeed: new THREE.InstancedBufferAttribute(movementSpeedArray, 1),
-    initialPosition: new THREE.InstancedBufferAttribute(initialPositionArray, 3)
+    rotationSpeed: new THREE.InstancedBufferAttribute(rotationSpeed, 1),
+    rotationAxis: new THREE.InstancedBufferAttribute(rotationAxis, 3),
+    phase: new THREE.InstancedBufferAttribute(phase, 1),
+    movementDirection: new THREE.InstancedBufferAttribute(movementDirection, 2),
+    movementSpeed: new THREE.InstancedBufferAttribute(movementSpeed, 1),
+    initialPosition: new THREE.InstancedBufferAttribute(initialPosition, 3),
   };
-}
+};
 
 /**
- * InstancedMesh для продукта с управлением матрицами.
+ * =============
+ * УПРАВЛЕНИЕ INSTANCED-ОБЪЕКТАМИ
+ * =============
  */
+
 export type InstancedProduct = {
-  /** InstancedMesh */
   mesh: THREE.InstancedMesh;
-  /** Количество инстансов */
   count: number;
-  /** Продукт */
   product: Product;
 };
 
-/**
- * Создает InstancedMesh для продукта.
- *
- * @param product - Продукт для создания инстансов
- * @param count - Количество инстансов
- * @returns InstancedProduct
- */
-export function createInstancedProduct(product: Product, count: number): InstancedProduct {
-  // Используем первый материал (или создаем дефолтный)
-  const material = product.materials.length > 0 
-    ? product.materials[0] 
-    : new THREE.MeshBasicMaterial({ color: 0xffffff });
-
+/** Создаёт InstancedMesh для продукта */
+export const createInstancedProduct = (
+  product: Product, 
+  count: number
+): InstancedProduct => {
+  const material = product.materials[0] ?? new THREE.MeshBasicMaterial({ color: 0xffffff });
   const mesh = new THREE.InstancedMesh(product.geometry, material, count);
+  
   mesh.frustumCulled = false;
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // Будем обновлять каждый кадр
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  
+  return { mesh, count, product };
+};
 
-  return {
-    mesh,
-    count,
-    product
-  };
-}
-
-/**
- * Устанавливает матрицу для инстанса.
- *
- * @param instancedProduct - InstancedProduct
- * @param index - Индекс инстанса
- * @param matrix - Матрица трансформации
- */
-export function setInstanceMatrix(
-  instancedProduct: InstancedProduct,
+/** Устанавливает матрицу трансформации для инстанса */
+export const setInstanceMatrix = (
+  instanced: InstancedProduct,
   index: number,
   matrix: THREE.Matrix4
-): void {
-  if (index < 0 || index >= instancedProduct.count) {
-    console.warn(`Index ${index} out of range for instanced product`);
+): void => {
+  if (index < 0 || index >= instanced.count) {
+    console.warn(`Индекс ${index} вне диапазона [0, ${instanced.count})`);
     return;
   }
-  instancedProduct.mesh.setMatrixAt(index, matrix);
-}
+  instanced.mesh.setMatrixAt(index, matrix);
+};
 
-/**
- * Устанавливает позицию, масштаб и вращение для инстанса.
- *
- * @param instancedProduct - InstancedProduct
- * @param index - Индекс инстанса
- * @param position - Позиция
- * @param scale - Масштаб (опционально)
- * @param rotation - Вращение в радианах (опционально)
- */
-export function setInstanceTransform(
-  instancedProduct: InstancedProduct,
+/** Устанавливает позицию, масштаб и вращение для инстанса */
+export const setInstanceTransform = (
+  instanced: InstancedProduct,
   index: number,
-  position: { x: number; y: number; z: number },
+  position: THREE.Vector3,
   scale?: number,
-  rotation?: { x: number; y: number; z: number }
-): void {
-  if (index < 0 || index >= instancedProduct.count) {
-    console.warn(`Index ${index} out of range for instanced product`);
+  rotation?: THREE.Euler
+): void => {
+  if (index < 0 || index >= instanced.count) {
+    console.warn(`Индекс ${index} вне диапазона [0, ${instanced.count})`);
     return;
   }
 
-  const matrix = new THREE.Matrix4();
-  const pos = new THREE.Vector3(position.x, position.y, position.z);
-  const scl = scale !== undefined ? scale * instancedProduct.product.normalizedScale : instancedProduct.product.normalizedScale;
-  const rot = rotation 
-    ? new THREE.Euler(rotation.x, rotation.y, rotation.z)
-    : new THREE.Euler(0, 0, 0);
+  const finalScale = (scale ?? 1) * instanced.product.normalizedScale;
+  const quat = rotation 
+    ? new THREE.Quaternion().setFromEuler(rotation) 
+    : new THREE.Quaternion();
+  
+  const matrix = new THREE.Matrix4().compose(
+    position,
+    quat,
+    new THREE.Vector3(finalScale, finalScale, finalScale)
+  );
+  
+  instanced.mesh.setMatrixAt(index, matrix);
+};
 
-  // Создаем матрицу без вращения (вращение будет в шейдере)
-  matrix.compose(pos, new THREE.Quaternion().setFromEuler(rot), new THREE.Vector3(scl, scl, scl));
-  instancedProduct.mesh.setMatrixAt(index, matrix);
-}
-
-/**
- * Помечает матрицы инстансов как требующие обновления.
- *
- * @param instancedProduct - InstancedProduct
- */
-export function markInstancesDirty(instancedProduct: InstancedProduct): void {
-  instancedProduct.mesh.instanceMatrix.needsUpdate = true;
-}
-
-/**
- * Настройки WebGL рендера для фруктов.
- */
-export type RendererSettings = {
-  /** Включить альфа-канал (прозрачность) */
-  alpha: boolean;
-  /** Включить сглаживание (antialiasing) */
-  antialias: boolean;
-  /** Включить буфер глубины (для 3D) */
-  depth: boolean;
-  /** Включить буфер трафарета */
-  stencil: boolean;
-  /** Premultiplied alpha */
-  premultipliedAlpha: boolean;
-  /** Сохранять буфер после рендера (для readPixels) */
-  preserveDrawingBuffer: boolean;
-  /** Цветовое пространство вывода (SRGB для корректных цветов) */
-  outputColorSpace: THREE.ColorSpace;
-  /** Автоматическая очистка перед каждым рендером */
-  autoClear: boolean;
+/** Помечает матрицы инстансов как требующие обновления */
+export const markInstancesDirty = (instanced: InstancedProduct): void => {
+  instanced.mesh.instanceMatrix.needsUpdate = true;
 };
 
 /**
- * Дефолтные настройки рендера для фруктов.
+ * =============
+ * НАСТРОЙКА РЕНДЕРА И СЦЕНЫ
+ * =============
  */
-const DEFAULT_SETTINGS: RendererSettings = {
+
+export type RendererSettings = {
+  alpha: boolean;
+  antialias: boolean;
+  depth: boolean;
+  stencil: boolean;
+  premultipliedAlpha: boolean;
+  preserveDrawingBuffer: boolean;
+  outputColorSpace: THREE.ColorSpace;
+  autoClear: boolean;
+};
+
+const DEFAULT_RENDERER_SETTINGS: RendererSettings = {
   alpha: false,
   antialias: true,
   depth: true,
@@ -576,168 +466,115 @@ const DEFAULT_SETTINGS: RendererSettings = {
   premultipliedAlpha: false,
   preserveDrawingBuffer: false,
   outputColorSpace: THREE.SRGBColorSpace,
-  autoClear: true
+  autoClear: true,
 };
 
-/**
- * Создаёт и настраивает WebGLRenderer для рендера фруктов.
- *
- * @param canvas - Canvas элемент для рендера
- * @param settings - Настройки рендера (по умолчанию используются DEFAULT_SETTINGS)
- * @returns Настроенный WebGLRenderer
- */
-export function createFruitsRenderer(
+/** Создаёт и настраивает WebGLRenderer */
+export const createFruitsRenderer = (
   canvas: HTMLCanvasElement,
   settings: Partial<RendererSettings> = {}
-): THREE.WebGLRenderer {
-  const opts = { ...DEFAULT_SETTINGS, ...settings };
-
+): THREE.WebGLRenderer => {
+  const config = { ...DEFAULT_RENDERER_SETTINGS, ...settings };
+  
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    alpha: opts.alpha,
-    antialias: opts.antialias,
-    depth: opts.depth,
-    stencil: opts.stencil,
-    premultipliedAlpha: opts.premultipliedAlpha,
-    preserveDrawingBuffer: opts.preserveDrawingBuffer
+    alpha: config.alpha,
+    antialias: config.antialias,
+    depth: config.depth,
+    stencil: config.stencil,
+    premultipliedAlpha: config.premultipliedAlpha,
+    preserveDrawingBuffer: config.preserveDrawingBuffer,
   });
-
-  renderer.setPixelRatio(1); // Управляем размером вручную через resize
-  renderer.outputColorSpace = opts.outputColorSpace;
-  renderer.autoClear = opts.autoClear;
-
+  
+  renderer.setPixelRatio(1);
+  renderer.outputColorSpace = config.outputColorSpace;
+  renderer.autoClear = config.autoClear;
+  
   return renderer;
-}
+};
 
-/**
- * Вычисляет размеры canvas с учётом DPR и обновляет рендер.
- *
- * @param canvas - Canvas элемент
- * @param renderer - WebGLRenderer
- * @param getDpr - Функция получения device pixel ratio
- * @returns Размеры {w, h, dpr}
- */
-export function resizeRenderer(
+/** Обновляет размеры рендерера под текущий canvas */
+export const resizeRenderer = (
   canvas: HTMLCanvasElement,
   renderer: THREE.WebGLRenderer,
   getDpr: () => number
-): { w: number; h: number; dpr: number } {
+): { w: number; h: number; dpr: number } => {
   const rect = canvas.getBoundingClientRect();
   const dpr = getDpr();
   const w = Math.max(1, Math.floor(rect.width * dpr));
   const h = Math.max(1, Math.floor(rect.height * dpr));
-
+  
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
   renderer.setSize(w, h, false);
-
+  
   return { w, h, dpr };
-}
+};
 
-/**
- * Размещает один продукт в сцене.
- *
- * @param scene - Сцена для добавления продукта
- * @param product - Продукт для размещения
- * @param options - Опции размещения
- * @returns Созданный mesh
- */
-export function renderProduct(
+/** Размещает одиночный продукт в сцене */
+export const renderProduct = (
   scene: THREE.Scene,
   product: Product,
   options: RenderProductOptions = {}
-): THREE.Mesh {
-  // Используем первый материал (или создаем дефолтный)
-  const material = product.materials.length > 0 
-    ? product.materials[0] 
-    : new THREE.MeshBasicMaterial({ color: 0xffffff });
-
+): THREE.Mesh => {
+  const material = product.materials[0] ?? new THREE.MeshBasicMaterial({ color: 0xffffff });
   const mesh = new THREE.Mesh(product.geometry, material);
-
-  // Применяем опции
-  if (options.position) {
-    mesh.position.set(options.position.x, options.position.y, options.position.z);
-  }
-
-  if (options.scale !== undefined) {
-    mesh.scale.setScalar(options.scale * product.normalizedScale);
-  } else {
-    mesh.scale.setScalar(product.normalizedScale);
-  }
-
+  
+  if (options.position) mesh.position.copy(options.position);
   if (options.rotation) {
-    mesh.rotation.set(options.rotation.x, options.rotation.y, options.rotation.z);
-  }
-
-  if (options.quaternion) {
-    mesh.quaternion.set(
-      options.quaternion.x,
-      options.quaternion.y,
-      options.quaternion.z,
-      options.quaternion.w
+    mesh.rotation.set(
+      options.rotation.x,
+      options.rotation.y,
+      options.rotation.z
     );
   }
-
+  if (options.quaternion) mesh.quaternion.copy(options.quaternion);
+  
+  const scaleValue = (options.scale ?? 1) * product.normalizedScale;
+  mesh.scale.set(scaleValue, scaleValue, scaleValue);
+  
   scene.add(mesh);
   return mesh;
-}
+};
 
-/**
- * Создает сцену с заданным цветом фона.
- *
- * @param backgroundColor - Цвет фона (hex строка)
- * @returns Созданная сцена
- */
-export function createScene(backgroundColor: string): THREE.Scene {
+/** Создаёт сцену с заданным цветом фона */
+export const createScene = (backgroundColor: string): THREE.Scene => {
   const scene = new THREE.Scene();
-  const color = new THREE.Color(backgroundColor);
-  scene.background = color;
+  scene.background = new THREE.Color(backgroundColor);
   return scene;
-}
+};
 
-/**
- * Настройки камеры.
- */
+/** Настройки камеры */
 export type CameraSetup = {
-  /** Камера */
   camera: THREE.PerspectiveCamera;
-  /** Ширина экрана */
   width: number;
-  /** Высота экрана */
   height: number;
 };
 
-/**
- * Создает и настраивает камеру для корректного отображения на весь экран.
- *
- * @param width - Ширина экрана
- * @param height - Высота экрана
- * @param fov - Поле зрения (градусы)
- * @returns Настроенная камера и размеры
- */
-export function setupCamera(width: number, height: number, fov: number): CameraSetup {
+/** Создаёт и позиционирует камеру */
+export const setupCamera = (
+  width: number, 
+  height: number, 
+  fov = 50
+): CameraSetup => {
   const camera = new THREE.PerspectiveCamera(fov, width / height, 0.1, 1000);
-
-  // Позиционируем камеру на фиксированном расстоянии от центра сцены
-  // Объекты размещены в диапазоне примерно от -10 до +10, поэтому камера на расстоянии 20-30
   camera.position.set(0, 0, 25);
   camera.lookAt(0, 0, 0);
-
   return { camera, width, height };
-}
+};
 
-/**
- * Обновляет размеры камеры при изменении размеров экрана.
- *
- * @param camera - Камера для обновления
- * @param width - Новая ширина
- * @param height - Новая высота
- */
-export function updateCameraSize(
+/** Обновляет соотношение сторон камеры */
+export const updateCameraAspect = (
   camera: THREE.PerspectiveCamera,
   width: number,
   height: number
-): void {
+): void => {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
-}
+};
+
+/** Обёртка для обратной совместимости: обновление размера/аспекта камеры */
+export const updateCameraSize = updateCameraAspect;
+
+/** Обёртка для обратной совместимости: детерминированный rand [0, 1) */
+export const rand01 = (seed: number): number => deterministicRandom(seed);

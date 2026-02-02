@@ -263,7 +263,7 @@ export class ProductFactory {
     for (let i = 0; i < config.count; i++) {
       const scale = this._placement.getRandomScale(config, i);
       // Позиция (0,0,0) так как реальная позиция в атрибуте aInitialPosition
-      setInstanceTransform(instanced, i, { x: 0, y: 0, z: 0 }, scale);
+      setInstanceTransform(instanced, i, new THREE.Vector3(0, 0, 0), scale);
     }
   }
 }
