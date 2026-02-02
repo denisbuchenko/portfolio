@@ -4,7 +4,7 @@
  */
 
 import * as THREE from "three";
-import { parseGLTF } from "../gltfParser";
+import { parseGLTF } from "./gltfParser";
 import {
   updateAnimation,
   createAnimatedMaterial,
@@ -18,9 +18,9 @@ import {
   markInstancesDirty,
   renderProduct,
   type InstancedProduct
-} from "../utils";
-import type { FruitsConfig, ProductConfig } from "../config";
-import type { Product } from "../types";
+} from "./utils";
+import type { FruitsConfig, ProductConfig } from "./config";
+import type { Product } from "./types";
 
 // ======================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
