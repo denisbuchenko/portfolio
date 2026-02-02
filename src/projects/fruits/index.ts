@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { FruitsProject } from "./products";
+import { FruitsProject } from "./products/FruitsProject";
 import { createFruitsUI } from "./ui";
 import { createFruitsRenderer, resizeRenderer } from "./renderer";
 import { getDpr } from "../puzzle/app/utils";
