@@ -202,6 +202,73 @@ export function createPuzzleRenderer(opts: {
     });
   }
 
+  // Анализ маски для определения активных слоев (оптимизация)
+  let lastMaskAnalysisFrame = 0;
+  const MASK_ANALYSIS_INTERVAL = 30; // Анализируем маску каждые 30 кадров
+
+  function _analyzeMaskForActiveLayers(
+    maskTex: THREE.CanvasTexture,
+    width: number,
+    height: number,
+    threshold: number
+  ): Set<FruitLayerBits> {
+    const activeBits = new Set<FruitLayerBits>();
+    const canvas = maskTex.image as HTMLCanvasElement;
+    if (!canvas) {
+      // Если маски нет, возвращаем все слои
+      for (let bits = 1; bits <= 7; bits++) {
+        activeBits.add(bits as FruitLayerBits);
+      }
+      return activeBits;
+    }
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) {
+      for (let bits = 1; bits <= 7; bits++) {
+        activeBits.add(bits as FruitLayerBits);
+      }
+      return activeBits;
+    }
+
+    // Берем выборку из маски (не все пиксели, чтобы не было накладных расходов)
+    const sampleSize = 64; // 64x64 точек выборки
+    const stepX = Math.max(1, Math.floor(width / sampleSize));
+    const stepY = Math.max(1, Math.floor(height / sampleSize));
+    const threshold255 = threshold * 255;
+
+    // Получаем все данные за один раз для оптимизации
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+
+    for (let y = 0; y < height; y += stepY) {
+      for (let x = 0; x < width; x += stepX) {
+        const idx = (y * width + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+
+        // Вычисляем bits из RGB каналов
+        const br = r >= threshold255 ? 1 : 0;
+        const bg = g >= threshold255 ? 1 : 0;
+        const bb = b >= threshold255 ? 1 : 0;
+        const bits = (br + 2 * bg + 4 * bb) as FruitLayerBits;
+
+        if (bits >= 1 && bits <= 7) {
+          activeBits.add(bits);
+        }
+      }
+    }
+
+    // Если маска пустая, возвращаем все слои (чтобы не было черного экрана)
+    if (activeBits.size === 0) {
+      for (let bits = 1; bits <= 7; bits++) {
+        activeBits.add(bits as FruitLayerBits);
+      }
+    }
+
+    return activeBits;
+  }
+
   function render(pieces: RuntimePiece[], timeSec: number, dpr: number): void {
     const w = renderer.domElement.width;
     const h = renderer.domElement.height;
@@ -216,6 +283,19 @@ export function createPuzzleRenderer(opts: {
     }
 
     if (fruitBg) {
+      // Анализируем маску периодически для оптимизации рендеринга
+      const currentFrame = Math.floor(timeSec * 60);
+      if (currentFrame - lastMaskAnalysisFrame >= MASK_ANALYSIS_INTERVAL) {
+        const activeLayers = _analyzeMaskForActiveLayers(
+          maskTex,
+          w,
+          h,
+          opts.background3d.maskThreshold
+        );
+        fruitBg.setActiveLayers(activeLayers);
+        lastMaskAnalysisFrame = currentFrame;
+      }
+
       fruitBg.update(timeSec, dpr);
       fruitBg.renderTargets(renderer);
       

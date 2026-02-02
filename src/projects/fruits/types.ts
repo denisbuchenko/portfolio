@@ -104,5 +104,5 @@ export type FruitBackgroundRenderer = {
   update(timeSec: number, dpr: number): void;
   renderTargets(renderer: THREE.WebGLRenderer): void;
   getLayerTexture(bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): THREE.Texture;
-  getLayerTexture(bits: 1 | 2 | 3 | 4 | 5 | 6 | 7): THREE.Texture;
+  setActiveLayers(activeBits: Set<FruitLayerBits>): void;
 };

@@ -159,6 +159,7 @@ function _runBackgroundRenderLoop(
   sharedTextures: Map<FruitLayerBits, THREE.DataTexture>,
   renderer: THREE.WebGLRenderer,
   isLoadedRef: { value: boolean },
+  activeLayersRef: { value: Set<FruitLayerBits> },
   debugMode: boolean = false
 ): () => void {
   let frameCount = 0;
@@ -171,11 +172,17 @@ function _runBackgroundRenderLoop(
 
     const timeSec = timestamp * 0.001;
 
-    for (const project of projects.values()) {
-      project.update(timeSec);
+    // Обновляем только активные проекты
+    const activeLayers = activeLayersRef.value;
+    for (const bits of activeLayers) {
+      const project = projects.get(bits);
+      if (project) {
+        project.update(timeSec);
+      }
     }
 
-    for (const bits of LAYER_BITS) {
+    // Рендерим только активные слои
+    for (const bits of activeLayers) {
       const project = projects.get(bits);
       const renderTarget = renderTargets.get(bits);
       const sharedTexture = sharedTextures.get(bits);
@@ -269,6 +276,7 @@ export function createFruitBackgroundRenderer({
   const renderTargets = new Map<FruitLayerBits, THREE.WebGLRenderTarget>();
   const sharedTextures = new Map<FruitLayerBits, THREE.DataTexture>();
   const stopAnimation = { fn: () => {} };
+  const activeLayers = { value: new Set<FruitLayerBits>(LAYER_BITS) }; // По умолчанию все слои активны
 
   const offscreenCanvas = document.createElement("canvas");
   const offscreenRenderer = new THREE.WebGLRenderer({
@@ -287,8 +295,12 @@ export function createFruitBackgroundRenderer({
   offscreenRenderer.setClearColor(0x000000, 0);
 
   const isLoaded = { value: false };
+  let loadPromise: Promise<void> | null = null;
+  let currentWidth = 0;
+  let currentHeight = 0;
 
-  (async () => {
+  // Инициализация загрузки
+  loadPromise = (async () => {
     try {
       const rtWidth = Math.min(
         MAX_TEXTURE_SIZE,
@@ -298,6 +310,9 @@ export function createFruitBackgroundRenderer({
         MAX_TEXTURE_SIZE,
         Math.max(1, Math.floor(DEFAULT_HEIGHT * config.rtScale))
       );
+
+      currentWidth = rtWidth;
+      currentHeight = rtHeight;
 
       const loaderProject = new FruitsProject();
       const products = await loaderProject.load(config.gltfUrl);
@@ -321,6 +336,7 @@ export function createFruitBackgroundRenderer({
         sharedTextures,
         offscreenRenderer,
         isLoaded,
+        activeLayers,
         debug
       );
 
@@ -328,6 +344,7 @@ export function createFruitBackgroundRenderer({
     } catch (err) {
       console.error("Background initialization failed:", err);
       dispose();
+      throw err;
     }
   })();
 
@@ -358,15 +375,80 @@ export function createFruitBackgroundRenderer({
     offscreenRenderer.dispose();
   }
 
+  function setActiveLayers(activeBits: Set<FruitLayerBits>): void {
+    activeLayers.value = activeBits;
+  }
+
+  async function load(): Promise<void> {
+    if (loadPromise) {
+      await loadPromise;
+    }
+  }
+
+  function resize(w: number, h: number, _dpr: number): void {
+    if (!isLoaded.value) return;
+
+    const rtWidth = Math.min(
+      MAX_TEXTURE_SIZE,
+      Math.max(1, Math.floor(w * config.rtScale))
+    );
+    const rtHeight = Math.min(
+      MAX_TEXTURE_SIZE,
+      Math.max(1, Math.floor(h * config.rtScale))
+    );
+
+    // Обновляем размеры только если они изменились
+    if (rtWidth !== currentWidth || rtHeight !== currentHeight) {
+      currentWidth = rtWidth;
+      currentHeight = rtHeight;
+
+      // Обновляем размеры render targets
+      for (const renderTarget of renderTargets.values()) {
+        if (renderTarget.width !== rtWidth || renderTarget.height !== rtHeight) {
+          renderTarget.setSize(rtWidth, rtHeight);
+        }
+      }
+
+      // Обновляем размеры shared textures
+      for (const texture of sharedTextures.values()) {
+        const image = texture.image as { width?: number; height?: number; data?: Uint8Array };
+        if (image.width !== rtWidth || image.height !== rtHeight) {
+          const newData = new Uint8Array(rtWidth * rtHeight * 4);
+          texture.image = { width: rtWidth, height: rtHeight, data: newData } as any;
+          texture.needsUpdate = true;
+        }
+      }
+
+      // Обновляем размеры проектов
+      for (const project of projects.values()) {
+        project.resize(rtWidth, rtHeight);
+      }
+
+      // Обновляем размер offscreen renderer
+      offscreenRenderer.setSize(rtWidth, rtHeight, false);
+    }
+  }
+
+  function update(timeSec: number, _dpr: number): void {
+    if (!isLoaded.value) return;
+
+    // Обновляем только активные проекты
+    const activeLayersSet = activeLayers.value;
+    for (const bits of activeLayersSet) {
+      const project = projects.get(bits);
+      if (project) {
+        project.update(timeSec);
+      }
+    }
+  }
+
   return {
-    load: async () => {},
-    resize: () => {},
-    update: () => {},
-    // оригинальный тип ожидает renderTargets(renderer), но здесь мы возвращаем сами таргеты
-    // чтобы не ломать существующий код, оставляем сигнатуру, но renderer не используется
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    load,
+    resize,
+    update,
     renderTargets: (_renderer?: THREE.WebGLRenderer) => renderTargets,
     getLayerTexture,
+    setActiveLayers,
   } as unknown as FruitBackgroundRenderer;
 }
 
