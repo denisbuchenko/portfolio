@@ -39,14 +39,6 @@ export function createPuzzleRenderer(opts: {
   renderer.setPixelRatio(1); // canvas уже в px, мы сами ресайзим.
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
-  
-  // Логирование контекста WebGL при инициализации
-  const mainGl = renderer.getContext();
-  console.log('🔧 PuzzleRenderer WebGL контекст:', {
-    contextType: mainGl ? 'WebGLRenderingContext' : 'null',
-    canvas: opts.canvas,
-    rendererInfo: renderer.info
-  });
 
   const scene = new THREE.Scene();
   let camera = new THREE.OrthographicCamera(0, 1, 0, 1, -10, 10);
@@ -144,6 +136,7 @@ export function createPuzzleRenderer(opts: {
 
   function markMaskDirty(): void {
     maskTex.needsUpdate = true;
+    isMaskDirty = true;
   }
 
   function disposePiecesMeshes(pieces: RuntimePiece[]): void {
@@ -205,6 +198,22 @@ export function createPuzzleRenderer(opts: {
   // Анализ маски для определения активных слоев (оптимизация)
   let lastMaskAnalysisFrame = 0;
   const MASK_ANALYSIS_INTERVAL = 30; // Анализируем маску каждые 30 кадров
+  let isMaskDirty = true;
+  let lastActiveLayers = new Set<FruitLayerBits>();
+  for (let bits = 1; bits <= 7; bits++) lastActiveLayers.add(bits as FruitLayerBits);
+
+  // Небольшой offscreen canvas, чтобы анализировать маску без чтения full-res буфера.
+  const maskAnalyzeSize = 64;
+  const maskAnalyzeCanvas = document.createElement("canvas");
+  maskAnalyzeCanvas.width = maskAnalyzeSize;
+  maskAnalyzeCanvas.height = maskAnalyzeSize;
+  const maskAnalyzeCtx = maskAnalyzeCanvas.getContext("2d", { willReadFrequently: true });
+
+  function _setEquals(a: Set<FruitLayerBits>, b: Set<FruitLayerBits>): boolean {
+    if (a.size !== b.size) return false;
+    for (const v of a) if (!b.has(v)) return false;
+    return true;
+  }
 
   function _analyzeMaskForActiveLayers(
     maskTex: THREE.CanvasTexture,
@@ -221,42 +230,30 @@ export function createPuzzleRenderer(opts: {
       }
       return activeBits;
     }
-
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) {
-      for (let bits = 1; bits <= 7; bits++) {
-        activeBits.add(bits as FruitLayerBits);
-      }
+    if (!maskAnalyzeCtx) {
+      for (let bits = 1; bits <= 7; bits++) activeBits.add(bits as FruitLayerBits);
       return activeBits;
     }
 
-    // Берем выборку из маски (не все пиксели, чтобы не было накладных расходов)
-    const sampleSize = 64; // 64x64 точек выборки
-    const stepX = Math.max(1, Math.floor(width / sampleSize));
-    const stepY = Math.max(1, Math.floor(height / sampleSize));
+    // Downscale mask в 64x64 и анализируем только этот буфер.
+    maskAnalyzeCtx.clearRect(0, 0, maskAnalyzeSize, maskAnalyzeSize);
+    maskAnalyzeCtx.drawImage(canvas, 0, 0, width, height, 0, 0, maskAnalyzeSize, maskAnalyzeSize);
+
+    const imgData = maskAnalyzeCtx.getImageData(0, 0, maskAnalyzeSize, maskAnalyzeSize);
+    const data = imgData.data;
     const threshold255 = threshold * 255;
 
-    // Получаем все данные за один раз для оптимизации
-    const imgData = ctx.getImageData(0, 0, width, height);
-    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
 
-    for (let y = 0; y < height; y += stepY) {
-      for (let x = 0; x < width; x += stepX) {
-        const idx = (y * width + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
+      const br = r >= threshold255 ? 1 : 0;
+      const bg = g >= threshold255 ? 1 : 0;
+      const bb = b >= threshold255 ? 1 : 0;
+      const bits = (br + 2 * bg + 4 * bb) as FruitLayerBits;
 
-        // Вычисляем bits из RGB каналов
-        const br = r >= threshold255 ? 1 : 0;
-        const bg = g >= threshold255 ? 1 : 0;
-        const bb = b >= threshold255 ? 1 : 0;
-        const bits = (br + 2 * bg + 4 * bb) as FruitLayerBits;
-
-        if (bits >= 1 && bits <= 7) {
-          activeBits.add(bits);
-        }
-      }
+      if (bits >= 1 && bits <= 7) activeBits.add(bits);
     }
 
     // Если маска пустая, возвращаем все слои (чтобы не было черного экрана)
@@ -285,72 +282,41 @@ export function createPuzzleRenderer(opts: {
     if (fruitBg) {
       // Анализируем маску периодически для оптимизации рендеринга
       const currentFrame = Math.floor(timeSec * 60);
-      if (currentFrame - lastMaskAnalysisFrame >= MASK_ANALYSIS_INTERVAL) {
+      if (isMaskDirty && currentFrame - lastMaskAnalysisFrame >= MASK_ANALYSIS_INTERVAL) {
         const activeLayers = _analyzeMaskForActiveLayers(
           maskTex,
           w,
           h,
           opts.background3d.maskThreshold
         );
-        fruitBg.setActiveLayers(activeLayers);
+
+        // скрываем неиспользуемые квадраты (экономим fillrate и sampler tMask)
+        for (let i = 0; i < bgQuads.length; i++) {
+          const bits = (i + 1) as FruitLayerBits;
+          bgQuads[i].visible = activeLayers.has(bits);
+        }
+
+        // обновляем активные слои 3D-фона только если набор реально поменялся
+        if (!_setEquals(lastActiveLayers, activeLayers)) {
+          fruitBg.setActiveLayers(activeLayers);
+          lastActiveLayers = activeLayers;
+        }
+
         lastMaskAnalysisFrame = currentFrame;
+        isMaskDirty = false;
       }
 
       fruitBg.update(timeSec, dpr);
       fruitBg.renderTargets(renderer);
-      
-      // Логирование каждые 60 кадров для слоя 1
-      const shouldLog = Math.floor(timeSec * 60) % 60 === 0;
-      
+
       for (let i = 0; i < bgQuads.length; i++) {
-        const bits = (i + 1) as FruitLayerBits;
         const q = bgQuads[i];
+        if (!q.visible) continue;
+        const bits = (i + 1) as FruitLayerBits;
         const texture = fruitBg.getLayerTexture(bits);
-        const oldTexture = q.material.uniforms.tBg.value as THREE.Texture;
-        
-        // Подробное логирование для слоя 1
-        if (bits === 1 && shouldLog) {
-          const img = texture.image as { width?: number; height?: number } | null;
-          const sourceData = texture.source?.data as { width?: number; height?: number } | null;
-          const texWidth = img?.width || sourceData?.width || 'unknown';
-          const texHeight = img?.height || sourceData?.height || 'unknown';
-          
-          console.log('🎨 puzzleRenderer: обновление текстуры для слоя 1:', {
-            textureChanged: oldTexture !== texture,
-            texture: {
-              uuid: texture.uuid,
-              width: texWidth,
-              height: texHeight,
-              format: texture.format,
-              type: texture.type,
-              flipY: texture.flipY,
-              needsUpdate: texture.needsUpdate,
-              isRenderTargetTexture: texture.isRenderTargetTexture
-            },
-            material: {
-              type: q.material.type,
-              uniformsNeedUpdate: q.material.uniformsNeedUpdate,
-              visible: q.material.visible,
-              transparent: q.material.transparent
-            },
-            mesh: {
-              visible: q.visible,
-              renderOrder: q.renderOrder,
-              position: q.position.clone(),
-              scale: q.scale.clone()
-            },
-            uniform: {
-              tBg: q.material.uniforms.tBg.value ? 'установлен' : 'НЕ УСТАНОВЛЕН!',
-              uResolution: q.material.uniforms.uResolution.value,
-              uBits: q.material.uniforms.uBits.value,
-              uThreshold: q.material.uniforms.uThreshold.value
-            }
-          });
+        if (q.material.uniforms.tBg.value !== texture) {
+          (q.material.uniforms.tBg.value as THREE.Texture) = texture;
         }
-        
-        (q.material.uniforms.tBg.value as THREE.Texture) = texture;
-        // Убеждаемся, что uniform обновлен
-        q.material.uniformsNeedUpdate = true;
       }
     } else {
       for (let i = 0; i < bgQuads.length; i++) {
@@ -376,84 +342,6 @@ export function createPuzzleRenderer(opts: {
     }
 
     renderer.setClearColor(0x070a10, 1);
-    
-    // Логирование каждые 60 кадров
-    const shouldLog = Math.floor(timeSec * 60) % 60 === 0;
-    if (shouldLog) {
-      // Проверяем маску для слоя 1
-      const maskCanvas = maskTex.image as HTMLCanvasElement;
-      let maskSample = { r: 0, g: 0, b: 0 };
-      if (maskCanvas) {
-        const ctx = maskCanvas.getContext('2d');
-        if (ctx) {
-          const imgData = ctx.getImageData(Math.floor(w / 2), Math.floor(h / 2), 1, 1);
-          maskSample = { r: imgData.data[0], g: imgData.data[1], b: imgData.data[2] };
-        }
-      }
-      
-      console.log('🖼️ puzzleRenderer.render:', {
-        canvasSize: { w, h },
-        sceneChildren: scene.children.length,
-        bgQuadsCount: bgQuads.length,
-        bgQuadsVisible: bgQuads.filter(q => q.visible).length,
-        piecesCount: pieces.length,
-        piecesWithMesh: pieces.filter(p => p.mesh).length,
-        fruitBgEnabled: fruitBg !== null,
-        maskSample: maskSample,
-        maskThreshold: opts.background3d.maskThreshold,
-        camera: {
-          type: camera.type,
-          left: camera.left,
-          right: camera.right,
-          top: camera.top,
-          bottom: camera.bottom,
-          near: camera.near,
-          far: camera.far
-        }
-      });
-      
-      // Проверяем текстуры для всех слоёв
-      for (let i = 0; i < bgQuads.length; i++) {
-        const bits = (i + 1) as FruitLayerBits;
-        const q = bgQuads[i];
-        const tex = q.material.uniforms.tBg.value as THREE.Texture;
-        if (bits === 1) {
-          // Вычисляем ожидаемое значение bits из маски
-          const threshold = opts.background3d.maskThreshold;
-          const br = maskSample.r >= threshold * 255 ? 1 : 0;
-          const bg = maskSample.g >= threshold * 255 ? 1 : 0;
-          const bb = maskSample.b >= threshold * 255 ? 1 : 0;
-          const computedBits = br + 2 * bg + 4 * bb;
-          
-          console.log(`🔍 Проверка текстуры слоя ${bits}:`, {
-            texture: tex ? {
-              uuid: tex.uuid,
-              isRenderTargetTexture: tex.isRenderTargetTexture,
-              needsUpdate: tex.needsUpdate,
-              format: tex.format,
-              type: tex.type,
-              image: tex.image ? 'has image' : 'no image',
-              source: tex.source ? 'has source' : 'no source'
-            } : 'NULL!',
-            uniformSet: tex !== null && tex !== undefined,
-            uniformValue: q.material.uniforms.tBg.value ? 'set' : 'NOT SET!',
-            uBits: q.material.uniforms.uBits.value,
-            uThreshold: q.material.uniforms.uThreshold.value,
-            uResolution: q.material.uniforms.uResolution.value,
-            maskAnalysis: {
-              maskSample: maskSample,
-              threshold: threshold,
-              computedBits: computedBits,
-              expectedBits: bits,
-              willDiscard: Math.abs(computedBits - bits) > 0.1,
-              message: Math.abs(computedBits - bits) > 0.1 
-                ? '⚠️ ВСЕ ПИКСЕЛИ БУДУТ ОТБРОШЕНЫ ЧЕРЕЗ discard!' 
-                : '✅ Маска соответствует слою'
-            }
-          });
-        }
-      }
-    }
     
     renderer.render(scene, camera);
   }
