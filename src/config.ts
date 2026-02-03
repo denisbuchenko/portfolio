@@ -76,13 +76,13 @@ export const CONFIG = {
 
       // Параметры по каждому bits=1..7 (фон, направление, скорость, размеры)
       layers: {
-        1: { bg: "#00506f", dir: { x: 1.0, y: 0.25 }, speedCssPxPerSec: 80, sizeCssPx: { min: 90, max: 140 } },
-        2: { bg: "#00a38c", dir: { x: 0.65, y: 0.95 }, speedCssPxPerSec: 95, sizeCssPx: { min: 80, max: 130 } },
-        3: { bg: "#ffe400", dir: { x: -0.9, y: 0.35 }, speedCssPxPerSec: 75, sizeCssPx: { min: 85, max: 125 } },
-        4: { bg: "#ff6a52", dir: { x: -0.55, y: -0.95 }, speedCssPxPerSec: 110, sizeCssPx: { min: 95, max: 150 } },
-        5: { bg: "#ff9f2a", dir: { x: 0.15, y: -1.0 }, speedCssPxPerSec: 120, sizeCssPx: { min: 90, max: 150 } },
-        6: { bg: "#5a4cff", dir: { x: 1.0, y: -0.35 }, speedCssPxPerSec: 90, sizeCssPx: { min: 85, max: 135 } },
-        7: { bg: "#00d5ff", dir: { x: -0.35, y: 1.0 }, speedCssPxPerSec: 105, sizeCssPx: { min: 90, max: 140 } }
+        1: { bg: "#00506f", dir: { x: 1.0, y: 0.25 }, speedCssPxPerSec: 80, sizeCssPx: { min: 40, max: 80 } },
+        2: { bg: "#00a38c", dir: { x: 0.65, y: 0.95 }, speedCssPxPerSec: 95, sizeCssPx: { min: 50, max: 60 } },
+        3: { bg: "#ffe400", dir: { x: -0.9, y: 0.35 }, speedCssPxPerSec: 75, sizeCssPx: { min: 60, max: 100 } },
+        4: { bg: "#ff6a52", dir: { x: -0.55, y: -0.95 }, speedCssPxPerSec: 110, sizeCssPx: { min: 30, max: 50 } },
+        5: { bg: "#ff9f2a", dir: { x: 0.15, y: -1.0 }, speedCssPxPerSec: 120, sizeCssPx: { min: 60, max: 80 } },
+        6: { bg: "#5a4cff", dir: { x: 1.0, y: -0.35 }, speedCssPxPerSec: 90, sizeCssPx: { min: 36, max: 50 } },
+        7: { bg: "#00d5ff", dir: { x: -0.35, y: 1.0 }, speedCssPxPerSec: 105, sizeCssPx: { min: 46, max: 60 } }
       }
     }
   },
