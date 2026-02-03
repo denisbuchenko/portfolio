@@ -7,6 +7,7 @@ import type {
 } from "../types";
 import type { FruitsConfig } from "../config";
 import { FruitsProject } from "../project";
+import { selectUniqueLayerProducts } from "./productSelection";
 
 const LAYER_BITS = [1, 2, 3, 4, 5, 6, 7] as const;
 // Не ограничиваемся искусственным 2048 — используем аппаратный лимит (renderer.capabilities.maxTextureSize),
@@ -18,20 +19,10 @@ const DEFAULT_HEIGHT = 1080;
 function _createLayerConfig(
   preset: FruitBackgroundPresetsConfig,
   layerBits: FruitLayerBits,
-  allProducts: Array<{ name: string }>
+  selectedProductNames: string[]
 ): FruitsConfig {
   const layer = preset.layers[layerBits];
-  let productNames = allProducts.map(p => p.name);
-
-  if (layer.fruits?.include) {
-    productNames = productNames.filter(name => layer.fruits!.include!.includes(name));
-  }
-  if (layer.fruits?.exclude) {
-    productNames = productNames.filter(name => !layer.fruits!.exclude!.includes(name));
-  }
-
-  const maxTypes = layer.fruits?.countTypes ?? preset.counts.bits1to5;
-  const selectedProducts = productNames.slice(0, maxTypes);
+  const selectedProducts = selectedProductNames;
 
   const instancesPerProduct = layer.fruits?.countInstances
     ? Math.floor(layer.fruits.countInstances * preset.instanceMul)
@@ -42,6 +33,10 @@ function _createLayerConfig(
   return {
     gltfUrl: preset.gltfUrl,
     backgroundColor: layer.bg,
+    motion: {
+      direction: layer.dir,
+      speedCssPxPerSec: layer.speedCssPxPerSec,
+    },
     camera: { fov: preset.camera.fovDeg },
     products: selectedProducts.map(name => ({
       productName: name,
@@ -76,12 +71,14 @@ async function _initializeBackgroundLayers(
   targetHeight: number,
   products: Product[]
 ): Promise<void> {
+  const selectedByBits = selectUniqueLayerProducts(config, products);
   await Promise.all(
     LAYER_BITS.map(async (bits) => {
-      const layerConfig = _createLayerConfig(config, bits, products);
+      const selected = selectedByBits.get(bits) ?? [];
+      const layerConfig = _createLayerConfig(config, bits, selected);
 
       const project = new FruitsProject();
-      project.setup(layerConfig, products, targetWidth, targetHeight);
+      project.setup(layerConfig, products, targetWidth, targetHeight, 1);
 
       projects.set(bits, project);
     })
@@ -102,6 +99,7 @@ export function createFruitBackgroundRenderer({
   let loadPromise: Promise<void> | null = null;
   let currentWidth = 0;
   let currentHeight = 0;
+  let lastDpr = 1;
 
   // throttle: если updateFps=30, то целимся примерно в 1/30 сек обновления текстур
   const minFrameIntervalSec = config.updateFps > 0 ? 1 / config.updateFps : 0;
@@ -180,8 +178,9 @@ export function createFruitBackgroundRenderer({
     }
   }
 
-  function resize(w: number, h: number, _dpr: number): void {
+  function resize(w: number, h: number, dpr: number): void {
     if (!isLoaded.value) return;
+    lastDpr = Math.max(0.1, dpr || 1);
 
     const rtWidth = Math.min(
       maxTextureSize,
@@ -206,7 +205,7 @@ export function createFruitBackgroundRenderer({
 
       // Обновляем размеры проектов
       for (const project of projects.values()) {
-        project.resize(rtWidth, rtHeight);
+        project.resize(rtWidth, rtHeight, lastDpr);
       }
     }
   }
@@ -258,7 +257,7 @@ export function createFruitBackgroundRenderer({
         currentWidth = clampedW;
         currentHeight = clampedH;
         for (const rt of renderTargets.values()) rt.setSize(clampedW, clampedH);
-        for (const project of projects.values()) project.resize(clampedW, clampedH);
+        for (const project of projects.values()) project.resize(clampedW, clampedH, lastDpr);
       }
     }
 

@@ -16,7 +16,7 @@ export async function mountFruitsProject(host: HTMLElement): Promise<() => void>
 
   function handleResize() {
     const { w, h, dpr } = resizeRenderer(ui.canvas, renderer, getDpr);
-    project.resize(w, h);
+    project.resize(w, h, dpr);
     return { w, h, dpr };
   }
 
@@ -39,6 +39,11 @@ export async function mountFruitsProject(host: HTMLElement): Promise<() => void>
     return {
       gltfUrl: preset.gltfUrl,
       backgroundColor: layer.bg,
+      motion: {
+        // Можно задавать и углом (angleDeg/angleRad), но тут используем вектор из пресета.
+        direction: layer.dir,
+        speedCssPxPerSec: layer.speedCssPxPerSec,
+      },
       camera: { fov: preset.camera.fovDeg },
       products: selectedProducts.map(name => ({
         productName: name,
@@ -52,8 +57,8 @@ export async function mountFruitsProject(host: HTMLElement): Promise<() => void>
     };
   })();
 
-  const { w, h } = handleResize();
-  project.setup(fruitsConfig, products, w, h);
+  const { w, h, dpr } = handleResize();
+  project.setup(fruitsConfig, products, w, h, dpr);
   ui.statusEl.textContent = "Готово!";
 
   let lastTimestamp = performance.now();

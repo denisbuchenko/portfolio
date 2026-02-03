@@ -10,12 +10,13 @@
 
 uniform float uTime;
 uniform vec2 uBounds;
+uniform vec2 uMotionDir;
+uniform float uMotionSpeed;
 
 attribute float aRotationSpeed;
 attribute vec3 aRotationAxis;
 attribute float aPhase;
-attribute vec2 aMovementDirection;
-attribute float aMovementSpeed;
+attribute float aSpeedMul;
 attribute vec3 aInitialPosition;
 
 varying vec2 vUv;
@@ -50,8 +51,9 @@ void main() {
   pos = rotationMatrix * pos;
 
   vec3 instancePos = aInitialPosition;
-  vec2 dir = normalize(aMovementDirection);
-  vec2 movement = dir * aMovementSpeed * (uTime + aPhase);
+  vec2 dir = normalize(uMotionDir);
+  float speed = uMotionSpeed * aSpeedMul;
+  vec2 movement = dir * speed * (uTime + aPhase);
   vec2 newPos = instancePos.xy + movement;
   vec2 wrappedPos = wrapPosition(newPos, uBounds);
 

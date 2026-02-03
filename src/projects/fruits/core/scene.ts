@@ -116,11 +116,17 @@ export class FruitsScene {
   private _scene: THREE.Scene | null = null;
   private _camera: THREE.PerspectiveCamera | null = null;
   private _bounds: { width: number; height: number } = { width: 20, height: 20 };
+  private _fov = 50;
+  private _width = 1;
+  private _height = 1;
 
   initialize(backgroundColor: string, width: number, height: number, fov: number): void {
-    this._bounds = _calculateVisibleBounds(fov, width, height);
+    this._fov = fov;
+    this._width = Math.max(1, width);
+    this._height = Math.max(1, height);
+    this._bounds = _calculateVisibleBounds(fov, this._width, this._height);
     this._scene = createScene(backgroundColor);
-    this._camera = setupCamera(width, height, fov).camera;
+    this._camera = setupCamera(this._width, this._height, fov).camera;
   }
 
   get scene(): THREE.Scene {
@@ -138,7 +144,10 @@ export class FruitsScene {
   }
 
   resize(width: number, height: number): void {
-    if (this._camera) updateCameraSize(this._camera, width, height);
+    this._width = Math.max(1, width);
+    this._height = Math.max(1, height);
+    this._bounds = _calculateVisibleBounds(this._fov, this._width, this._height);
+    if (this._camera) updateCameraSize(this._camera, this._width, this._height);
   }
 
   render(renderer: THREE.WebGLRenderer): void {
@@ -172,12 +181,9 @@ export class ProductPlacement {
     const seed = (this._seed + index * 31) | 0;
     const [r1, r2, r3] = [0, 1, 2].map(offset => rand01(seed + offset));
 
-    const visibleWidth = this._bounds.width / 3;
-    const visibleHeight = this._bounds.height / 3;
-
     return new THREE.Vector3(
-      (r1 - 0.5) * visibleWidth,
-      (r2 - 0.5) * visibleHeight,
+      (r1 - 0.5) * this._bounds.width,
+      (r2 - 0.5) * this._bounds.height,
       (r3 - 0.5) * 5 - 5
     );
   }
@@ -224,7 +230,10 @@ export class ProductFactory {
 
   constructor(
     private readonly _scene: FruitsScene,
-    private readonly _placement: ProductPlacement
+    private readonly _placement: ProductPlacement,
+    private readonly _anim: {
+      speedMul?: { min: number; max: number };
+    } = {}
   ) {}
 
   resetInstanceCounter(): void {
@@ -240,7 +249,7 @@ export class ProductFactory {
     const material = createAnimatedMaterial(product, this._scene.bounds);
     instanced.mesh.material = material;
 
-    this._setupInstancedAttributes(instanced, config.count, seed);
+    this._setupInstancedAttributes(instanced, config, seed);
     this._setupInstanceTransforms(instanced, config);
 
     markInstancesDirty(instanced);
@@ -263,25 +272,27 @@ export class ProductFactory {
 
   private _setupInstancedAttributes(
     instanced: InstancedProduct,
-    count: number,
+    config: FruitsConfig["products"][number],
     seed: number
   ): void {
     const startInstanceIndex = this._instanceCounter;
-    this._instanceCounter += count;
+    this._instanceCounter += config.count;
 
     const attrs = createAnimationAttributes(
-      count,
+      config.count,
       seed,
       this._scene.bounds,
-      startInstanceIndex
+      startInstanceIndex,
+      {
+        speedMul: this._anim.speedMul,
+      }
     );
 
     const { geometry } = instanced.mesh;
     geometry.setAttribute("aRotationSpeed", attrs.rotationSpeed);
     geometry.setAttribute("aRotationAxis", attrs.rotationAxis);
     geometry.setAttribute("aPhase", attrs.phase);
-    geometry.setAttribute("aMovementDirection", attrs.movementDirection);
-    geometry.setAttribute("aMovementSpeed", attrs.movementSpeed);
+    geometry.setAttribute("aSpeedMul", attrs.speedMul);
     geometry.setAttribute("aInitialPosition", attrs.initialPosition);
   }
 

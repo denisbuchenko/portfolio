@@ -28,6 +28,30 @@ export type FruitsConfig = {
   gltfUrl: string;
   /** Цвет фона (hex строка) */
   backgroundColor: string;
+  /** Параметры движения (опционально). */
+  motion?: {
+    /**
+     * Направление движения.
+     * - если задан `angleDeg`/`angleRad` — вычисляется из угла
+     * - иначе используется `direction` (вектор)
+     */
+    direction?: { x: number; y: number };
+    /** Угол направления в градусах (0° = вправо, 90° = вверх). */
+    angleDeg?: number;
+    /** Угол направления в радианах (0 = вправо, PI/2 = вверх). */
+    angleRad?: number;
+    /**
+     * Скорость в CSS-пикселях/сек. (при наличии dpr конвертируется в world-units/сек)
+     * Рекомендуется для бэкграундов, где скорость должна ощущаться одинаково на разных DPI.
+     */
+    speedCssPxPerSec?: number;
+    /**
+     * Скорость в world-units/сек. Если задана, имеет приоритет над `speedCssPxPerSec`.
+     */
+    speedWorldUnitsPerSec?: number;
+    /** Разброс множителя скорости по инстансам (для небольшого разнообразия). */
+    speedMul?: { min: number; max: number };
+  };
   /** Настройки камеры */
   camera: {
     /** Поле зрения (градусы) */

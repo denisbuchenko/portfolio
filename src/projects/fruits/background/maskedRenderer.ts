@@ -9,6 +9,7 @@ import {
   setInstanceTransform,
 } from "../core/instancing";
 import { disposeMaterials, setupCamera, updateCameraSize } from "../core/scene";
+import { selectUniqueLayerProducts } from "./productSelection";
 
 import fullscreenVert from "../../../shaders/fullscreenQuad.vert.glsl?raw";
 import fruitBgMaskedFrag from "../../../shaders/fruitBgMasked.frag.glsl?raw";
@@ -35,20 +36,10 @@ function _calculateVisibleBounds(
 function _createLayerConfig(
   preset: FruitBackgroundPresetsConfig,
   layerBits: FruitLayerBits,
-  allProducts: Array<{ name: string }>
+  selectedProductNames: string[]
 ): FruitsConfig {
   const layer = preset.layers[layerBits];
-  let productNames = allProducts.map(p => p.name);
-
-  if (layer.fruits?.include) {
-    productNames = productNames.filter(name => layer.fruits!.include!.includes(name));
-  }
-  if (layer.fruits?.exclude) {
-    productNames = productNames.filter(name => !layer.fruits!.exclude!.includes(name));
-  }
-
-  const maxTypes = layer.fruits?.countTypes ?? preset.counts.bits1to5;
-  const selectedProducts = productNames.slice(0, maxTypes);
+  const selectedProducts = selectedProductNames;
 
   const instancesPerProduct = layer.fruits?.countInstances
     ? Math.floor(layer.fruits.countInstances * preset.instanceMul)
@@ -59,6 +50,7 @@ function _createLayerConfig(
   return {
     gltfUrl: preset.gltfUrl,
     backgroundColor: layer.bg,
+    motion: { direction: layer.dir, speedCssPxPerSec: layer.speedCssPxPerSec },
     camera: { fov: preset.camera.fovDeg },
     products: selectedProducts.map(name => ({
       productName: name,
@@ -85,6 +77,8 @@ function _createMaskedAnimatedMaterial(opts: {
       map: { value: opts.product.materials[0]?.map ?? null },
       color: { value: new THREE.Color(DEFAULT_COLOR) },
       uBounds: { value: new THREE.Vector2(opts.bounds.width, opts.bounds.height) },
+      uMotionDir: { value: new THREE.Vector2(1, 0) },
+      uMotionSpeed: { value: 1.5 },
 
       tMask: { value: null },
       uMaskResolution: { value: new THREE.Vector2(2, 2) },
@@ -122,6 +116,8 @@ export function createFruitMaskedBackgroundRenderer({
   let _products: Product[] = [];
   let _w = 1;
   let _h = 1;
+  let _dpr = 1;
+  let _selectedByBits = new Map<FruitLayerBits, string[]>();
 
   const _bgScene = new THREE.Scene();
   const _bgCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -164,6 +160,7 @@ export function createFruitMaskedBackgroundRenderer({
     loadPromise = (async () => {
       const { parseGLTF } = await import("../gltfParser");
       _products = await parseGLTF(config.gltfUrl);
+      _selectedByBits = selectUniqueLayerProducts(config, _products);
 
       // Стартовый размер, будет перезаписан resize().
       _w = 1;
@@ -172,7 +169,7 @@ export function createFruitMaskedBackgroundRenderer({
 
       // Создаём инстансы по bits=1..7 в одном scene.
       for (const bits of LAYER_BITS) {
-        const layerCfg = _createLayerConfig(config, bits, _products);
+        const layerCfg = _createLayerConfig(config, bits, _selectedByBits.get(bits) ?? []);
         const seed = (layerCfg.seed ?? config.seed) | 0;
 
         let instanceCounter = 0;
@@ -192,8 +189,7 @@ export function createFruitMaskedBackgroundRenderer({
           geometry.setAttribute("aRotationSpeed", attrs.rotationSpeed);
           geometry.setAttribute("aRotationAxis", attrs.rotationAxis);
           geometry.setAttribute("aPhase", attrs.phase);
-          geometry.setAttribute("aMovementDirection", attrs.movementDirection);
-          geometry.setAttribute("aMovementSpeed", attrs.movementSpeed);
+          geometry.setAttribute("aSpeedMul", attrs.speedMul);
           geometry.setAttribute("aInitialPosition", attrs.initialPosition);
 
           // Масштабы (детерминированно, как в ProductPlacement.getRandomScale()).
@@ -220,15 +216,29 @@ export function createFruitMaskedBackgroundRenderer({
     return loadPromise;
   }
 
-  function resize(w: number, h: number, _dpr: number): void {
+  function resize(w: number, h: number, dpr: number): void {
     _w = Math.max(1, w);
     _h = Math.max(1, h);
+    _dpr = Math.max(0.1, dpr || 1);
 
     const bounds = _rebuildBoundsAndCamera();
 
     // uBounds завязан на размер видимой области.
     for (const { material } of _layerMeshes) {
       (material.uniforms.uBounds.value as THREE.Vector2).set(bounds.width, bounds.height);
+    }
+
+    // Направление/скорость — по конфигу слоёв. Скорость задана в CSS px/sec → конвертируем в world.
+    const minWorld = Math.max(0.0001, Math.min(bounds.width, bounds.height));
+    const minCssPx = Math.max(1, Math.min(_w, _h) / _dpr);
+    const worldPerCssPx = minWorld / minCssPx;
+    for (const { material, bits } of _layerMeshes) {
+      const layer = config.layers[bits];
+      const dx = layer.dir.x;
+      const dy = layer.dir.y;
+      if (Math.hypot(dx, dy) > 1e-6) (material.uniforms.uMotionDir.value as THREE.Vector2).set(dx, dy);
+      else (material.uniforms.uMotionDir.value as THREE.Vector2).set(1, 0);
+      material.uniforms.uMotionSpeed.value = layer.speedCssPxPerSec * worldPerCssPx;
     }
   }
 

@@ -4,7 +4,8 @@ import fragmentShader from "../shaders/animatedProduct.frag.glsl?raw";
 import type { Product } from "../types";
 import { DEFAULT_COLOR, rand01 } from "./utils";
 
-const ANIMATION_BOUNDS_SCALE = 1 / 3;
+// Раньше было 1/3 (фрукты занимали только центр). Теперь хотим заполнять весь экран.
+const ANIMATION_BOUNDS_SCALE = 1.0;
 const Z_MIN = -7.5;
 const Z_MAX = -2.5;
 
@@ -19,6 +20,8 @@ export const createAnimatedMaterial = (
     map: { value: product.materials[0]?.map ?? null },
     color: { value: new THREE.Color(DEFAULT_COLOR) },
     uBounds: { value: new THREE.Vector2(bounds.width, bounds.height) },
+    uMotionDir: { value: new THREE.Vector2(1, 0) },
+    uMotionSpeed: { value: 1.5 },
   },
   side: THREE.DoubleSide,
   depthTest: true,
@@ -36,14 +39,19 @@ export const createAnimationAttributes = (
   count: number,
   seed: number,
   bounds: { width: number; height: number },
-  startIdx = 0
+  startIdx = 0,
+  opts?: {
+    speedMul?: { min: number; max: number };
+  }
 ) => {
   const rs = new Float32Array(count);
   const ra = new Float32Array(count * 3);
   const ph = new Float32Array(count);
-  const md = new Float32Array(count * 2);
-  const ms = new Float32Array(count);
+  const sm = new Float32Array(count);
   const ip = new Float32Array(count * 3);
+
+  const speedMulMin = opts?.speedMul?.min ?? 0.85;
+  const speedMulMax = opts?.speedMul?.max ?? 1.15;
 
   for (let i = 0; i < count; i++) {
     const idx = startIdx + i;
@@ -58,9 +66,7 @@ export const createAnimationAttributes = (
     ra.set([ax / len, ay / len, az / len], i * 3);
     ph[i] = rand(4) * Math.PI * 2;
 
-    const ang = rand(5) * Math.PI * 2;
-    md.set([Math.cos(ang), Math.sin(ang)], i * 2);
-    ms[i] = 1.0 + rand(6) * 2.0;
+    sm[i] = speedMulMin + (speedMulMax - speedMulMin) * rand(5);
 
     const vw = bounds.width * ANIMATION_BOUNDS_SCALE;
     const vh = bounds.height * ANIMATION_BOUNDS_SCALE;
@@ -75,8 +81,7 @@ export const createAnimationAttributes = (
     rotationSpeed: _createInstancedAttr(rs, 1),
     rotationAxis: _createInstancedAttr(ra, 3),
     phase: _createInstancedAttr(ph, 1),
-    movementDirection: _createInstancedAttr(md, 2),
-    movementSpeed: _createInstancedAttr(ms, 1),
+    speedMul: _createInstancedAttr(sm, 1),
     initialPosition: _createInstancedAttr(ip, 3),
   };
 };

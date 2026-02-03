@@ -10,13 +10,14 @@
 // Кастомные uniforms для анимации
 uniform float uTime;
 uniform vec2 uBounds; // Границы экрана для wrap-around
+uniform vec2 uMotionDir; // Общее направление движения для слоя/сцены
+uniform float uMotionSpeed; // Базовая скорость (world-units/sec)
 
 // Instanced атрибуты для уникальных параметров каждого инстанса
 attribute float aRotationSpeed; // Скорость вращения для этого инстанса
 attribute vec3 aRotationAxis; // Ось вращения для этого инстанса
 attribute float aPhase; // Фаза анимации для этого инстанса
-attribute vec2 aMovementDirection; // Уникальное направление движения для этого инстанса
-attribute float aMovementSpeed; // Уникальная скорость движения для этого инстанса
+attribute float aSpeedMul; // Множитель скорости для этого инстанса
 attribute vec3 aInitialPosition; // Начальная 3D позиция этого инстанса
 
 varying vec2 vUv;
@@ -68,9 +69,10 @@ void main() {
   // Используем начальную позицию инстанса в мировом пространстве
   vec3 instancePos = aInitialPosition; // Начальная позиция этого экземпляра продукта
   
-  // Движение с уникальным направлением и скоростью для каждого инстанса
-  vec2 dir = normalize(aMovementDirection);
-  vec2 movement = dir * aMovementSpeed * (uTime + aPhase);
+  // Движение: единое направление (uniform) + небольшой вариативный множитель на инстанс
+  vec2 dir = normalize(uMotionDir);
+  float speed = uMotionSpeed * aSpeedMul;
+  vec2 movement = dir * speed * (uTime + aPhase);
   vec2 newPos = instancePos.xy + movement;
   
   // Wrap-around: применяем к позиции всего меша, а не к отдельным вершинам
