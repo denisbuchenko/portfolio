@@ -29,7 +29,7 @@ export function setPiecesMeshes(opts: {
         tPiece: { value: tex },
         tMask: { value: opts.maskTex },
         uResolution: { value: new THREE.Vector2(2, 2) },
-        uPieceBits: { value: p.maskBits | 0 },
+        uPieceMaskSet: { value: p.maskSet | 0 },
         uThreshold: { value: opts.threshold }
       },
       vertexShader: opts.shaders.vert,
@@ -74,6 +74,8 @@ export function updatePiecesMeshes(opts: {
     rp.mesh.position.set(dx + bw * 0.5, dy + bh * 0.5, 0);
     (rp.mesh.material.uniforms.uResolution.value as THREE.Vector2).set(opts.w, opts.h);
     (rp.mesh.material.uniforms.uThreshold.value as number) = opts.threshold;
+    // Может меняться при merge групп — обновляем каждый кадр.
+    (rp.mesh.material.uniforms.uPieceMaskSet.value as number) = rp.maskSet | 0;
   }
 }
 

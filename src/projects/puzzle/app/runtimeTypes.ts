@@ -8,10 +8,13 @@ export type RuntimePiece = {
   id: number;
   groupId: number;
   /**
-   * Какой 3-bit цвет (0..7) должен показывать этот пазл.
-   * 0 = (0,0,0) — виден там, где следа нет.
+   * Набор масок, в которых этот пазл (точнее: его текущая группа) видим.
+   *
+   * Представление: битсет по значениям `maskBitsAt()` (0..7):
+   * - bit 0 → виден там, где следа нет (mask = 0)
+   * - bit N → виден в маске N
    */
-  maskBits: number;
+  maskSet: number;
   mesh?: THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial>;
   /**
    * Позиция в мире в пикселях канваса: это top-left клетки (без pad).

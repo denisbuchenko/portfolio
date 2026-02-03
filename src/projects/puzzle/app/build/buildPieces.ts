@@ -59,7 +59,8 @@ export async function buildPieces(opts: {
     img: pi,
     id: pi.piece.id,
     groupId: pi.piece.id,
-    maskBits: pi.piece.id % 8,
+    // По умолчанию — одна маска (можно расширять на уровне группы через OR).
+    maskSet: 1 << (pi.piece.id % 8),
     x: 0,
     y: 0
   }));

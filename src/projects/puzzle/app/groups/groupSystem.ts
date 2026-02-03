@@ -7,15 +7,19 @@ export function createGroupSystem(): GroupSystem {
 export class GroupSystem implements GroupSystem {
     public pieceById = new Map<number, RuntimePiece>();
     public groups = new Map<number, number[]>();
+    /** Битсет видимых масок (см. RuntimePiece.maskSet) для каждой группы. */
+    public groupMaskSet = new Map<number, number>();
 
     public init(pieces: RuntimePiece[]): void {
       this.groups.clear();
       this.pieceById.clear();
+      this.groupMaskSet.clear();
       
       for (const piece of pieces) {
           this.pieceById.set(piece.id, piece);
           piece.groupId = piece.id;
           this.groups.set(piece.id, [piece.id]);
+          this.groupMaskSet.set(piece.id, piece.maskSet | 0);
       }
     }
 
@@ -50,6 +54,10 @@ export class GroupSystem implements GroupSystem {
       const targetGroup = this._getGroupPieceIds(targetGroupId);
       const sourceGroup = this._getGroupPieceIds(sourceGroupId);
       if (!targetGroup || !sourceGroup) return;
+
+      const targetMask = this.groupMaskSet.get(targetGroupId) ?? 0;
+      const sourceMask = this.groupMaskSet.get(sourceGroupId) ?? 0;
+      const mergedMask = (targetMask | sourceMask) | 0;
       
       for (const pieceId of sourceGroup) {
           const piece = this._getPiece(pieceId);
@@ -58,6 +66,14 @@ export class GroupSystem implements GroupSystem {
       }
       
       this.groups.delete(sourceGroupId);
+      this.groupMaskSet.delete(sourceGroupId);
+
+      this.groupMaskSet.set(targetGroupId, mergedMask);
+      // Синхронизируем maskSet у всех кусочков группы (группа — источник истины).
+      for (const pieceId of targetGroup) {
+        const piece = this._getPiece(pieceId);
+        if (piece) piece.maskSet = mergedMask;
+      }
     }
 
     public bringGroupToFront(groupId: number, allPieces: RuntimePiece[]): RuntimePiece[] {

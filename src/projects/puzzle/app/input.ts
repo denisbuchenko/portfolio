@@ -31,7 +31,8 @@ export class InputHandler {
 	}
 
 	hitTestPiece(rp: RuntimePiece, x: number, y: number, bitsAtPointer: number): boolean {
-		if (bitsAtPointer !== rp.maskBits) return false;
+		const maskBit = 1 << (bitsAtPointer | 0);
+		if ((rp.maskSet & maskBit) === 0) return false;
 
 		const pad = rp.img.geom.padPx;
 		const localX = x - (rp.x - pad);
@@ -95,7 +96,8 @@ export class InputHandler {
 		if (!drag || e.pointerId !== drag.pointerId) return;
 		const { x, y } = this.canvasPointFromEvent(canvas, e);
 		const bitsAtPointer = maskBitsAt(x, y);
-		if (bitsAtPointer !== drag.piece.maskBits) return;
+		const maskBit = 1 << (bitsAtPointer | 0);
+		if ((drag.piece.maskSet & maskBit) === 0) return;
 		const newX = x - drag.offsetX;
 		const newY = y - drag.offsetY;
 		const dx = newX - drag.piece.x;
