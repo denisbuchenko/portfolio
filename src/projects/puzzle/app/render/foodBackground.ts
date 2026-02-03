@@ -1,5 +1,7 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { type FoodCatalogEntry, loadFoodCatalog } from "./food/catalog";
+import { patchLambertForMask } from "./food/maskLambert";
+import { hexToColor3, norm2, rand01 } from "./food/utils";
 
 export type Vec2 = { x: number; y: number };
 export type Vec3 = { x: number; y: number; z: number };
@@ -55,80 +57,6 @@ type FlyingFood = {
   seed: number;
 };
 
-function hexToColor3(hex: string): THREE.Color {
-  const c = new THREE.Color(hex);
-  // Сделаем ярче (в сторону белого), чтобы сильнее отличалось от общего фона.
-  c.lerp(new THREE.Color(0xffffff), 0.18);
-  return c;
-}
-
-function norm2(v: THREE.Vector2): THREE.Vector2 {
-  const n = v.length();
-  if (n < 1e-6) return new THREE.Vector2(1, 0);
-  return v.multiplyScalar(1 / n);
-}
-
-function rand01(seed: number): number {
-  // xorshift-ish (deterministic, cheap)
-  let x = seed | 0;
-  x ^= x << 13;
-  x ^= x >>> 17;
-  x ^= x << 5;
-  return (x >>> 0) / 0x1_0000_0000;
-}
-
-function patchLambertForMask(opts: {
-  material: THREE.MeshLambertMaterial;
-  tMask: THREE.Texture;
-  bits: number;
-  threshold: number;
-  uResolution: THREE.Vector2;
-}): void {
-  const mat = opts.material;
-  // Disable tone mapping for UI-ish look
-  mat.toneMapped = false;
-
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.tMask = { value: opts.tMask };
-    shader.uniforms.uResolution = { value: opts.uResolution };
-    shader.uniforms.uBits = { value: opts.bits };
-    shader.uniforms.uThreshold = { value: opts.threshold };
-
-    shader.fragmentShader =
-      `
-      uniform sampler2D tMask;
-      uniform vec2 uResolution;
-      uniform float uBits;
-      uniform float uThreshold;
-      #if __VERSION__ >= 300
-        #define TEX texture
-      #else
-        #define TEX texture2D
-      #endif
-      float bitsFromMask(vec3 m) {
-        float br = step(uThreshold, m.r);
-        float bg = step(uThreshold, m.g);
-        float bb = step(uThreshold, m.b);
-        return br + 2.0 * bg + 4.0 * bb;
-      }
-    ` + shader.fragmentShader;
-
-    // Надёжно вставляем mask-discard в самое начало main().
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "void main() {",
-      `
-      void main() {
-        vec2 uvMask = gl_FragCoord.xy / uResolution;
-        vec3 m = TEX(tMask, uvMask).rgb;
-        float bits = bitsFromMask(m);
-        if (abs(bits - uBits) > 0.1) discard;
-      `
-    );
-  };
-
-  mat.needsUpdate = true;
-}
-
 export function createFoodBackground(opts: {
   scene: THREE.Scene;
   config: FoodBackgroundConfig;
@@ -176,60 +104,11 @@ export function createFoodBackground(opts: {
     bgQuads.push({ mesh, bits });
   }
 
-  let loadedRoot: THREE.Object3D | null = null;
-  let foodCatalog: Array<{ name: string; group: THREE.Group; normalizedScale: number }> = [];
+  let foodCatalog: FoodCatalogEntry[] = [];
 
   async function load(): Promise<void> {
     if (!config.enabled) return;
-    const loader = new GLTFLoader();
-    const gltf = await loader.loadAsync(config.gltfUrl);
-    loadedRoot = gltf.scene;
-
-    // Собираем каталог "типов" по корневым узлам: в glTF есть nodes с именами apple/banana/etc.
-    // Это надёжнее, чем склеивать отдельные mesh'и (можно потерять иерархические transforms).
-    const bases = new Set<string>();
-    loadedRoot.traverse((o) => {
-      const n = o.name || "";
-      if (!n) return;
-      // игнорируем "apple_apple_0" — нас интересуют именно base nodes (без '_')
-      if (n.includes("_")) return;
-      bases.add(n);
-    });
-
-    const sortedBases = Array.from(bases).sort((a, b) => a.localeCompare(b));
-    foodCatalog = sortedBases
-      .map((base) => {
-        const node = loadedRoot!.getObjectByName(base);
-        if (!node) return null;
-        const group = node.clone(true) as THREE.Group;
-        group.name = base;
-
-        // Переводим материалы в Lambert (мультяшно и недорого), отключаем каллинг
-        group.traverse((o) => {
-          const mesh = o as THREE.Mesh;
-          if (!mesh.isMesh) return;
-          mesh.frustumCulled = false;
-          const srcMat = mesh.material as THREE.Material;
-          const map = (srcMat as unknown as { map?: THREE.Texture }).map ?? undefined;
-          mesh.material = new THREE.MeshLambertMaterial({ map, color: 0xffffff });
-          const lm = mesh.material as THREE.MeshLambertMaterial;
-          lm.depthTest = false;
-          lm.depthWrite = false;
-          lm.toneMapped = false;
-        });
-
-        // Центрируем к (0,0,0) и нормализуем размер
-        const box = new THREE.Box3().setFromObject(group);
-        const size = new THREE.Vector3();
-        const center = new THREE.Vector3();
-        box.getSize(size);
-        box.getCenter(center);
-        group.position.sub(center);
-        const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
-        const normalizedScale = 1 / maxDim;
-        return { name: base, group, normalizedScale };
-      })
-      .filter((x): x is { name: string; group: THREE.Group; normalizedScale: number } => x !== null);
+    foodCatalog = await loadFoodCatalog(config.gltfUrl);
 
     // Раздаём по 7 слоям без повторов: 4+4+4+4+4+3+3 по умолчанию
     const counts: number[] = [
