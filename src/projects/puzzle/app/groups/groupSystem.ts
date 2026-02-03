@@ -10,6 +10,22 @@ export type GroupSystem = {
   bringGroupToFront(groupId: number, pieces: RuntimePiece[]): RuntimePiece[];
 };
 
+// Фабрика с инъекцией зависимостей в методы
+export function createGroupSystem(): GroupSystem {
+  const pieceById = new Map<number, RuntimePiece>();
+  const groups = new Map<number, number[]>();
+  
+  return {
+    pieceById,
+    groups,
+    init: (pieces) => initGroupSystem(pieceById, groups, pieces),
+    groupMembers: (groupId) => getGroupMembers(pieceById, groups, groupId),
+    moveGroup: (groupId, dx, dy) => moveGroupPieces(pieceById, groups, groupId, dx, dy),
+    mergeGroups: (into, from) => mergeGroupsWithinSystem(groups, pieceById, into, from),
+    bringGroupToFront: (groupId, pieces) => reorderPiecesWithGroupToFront(groups, groupId, pieces)
+  };
+}
+
 // Внешние функции с явной инъекцией зависимостей
 function initGroupSystem(
   pieceById: Map<number, RuntimePiece>,
@@ -99,20 +115,4 @@ function reorderPiecesWithGroupToFront(
   }
   
   return [...otherPieces, ...groupPieces];
-}
-
-// Фабрика с инъекцией зависимостей в методы
-export function createGroupSystem(): GroupSystem {
-  const pieceById = new Map<number, RuntimePiece>();
-  const groups = new Map<number, number[]>();
-  
-  return {
-    pieceById,
-    groups,
-    init: (pieces) => initGroupSystem(pieceById, groups, pieces),
-    groupMembers: (groupId) => getGroupMembers(pieceById, groups, groupId),
-    moveGroup: (groupId, dx, dy) => moveGroupPieces(pieceById, groups, groupId, dx, dy),
-    mergeGroups: (into, from) => mergeGroupsWithinSystem(groups, pieceById, into, from),
-    bringGroupToFront: (groupId, pieces) => reorderPiecesWithGroupToFront(groups, groupId, pieces)
-  };
 }
