@@ -5,123 +5,132 @@ import type { GroupSystem } from "./groups/groupSystem";
 import { getDpr } from "./utils";
 
 export class InputHandler {
-  private _hitCanvas: HTMLCanvasElement;
-  private _hitCtx: CanvasRenderingContext2D;
+	private _hitCanvas: HTMLCanvasElement;
+	private _hitCtx: CanvasRenderingContext2D;
 
-  constructor() {
-    this._hitCanvas = document.createElement("canvas");
-    this._hitCanvas.width = 2;
-    this._hitCanvas.height = 2;
-    const hitCtx = this._hitCanvas.getContext("2d");
-    if (!hitCtx) throw new Error("2D hit context not available");
-    this._hitCtx = hitCtx;
-  }
+	constructor() {
+		this._hitCanvas = document.createElement("canvas");
+		this._hitCanvas.width = 2;
+		this._hitCanvas.height = 2;
 
-  canvasPointFromEvent(canvas: HTMLCanvasElement, e: PointerEvent): { x: number; y: number } {
-    const rect = canvas.getBoundingClientRect();
-    const dpr = getDpr();
-    return {
-      x: (e.clientX - rect.left) * dpr,
-      y: (e.clientY - rect.top) * dpr
-    };
-  }
+		const hitCtx = this._hitCanvas.getContext("2d");
 
-  hitTestPiece(rp: RuntimePiece, x: number, y: number, maskBitsAt: (x: number, y: number) => number): boolean {
-    if (maskBitsAt(x, y) !== rp.maskBits) return false;
-    const pad = rp.img.geom.padPx;
-    const localX = x - (rp.x - pad);
-    const localY = y - (rp.y - pad);
-    if (localX < 0 || localY < 0) return false;
-    const w = rp.img.bitmap.width;
-    const h = rp.img.bitmap.height;
-    if (localX > w || localY > h) return false;
-    return this._hitCtx.isPointInPath(rp.img.path, localX, localY);
-  }
+		if (!hitCtx) throw new Error("2D hit context not available");
 
-  handlePointerDown(
-    e: PointerEvent,
-    canvas: HTMLCanvasElement,
-    pieces: RuntimePiece[],
-    groupSys: GroupSystem,
-    ui: PuzzleUI,
-    paint: PaintSystem,
-    maskBitsAt: (x: number, y: number) => number,
-    onDragStart: (drag: DragState, reorderedPieces: RuntimePiece[]) => void,
-    onDrawStart: (draw: DrawState) => void
-  ): RuntimePiece[] {
-    const { x, y } = this.canvasPointFromEvent(canvas, e);
+		this._hitCtx = hitCtx;
+	}
 
-    for (let i = pieces.length - 1; i >= 0; i--) {
-      const rp = pieces[i];
-      if (this.hitTestPiece(rp, x, y, maskBitsAt)) {
-        const reorderedPieces = groupSys.bringGroupToFront(rp.groupId, pieces);
-        const drag: DragState = {
-          pointerId: e.pointerId,
-          piece: rp,
-          groupId: rp.groupId,
-          offsetX: x - rp.x,
-          offsetY: y - rp.y
-        };
-        canvas.setPointerCapture(e.pointerId);
-        onDragStart(drag, reorderedPieces);
-        return reorderedPieces;
-      }
-    }
+	canvasPointFromEvent(canvas: HTMLCanvasElement, e: PointerEvent): { x: number; y: number } {
+		const rect = canvas.getBoundingClientRect();
+		const dpr = getDpr();
 
-    const draw: DrawState = { pointerId: e.pointerId, color: ui.getActiveColor() };
-    canvas.setPointerCapture(e.pointerId);
-    paint.addPoint(draw.color, x, y);
-    onDrawStart(draw);
-    return pieces;
-  }
+		return {
+			x: (e.clientX - rect.left) * dpr,
+			y: (e.clientY - rect.top) * dpr
+		};
+	}
 
-  handlePointerMove(
-    e: PointerEvent,
-    canvas: HTMLCanvasElement,
-    drag: DragState | null,
-    groupSys: GroupSystem,
-    maskBitsAt: (x: number, y: number) => number
-  ): void {
-    if (!drag || e.pointerId !== drag.pointerId) return;
-    const { x, y } = this.canvasPointFromEvent(canvas, e);
-    if (maskBitsAt(x, y) !== drag.piece.maskBits) return;
-    const newX = x - drag.offsetX;
-    const newY = y - drag.offsetY;
-    const dx = newX - drag.piece.x;
-    const dy = newY - drag.piece.y;
-    groupSys.moveGroup(drag.groupId, dx, dy);
-  }
+	hitTestPiece(rp: RuntimePiece, x: number, y: number, maskBitsAt: (x: number, y: number) => number): boolean {
+		if (maskBitsAt(x, y) !== rp.maskBits) return false;
 
-  handlePointerMoveDraw(
-    e: PointerEvent,
-    canvas: HTMLCanvasElement,
-    draw: DrawState | null,
-    paint: PaintSystem
-  ): void {
-    if (!draw || e.pointerId !== draw.pointerId) return;
-    const { x, y } = this.canvasPointFromEvent(canvas, e);
-    paint.addPoint(draw.color, x, y);
-  }
+		const pad = rp.img.geom.padPx;
+		const localX = x - (rp.x - pad);
+		const localY = y - (rp.y - pad);
 
-  handlePointerUpOrCancel(
-    e: PointerEvent,
-    canvas: HTMLCanvasElement,
-    drag: DragState | null,
-    draw: DrawState | null,
-    onDragEnd: (drag: DragState) => void,
-    onDrawEnd: () => void
-  ): { wasDrag: DragState | null; wasDraw: boolean } {
-    const wasDrag = drag && e.pointerId === drag.pointerId ? drag : null;
-    const wasDraw = draw && e.pointerId === draw.pointerId ? draw : null;
-    if (wasDrag) onDragEnd(wasDrag);
-    if (wasDraw) onDrawEnd();
+		if (localX < 0 || localY < 0) return false;
 
-    try {
-      canvas.releasePointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
+		const w = rp.img.bitmap.width;
+		const h = rp.img.bitmap.height;
 
-    return { wasDrag, wasDraw: wasDraw !== null };
-  }
+		if (localX > w || localY > h) return false;
+
+		return this._hitCtx.isPointInPath(rp.img.path, localX, localY);
+	}
+
+	handlePointerDown(
+		e: PointerEvent,
+		canvas: HTMLCanvasElement,
+		pieces: RuntimePiece[],
+		groupSys: GroupSystem,
+		ui: PuzzleUI,
+		paint: PaintSystem,
+		maskBitsAt: (x: number, y: number) => number,
+		onDragStart: (drag: DragState, reorderedPieces: RuntimePiece[]) => void,
+		onDrawStart: (draw: DrawState) => void
+	): RuntimePiece[] {
+		const { x, y } = this.canvasPointFromEvent(canvas, e);
+
+		for (let i = pieces.length - 1; i >= 0; i--) {
+			const rp = pieces[i];
+			if (this.hitTestPiece(rp, x, y, maskBitsAt)) {
+				const reorderedPieces = groupSys.bringGroupToFront(rp.groupId, pieces);
+				const drag: DragState = {
+					pointerId: e.pointerId,
+					piece: rp,
+					groupId: rp.groupId,
+					offsetX: x - rp.x,
+					offsetY: y - rp.y
+				};
+				canvas.setPointerCapture(e.pointerId);
+				onDragStart(drag, reorderedPieces);
+				return reorderedPieces;
+			}
+		}
+
+		const draw: DrawState = { pointerId: e.pointerId, color: ui.getActiveColor() };
+		canvas.setPointerCapture(e.pointerId);
+		paint.addPoint(draw.color, x, y);
+		onDrawStart(draw);
+		return pieces;
+	}
+
+	handlePointerMove(
+		e: PointerEvent,
+		canvas: HTMLCanvasElement,
+		drag: DragState | null,
+		groupSys: GroupSystem,
+		maskBitsAt: (x: number, y: number) => number
+	): void {
+		if (!drag || e.pointerId !== drag.pointerId) return;
+		const { x, y } = this.canvasPointFromEvent(canvas, e);
+		if (maskBitsAt(x, y) !== drag.piece.maskBits) return;
+		const newX = x - drag.offsetX;
+		const newY = y - drag.offsetY;
+		const dx = newX - drag.piece.x;
+		const dy = newY - drag.piece.y;
+		groupSys.moveGroup(drag.groupId, dx, dy);
+	}
+
+	handlePointerMoveDraw(
+		e: PointerEvent,
+		canvas: HTMLCanvasElement,
+		draw: DrawState | null,
+		paint: PaintSystem
+	): void {
+		if (!draw || e.pointerId !== draw.pointerId) return;
+		const { x, y } = this.canvasPointFromEvent(canvas, e);
+		paint.addPoint(draw.color, x, y);
+	}
+
+	handlePointerUpOrCancel(
+		e: PointerEvent,
+		canvas: HTMLCanvasElement,
+		drag: DragState | null,
+		draw: DrawState | null,
+		onDragEnd: (drag: DragState) => void,
+		onDrawEnd: () => void
+	): { wasDrag: DragState | null; wasDraw: boolean } {
+		const wasDrag = drag && e.pointerId === drag.pointerId ? drag : null;
+		const wasDraw = draw && e.pointerId === draw.pointerId ? draw : null;
+		if (wasDrag) onDragEnd(wasDrag);
+		if (wasDraw) onDrawEnd();
+
+		try {
+			canvas.releasePointerCapture(e.pointerId);
+		} catch {
+			// ignore
+		}
+
+		return { wasDrag, wasDraw: wasDraw !== null };
+	}
 }
