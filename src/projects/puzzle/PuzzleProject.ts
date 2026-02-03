@@ -7,65 +7,107 @@ import puzzleBgFrag from "../../shaders/puzzleBgMasked.frag.glsl?raw";
 import puzzlePieceMaskFrag from "../../shaders/puzzlePieceMask.frag.glsl?raw";
 
 import type { DragState, DrawState, RuntimePiece } from "./app/runtimeTypes";
+import type { PuzzleUI } from "./app/ui/puzzleUI";
 import { mountPuzzleUI } from "./app/ui/puzzleUI";
+import type { PaintSystem } from "./app/paint/paintSystem";
 import { createPaintSystem } from "./app/paint/paintSystem";
-import { createGroupSystem } from "./app/groups/groupSystem";
+import { GroupSystem, createGroupSystem } from "./app/groups/groupSystem";
 import { trySnapGroupOnce } from "./app/groups/snapper";
+import type { PuzzleRenderer } from "./app/render/puzzleRenderer";
 import { createPuzzleRenderer } from "./app/render/puzzleRenderer";
 import { buildPieces, pickGeometry, scramblePieces } from "./app/build/buildPieces";
 import { getDpr, loadImage } from "./app/utils";
 
-export function mountPuzzleProject(host: HTMLElement): void {
-  const ui = mountPuzzleUI({ host, config: CONFIG });
-  const canvasEl = ui.canvas;
-  const statusEl = ui.statusEl;
+export class PuzzleProject {
+  private _ui: PuzzleUI;
+  private _paint: PaintSystem;
+  private _groupSys: GroupSystem;
+  private _renderer: PuzzleRenderer;
+  private _rng: XorShift32;
 
-  // Отдельный контекст для hit-test’ов по Path2D (transform = identity).
-  const hitCanvas = document.createElement("canvas");
-  hitCanvas.width = 2;
-  hitCanvas.height = 2;
-  const hitCtx = hitCanvas.getContext("2d");
-  if (!hitCtx) throw new Error("2D hit context not available");
-  const hitCtx2: CanvasRenderingContext2D = hitCtx;
+  private _hitCanvas: HTMLCanvasElement;
+  private _hitCtx: CanvasRenderingContext2D;
 
-  const rng = new XorShift32(0x0ddba11);
+  private _geom: PieceGeometry | null = null;
+  private _pieces: RuntimePiece[] = [];
+  private _drag: DragState = null;
+  private _draw: DrawState = null;
 
-  const groupSys = createGroupSystem();
+  private _rebuildToken = 0;
+  private _sourceImg: HTMLImageElement | null = null;
 
-  let geom: PieceGeometry | null = null;
-  let pieces: RuntimePiece[] = [];
-  let drag: DragState = null;
-  let draw: DrawState = null;
+  private _rafId = 0;
+  private _resizeRaf = 0;
 
-  let markMaskDirty: (() => void) | undefined;
-  const paint = createPaintSystem({
-    config: CONFIG,
-    getDpr,
-    onRedraw: () => markMaskDirty?.()
-  });
+  constructor(host: HTMLElement) {
+    this._ui = mountPuzzleUI({ host, config: CONFIG });
+    this._rng = new XorShift32(0x0ddba11);
+    this._groupSys = createGroupSystem();
 
-  const renderer = createPuzzleRenderer({
-    canvas: canvasEl,
-    paintCanvas: paint.paintCanvas,
-    background3d: CONFIG.puzzle.background3d,
-    shaders: { vert: puzzleVert, bgFrag: puzzleBgFrag, pieceFrag: puzzlePieceMaskFrag }
-  });
-  markMaskDirty = () => renderer.markMaskDirty();
+    this._hitCanvas = document.createElement("canvas");
+    this._hitCanvas.width = 2;
+    this._hitCanvas.height = 2;
+    const hitCtx = this._hitCanvas.getContext("2d");
+    if (!hitCtx) throw new Error("2D hit context not available");
+    this._hitCtx = hitCtx;
 
-  function resizeAll(): { w: number; h: number; dpr: number } {
-    const rect = canvasEl.getBoundingClientRect();
+    this._paint = createPaintSystem({
+      config: CONFIG,
+      getDpr,
+      onRedraw: () => this._renderer.markMaskDirty()
+    });
+
+    this._renderer = createPuzzleRenderer({
+      canvas: this._ui.canvas,
+      paintCanvas: this._paint.paintCanvas,
+      background3d: CONFIG.puzzle.background3d,
+      shaders: { vert: puzzleVert, bgFrag: puzzleBgFrag, pieceFrag: puzzlePieceMaskFrag }
+    });
+
+    this._setupEventListeners();
+    this._init();
+  }
+
+  private _setupEventListeners(): void {
+    this._ui.canvas.addEventListener("pointerdown", (e) => this._onPointerDown(e));
+    this._ui.canvas.addEventListener("pointermove", (e) => this._onPointerMove(e));
+    this._ui.canvas.addEventListener("pointermove", (e) => this._onPointerMoveDraw(e));
+    this._ui.canvas.addEventListener("pointerup", (e) => this._onPointerUpOrCancel(e));
+    this._ui.canvas.addEventListener("pointercancel", (e) => this._onPointerUpOrCancel(e));
+
+    window.addEventListener("resize", () => {
+      if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+      this._resizeRaf = requestAnimationFrame(() => void this._rebuild());
+    });
+  }
+
+  private async _init(): Promise<void> {
+    try {
+      this._sourceImg = await loadImage("/img-lol.jpg");
+      await this._rebuild();
+      await this._renderer.loadAndPrewarm(getDpr());
+
+      if (!this._rafId) this._rafId = window.requestAnimationFrame(() => this._frame());
+      this._ui.statusEl.classList.add("puzzle__status--ready");
+    } catch (e) {
+      this._ui.statusEl.textContent = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  private _resizeAll(): { w: number; h: number; dpr: number } {
+    const rect = this._ui.canvas.getBoundingClientRect();
     const dpr = getDpr();
     const w = Math.max(1, Math.floor(rect.width * dpr));
     const h = Math.max(1, Math.floor(rect.height * dpr));
-    if (canvasEl.width !== w) canvasEl.width = w;
-    if (canvasEl.height !== h) canvasEl.height = h;
-    paint.resize(w, h);
-    renderer.resize(w, h, dpr);
+    if (this._ui.canvas.width !== w) this._ui.canvas.width = w;
+    if (this._ui.canvas.height !== h) this._ui.canvas.height = h;
+    this._paint.resize(w, h);
+    this._renderer.resize(w, h, dpr);
     return { w, h, dpr };
   }
 
-  function canvasPointFromEvent(e: PointerEvent): { x: number; y: number } {
-    const rect = canvasEl.getBoundingClientRect();
+  private _canvasPointFromEvent(e: PointerEvent): { x: number; y: number } {
+    const rect = this._ui.canvas.getBoundingClientRect();
     const dpr = getDpr();
     return {
       x: (e.clientX - rect.left) * dpr,
@@ -73,12 +115,12 @@ export function mountPuzzleProject(host: HTMLElement): void {
     };
   }
 
-  function maskBitsAt(x: number, y: number): number {
-    return paint.maskBitsAt(x, y, canvasEl.width, canvasEl.height);
+  private _maskBitsAt(x: number, y: number): number {
+    return this._paint.maskBitsAt(x, y, this._ui.canvas.width, this._ui.canvas.height);
   }
 
-  function hitTestPiece(rp: RuntimePiece, x: number, y: number): boolean {
-    if (maskBitsAt(x, y) !== rp.maskBits) return false;
+  private _hitTestPiece(rp: RuntimePiece, x: number, y: number): boolean {
+    if (this._maskBitsAt(x, y) !== rp.maskBits) return false;
     const pad = rp.img.geom.padPx;
     const localX = x - (rp.x - pad);
     const localY = y - (rp.y - pad);
@@ -86,147 +128,125 @@ export function mountPuzzleProject(host: HTMLElement): void {
     const w = rp.img.bitmap.width;
     const h = rp.img.bitmap.height;
     if (localX > w || localY > h) return false;
-    return hitCtx2.isPointInPath(rp.img.path, localX, localY);
+    return this._hitCtx.isPointInPath(rp.img.path, localX, localY);
   }
 
-  function onPointerDown(e: PointerEvent): void {
-    if (!geom) return;
-    if (drag || draw) return;
-    const { x, y } = canvasPointFromEvent(e);
+  private _onPointerDown(e: PointerEvent): void {
+    if (!this._geom) return;
+    if (this._drag || this._draw) return;
+    const { x, y } = this._canvasPointFromEvent(e);
 
-    for (let i = pieces.length - 1; i >= 0; i--) {
-      const rp = pieces[i];
-      if (hitTestPiece(rp, x, y)) {
-        pieces = groupSys.bringGroupToFront(rp.groupId, pieces);
-        drag = {
+    for (let i = this._pieces.length - 1; i >= 0; i--) {
+      const rp = this._pieces[i];
+      if (this._hitTestPiece(rp, x, y)) {
+        this._pieces = this._groupSys.bringGroupToFront(rp.groupId, this._pieces);
+        this._drag = {
           pointerId: e.pointerId,
           piece: rp,
           groupId: rp.groupId,
           offsetX: x - rp.x,
           offsetY: y - rp.y
         };
-        canvasEl.setPointerCapture(e.pointerId);
+        this._ui.canvas.setPointerCapture(e.pointerId);
         return;
       }
     }
 
-    // не по пазлу — рисуем
-    draw = { pointerId: e.pointerId, color: ui.getActiveColor() };
-    canvasEl.setPointerCapture(e.pointerId);
-    paint.addPoint(draw.color, x, y);
+    this._draw = { pointerId: e.pointerId, color: this._ui.getActiveColor() };
+    this._ui.canvas.setPointerCapture(e.pointerId);
+    this._paint.addPoint(this._draw.color, x, y);
   }
 
-  function onPointerMove(e: PointerEvent): void {
-    if (!drag) return;
-    if (e.pointerId !== drag.pointerId) return;
-    const { x, y } = canvasPointFromEvent(e);
-    if (maskBitsAt(x, y) !== drag.piece.maskBits) return;
-    const newX = x - drag.offsetX;
-    const newY = y - drag.offsetY;
-    const dx = newX - drag.piece.x;
-    const dy = newY - drag.piece.y;
-    groupSys.moveGroup(drag.groupId, dx, dy);
+  private _onPointerMove(e: PointerEvent): void {
+    if (!this._drag) return;
+    if (e.pointerId !== this._drag.pointerId) return;
+    const { x, y } = this._canvasPointFromEvent(e);
+    if (this._maskBitsAt(x, y) !== this._drag.piece.maskBits) return;
+    const newX = x - this._drag.offsetX;
+    const newY = y - this._drag.offsetY;
+    const dx = newX - this._drag.piece.x;
+    const dy = newY - this._drag.piece.y;
+    this._groupSys.moveGroup(this._drag.groupId, dx, dy);
   }
 
-  function onPointerMoveDraw(e: PointerEvent): void {
-    if (!draw) return;
-    if (e.pointerId !== draw.pointerId) return;
-    const { x, y } = canvasPointFromEvent(e);
-    paint.addPoint(draw.color, x, y);
+  private _onPointerMoveDraw(e: PointerEvent): void {
+    if (!this._draw) return;
+    if (e.pointerId !== this._draw.pointerId) return;
+    const { x, y } = this._canvasPointFromEvent(e);
+    this._paint.addPoint(this._draw.color, x, y);
   }
 
-  function onPointerUpOrCancel(e: PointerEvent): void {
-    const wasDrag = drag && e.pointerId === drag.pointerId ? drag : null;
-    const wasDraw = draw && e.pointerId === draw.pointerId ? draw : null;
-    if (wasDrag) drag = null;
-    if (wasDraw) draw = null;
+  private _onPointerUpOrCancel(e: PointerEvent): void {
+    const wasDrag = this._drag && e.pointerId === this._drag.pointerId ? this._drag : null;
+    const wasDraw = this._draw && e.pointerId === this._draw.pointerId ? this._draw : null;
+    if (wasDrag) this._drag = null;
+    if (wasDraw) this._draw = null;
     if (!wasDrag && !wasDraw) return;
 
     try {
-      canvasEl.releasePointerCapture(e.pointerId);
+      this._ui.canvas.releasePointerCapture(e.pointerId);
     } catch {
       // ignore
     }
 
-    if (wasDrag && geom) {
-      let currentGroupId = wasDrag.groupId;
-      for (let i = 0; i < 12; i++) {
-        const res = trySnapGroupOnce({ groupId: currentGroupId, geom, getDpr, groupSys, pieces });
-        if (!res) break;
-        pieces = res.pieces;
-        currentGroupId = res.mergedInto;
-      }
+    if (wasDrag && this._geom) {
+      this._trySnapGroup(wasDrag.groupId);
     }
   }
 
-  let rebuildToken = 0;
-  let sourceImg: HTMLImageElement | null = null;
+  private _trySnapGroup(groupId: number): void {
+    let currentGroupId = groupId;
+    for (let i = 0; i < 12; i++) {
+      const res = trySnapGroupOnce({
+        groupId: currentGroupId,
+        geom: this._geom!,
+        getDpr,
+        groupSys: this._groupSys,
+        pieces: this._pieces
+      });
+      if (!res) break;
+      this._pieces = res.pieces;
+      currentGroupId = res.mergedInto;
+    }
+  }
 
-  async function rebuild(): Promise<void> {
-    const token = ++rebuildToken;
-    const { w, h, dpr } = resizeAll();
-    if (!sourceImg) return;
+  private async _rebuild(): Promise<void> {
+    const token = ++this._rebuildToken;
+    const { w, h, dpr } = this._resizeAll();
+    if (!this._sourceImg) return;
 
-    geom = pickGeometry(w, h, dpr);
+    this._geom = pickGeometry(w, h, dpr);
 
-    renderer.disposePiecesMeshes(pieces);
+    this._renderer.disposePiecesMeshes(this._pieces);
     const built = await buildPieces({
       rows: 4,
       cols: 4,
-      img: sourceImg,
-      geom,
+      img: this._sourceImg,
+      geom: this._geom,
       seed: 0x1eafc0de
     });
-    if (token !== rebuildToken) return;
+    if (token !== this._rebuildToken) return;
 
-    pieces = built;
-    scramblePieces(pieces, rng, w, h, geom, dpr);
-    groupSys.init(pieces);
-    paint.clear();
-    renderer.setPiecesMeshes(pieces);
-    statusEl.textContent = "Готово";
+    this._pieces = built;
+    scramblePieces(this._pieces, this._rng, w, h, this._geom, dpr);
+    this._groupSys.init(this._pieces);
+    this._paint.clear();
+    this._renderer.setPiecesMeshes(this._pieces);
+    this._ui.statusEl.textContent = "Готово";
   }
 
-  // render loop
-  let rafId = 0;
-  function frame(): void {
-    rafId = window.requestAnimationFrame(frame);
+  private _frame(): void {
+    this._rafId = window.requestAnimationFrame(() => this._frame());
     const dpr = getDpr();
-    renderer.render(pieces, performance.now() * 0.001, dpr);
-    if (geom) {
-      statusEl.textContent = `Кусочков: ${pieces.length} • Групп: ${groupSys.groups.size} • Цвет: ${ui
+    this._renderer.render(this._pieces, performance.now() * 0.001, dpr);
+    if (this._geom) {
+      this._ui.statusEl.textContent = `Кусочков: ${this._pieces.length} • Групп: ${this._groupSys.groups.size} • Цвет: ${this._ui
         .getActiveColor()
         .toUpperCase()} • DPR: ${dpr.toFixed(2)}`;
     }
   }
-
-  (async () => {
-    try {
-      sourceImg = await loadImage("/img-lol.jpg");
-      await rebuild();
-      // Важно: прогреваем 3D-фон ДО старта RAF и до включения рисования,
-      // чтобы компиляция/первый рендер RT не совпал с первым штрихом.
-      await renderer.loadAndPrewarm(getDpr());
-
-      canvasEl.addEventListener("pointerdown", onPointerDown);
-      canvasEl.addEventListener("pointermove", onPointerMove);
-      canvasEl.addEventListener("pointermove", onPointerMoveDraw);
-      canvasEl.addEventListener("pointerup", onPointerUpOrCancel);
-      canvasEl.addEventListener("pointercancel", onPointerUpOrCancel);
-
-      if (!rafId) rafId = window.requestAnimationFrame(frame);
-      statusEl.classList.add("puzzle__status--ready");
-    } catch (e) {
-      statusEl.textContent = e instanceof Error ? e.message : String(e);
-    }
-  })();
-
-  // resize debounce
-  let resizeRaf = 0;
-  window.addEventListener("resize", () => {
-    if (resizeRaf) cancelAnimationFrame(resizeRaf);
-    resizeRaf = requestAnimationFrame(() => void rebuild());
-  });
 }
 
-
+export function mountPuzzleProject(host: HTMLElement): void {
+  new PuzzleProject(host);
+}

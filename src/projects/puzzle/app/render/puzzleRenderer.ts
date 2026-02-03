@@ -10,7 +10,8 @@ import {
   resizePuzzleBackgroundQuads,
   setPuzzleBackgroundQuadTexture,
   setPuzzleBackgroundQuadVisibility,
-  syncPuzzleBackgroundQuadUniforms
+  syncPuzzleBackgroundQuadUniforms,
+  type PuzzleBgQuad
 } from "./puzzle/backgroundQuads";
 import { MaskActiveLayerAnalyzer } from "./puzzle/maskActiveLayers";
 import { disposePiecesMeshes, setPiecesMeshes, updatePiecesMeshes } from "./puzzle/pieceMeshes";
@@ -28,168 +29,193 @@ export type PuzzleRenderer = {
   disposePiecesMeshes(pieces: RuntimePiece[]): void;
 };
 
+export class PuzzleRendererImpl implements PuzzleRenderer {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene: THREE.Scene;
+  readonly camera: THREE.OrthographicCamera;
+  readonly maskTex: THREE.CanvasTexture;
+
+  private _resolution: THREE.Vector2;
+  private _fruitBg: FruitBackgroundRenderer | null = null;
+  private _isPrewarmed = false;
+  private _isCompiled = false;
+  private _fallback: ReturnType<typeof createPuzzleFallbackBgTextures>;
+  private _bgQuads: PuzzleBgQuad[];
+  private _maskAnalyzer: MaskActiveLayerAnalyzer;
+  private _config: FruitBackgroundPresetsConfig;
+  private _shaders: { vert: string; bgFrag: string; pieceFrag: string };
+
+  constructor(opts: {
+    canvas: HTMLCanvasElement;
+    paintCanvas: HTMLCanvasElement;
+    background3d: FruitBackgroundPresetsConfig;
+    shaders: { vert: string; bgFrag: string; pieceFrag: string };
+  }) {
+    this._config = opts.background3d;
+    this._shaders = opts.shaders;
+
+    this.renderer = createWebGLRenderer2D(opts.canvas);
+    this.scene = new THREE.Scene();
+    this.camera = createYDownOrthoCamera(1, 1);
+    this.maskTex = createCanvasMaskTexture(opts.paintCanvas);
+    this._resolution = new THREE.Vector2(2, 2);
+
+    this._fallback = createPuzzleFallbackBgTextures(opts.background3d);
+    this._bgQuads = createPuzzleBackgroundQuads({
+      scene: this.scene,
+      config: opts.background3d,
+      maskTex: this.maskTex,
+      fallbackTexByBits: this._fallback.textures,
+      resolution: this._resolution,
+      shaders: { vert: opts.shaders.vert, bgFrag: opts.shaders.bgFrag }
+    });
+
+    this._maskAnalyzer = new MaskActiveLayerAnalyzer({ analyzeSize: 64, analysisIntervalFrames: 30 });
+  }
+
+  resize(w: number, h: number, dpr: number): void {
+    this.renderer.setSize(w, h, false);
+    resizeYDownOrthoCamera(this.camera, w, h);
+
+    this._resolution.set(w, h);
+    resizePuzzleBackgroundQuads(this._bgQuads, w, h);
+
+    this._fruitBg?.resize(w, h, dpr);
+  }
+
+  markMaskDirty(): void {
+    this.maskTex.needsUpdate = true;
+    this._maskAnalyzer.markDirty();
+  }
+
+  async loadAndPrewarm(dpr: number): Promise<void> {
+    if (this._isPrewarmed) return;
+
+    this._fruitBg = this._config.enabled ? createFruitBackgroundRenderer({ config: this._config }) : null;
+    if (!this._fruitBg) {
+      this._isPrewarmed = true;
+      return;
+    }
+
+    await this._fruitBg.load();
+
+    const w = this.renderer.domElement.width;
+    const h = this.renderer.domElement.height;
+    if (w > 0 && h > 0) {
+      this._fruitBg.resize(w, h, dpr);
+    }
+
+    this._prewarmFruitBackground(dpr);
+    this._compileShaders();
+    this._isPrewarmed = true;
+  }
+
+  private _prewarmFruitBackground(dpr: number): void {
+    if (!this._fruitBg) return;
+
+    const all = new Set<FruitLayerBits>([1, 2, 3, 4, 5, 6, 7]);
+    this._fruitBg.setActiveLayers(all);
+    setPuzzleBackgroundQuadVisibility(this._bgQuads, all);
+
+    const t0 = performance.now() * 0.001;
+    for (let i = 0; i < 3; i++) {
+      this._fruitBg.update(t0 + i * (1 / 60), dpr);
+      this._fruitBg.renderTargets(this.renderer);
+    }
+
+    for (let i = 0; i < this._bgQuads.length; i++) {
+      const bits = (i + 1) as FruitLayerBits;
+      setPuzzleBackgroundQuadTexture(this._bgQuads, bits, this._fruitBg.getLayerTexture(bits));
+    }
+  }
+
+  private _compileShaders(): void {
+    if (this._isCompiled) return;
+    this.renderer.compile(this.scene, this.camera);
+    this._isCompiled = true;
+  }
+
+  setPiecesMeshes(pieces: RuntimePiece[]): void {
+    setPiecesMeshes({
+      scene: this.scene,
+      pieces,
+      maskTex: this.maskTex,
+      threshold: this._config.maskThreshold,
+      shaders: { vert: this._shaders.vert, pieceFrag: this._shaders.pieceFrag }
+    });
+  }
+
+  disposePiecesMeshes(pieces: RuntimePiece[]): void {
+    disposePiecesMeshes(this.scene, pieces);
+  }
+
+  render(pieces: RuntimePiece[], timeSec: number, dpr: number): void {
+    const w = this.renderer.domElement.width;
+    const h = this.renderer.domElement.height;
+
+    this._resolution.set(w, h);
+    syncPuzzleBackgroundQuadUniforms(this._bgQuads, this._config);
+
+    this._renderBackground(w, h, timeSec, dpr);
+    updatePiecesMeshes({ pieces, w, h, threshold: this._config.maskThreshold });
+
+    this.renderer.setClearColor(0x070a10, 1);
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  private _renderBackground(w: number, h: number, timeSec: number, dpr: number): void {
+    if (this._fruitBg) {
+      this._renderFruitBackground(w, h, timeSec, dpr);
+    } else {
+      this._renderFallbackBackground();
+    }
+  }
+
+  private _renderFruitBackground(w: number, h: number, timeSec: number, dpr: number): void {
+    if (!this._fruitBg) return;
+
+    const maskUpdate = this._maskAnalyzer.update({
+      maskTex: this.maskTex,
+      width: w,
+      height: h,
+      threshold: this._config.maskThreshold,
+      timeSec
+    });
+
+    if (maskUpdate.didRun) {
+      setPuzzleBackgroundQuadVisibility(this._bgQuads, maskUpdate.activeLayers);
+      if (maskUpdate.didChange) {
+        this._fruitBg.setActiveLayers(maskUpdate.activeLayers);
+      }
+    }
+
+    this._fruitBg.update(timeSec, dpr);
+    this._fruitBg.renderTargets(this.renderer);
+
+    for (let i = 0; i < this._bgQuads.length; i++) {
+      const q = this._bgQuads[i];
+      if (!q.visible) continue;
+      const bits = (i + 1) as FruitLayerBits;
+      const texture = this._fruitBg.getLayerTexture(bits);
+      setPuzzleBackgroundQuadTexture(this._bgQuads, bits, texture);
+    }
+  }
+
+  private _renderFallbackBackground(): void {
+    this._fallback.syncFromConfig();
+    for (let bits = 1; bits <= 7; bits++) {
+      const b = bits as FruitLayerBits;
+      setPuzzleBackgroundQuadTexture(this._bgQuads, b, this._fallback.textures[b]);
+      this._bgQuads[bits - 1].visible = true;
+    }
+  }
+}
+
 export function createPuzzleRenderer(opts: {
   canvas: HTMLCanvasElement;
   paintCanvas: HTMLCanvasElement;
   background3d: FruitBackgroundPresetsConfig;
-  shaders: {
-    vert: string;
-    bgFrag: string;
-    pieceFrag: string;
-  };
+  shaders: { vert: string; bgFrag: string; pieceFrag: string };
 }): PuzzleRenderer {
-  const renderer = createWebGLRenderer2D(opts.canvas);
-  const scene = new THREE.Scene();
-  const camera = createYDownOrthoCamera(1, 1);
-  const maskTex = createCanvasMaskTexture(opts.paintCanvas);
-
-  const resolution = new THREE.Vector2(2, 2);
-  let fruitBg: FruitBackgroundRenderer | null = null;
-  let isPrewarmed = false;
-  let isCompiled = false;
-
-  const fallback = createPuzzleFallbackBgTextures(opts.background3d);
-  const bgQuads = createPuzzleBackgroundQuads({
-    scene,
-    config: opts.background3d,
-    maskTex,
-    fallbackTexByBits: fallback.textures,
-    resolution,
-    shaders: { vert: opts.shaders.vert, bgFrag: opts.shaders.bgFrag }
-  });
-
-  function resize(w: number, h: number, dpr: number): void {
-    renderer.setSize(w, h, false);
-    resizeYDownOrthoCamera(camera, w, h);
-
-    resolution.set(w, h);
-    resizePuzzleBackgroundQuads(bgQuads, w, h);
-
-    fruitBg?.resize(w, h, dpr);
-  }
-
-  const maskAnalyzer = new MaskActiveLayerAnalyzer({ analyzeSize: 64, analysisIntervalFrames: 30 });
-
-  function markMaskDirty(): void {
-    maskTex.needsUpdate = true;
-    maskAnalyzer.markDirty();
-  }
-
-  async function loadAndPrewarm(dpr: number): Promise<void> {
-    if (isPrewarmed) return;
-
-    fruitBg = opts.background3d.enabled ? createFruitBackgroundRenderer({ config: opts.background3d }) : null;
-    if (!fruitBg) {
-      isPrewarmed = true;
-      return;
-    }
-
-    await fruitBg.load();
-
-    const w = renderer.domElement.width;
-    const h = renderer.domElement.height;
-    if (w > 0 && h > 0) {
-      fruitBg.resize(w, h, dpr);
-    }
-
-    // Прогреваем все 7 слоёв сразу, чтобы компиляция шейдеров и первый рендер RT
-    // не происходили в момент первого штриха.
-    const all = new Set<FruitLayerBits>([1, 2, 3, 4, 5, 6, 7]);
-    fruitBg.setActiveLayers(all);
-    setPuzzleBackgroundQuadVisibility(bgQuads, all);
-
-    const t0 = performance.now() * 0.001;
-    for (let i = 0; i < 3; i++) {
-      fruitBg.update(t0 + i * (1 / 60), dpr);
-      fruitBg.renderTargets(renderer);
-    }
-
-    // Обновим ссылки на текстуры заранее (избегаем “свопа” в первом кадре).
-    for (let i = 0; i < bgQuads.length; i++) {
-      const bits = (i + 1) as FruitLayerBits;
-      setPuzzleBackgroundQuadTexture(bgQuads, bits, fruitBg.getLayerTexture(bits));
-    }
-
-    // Прогреваем компиляцию материалов пазла (фон/кусочки) один раз.
-    if (!isCompiled) {
-      renderer.compile(scene, camera);
-      isCompiled = true;
-    }
-
-    isPrewarmed = true;
-  }
-
-  function setPiecesMeshesPublic(pieces: RuntimePiece[]): void {
-    setPiecesMeshes({
-      scene,
-      pieces,
-      maskTex,
-      threshold: opts.background3d.maskThreshold,
-      shaders: { vert: opts.shaders.vert, pieceFrag: opts.shaders.pieceFrag }
-    });
-  }
-
-  function disposePiecesMeshesPublic(pieces: RuntimePiece[]): void {
-    disposePiecesMeshes(scene, pieces);
-  }
-
-  function render(pieces: RuntimePiece[], timeSec: number, dpr: number): void {
-    const w = renderer.domElement.width;
-    const h = renderer.domElement.height;
-
-    resolution.set(w, h);
-    syncPuzzleBackgroundQuadUniforms(bgQuads, opts.background3d);
-
-    if (fruitBg) {
-      const maskUpdate = maskAnalyzer.update({
-        maskTex,
-        width: w,
-        height: h,
-        threshold: opts.background3d.maskThreshold,
-        timeSec
-      });
-      if (maskUpdate.didRun) {
-        setPuzzleBackgroundQuadVisibility(bgQuads, maskUpdate.activeLayers);
-        if (maskUpdate.didChange) fruitBg.setActiveLayers(maskUpdate.activeLayers);
-      }
-
-      fruitBg.update(timeSec, dpr);
-      fruitBg.renderTargets(renderer);
-
-      for (let i = 0; i < bgQuads.length; i++) {
-        const q = bgQuads[i];
-        if (!q.visible) continue;
-        const bits = (i + 1) as FruitLayerBits;
-        const texture = fruitBg.getLayerTexture(bits);
-        setPuzzleBackgroundQuadTexture(bgQuads, bits, texture);
-      }
-    } else {
-      fallback.syncFromConfig();
-      for (let bits = 1; bits <= 7; bits++) {
-        const b = bits as FruitLayerBits;
-        setPuzzleBackgroundQuadTexture(bgQuads, b, fallback.textures[b]);
-        bgQuads[bits - 1].visible = true;
-      }
-    }
-
-    updatePiecesMeshes({ pieces, w, h, threshold: opts.background3d.maskThreshold });
-
-    renderer.setClearColor(0x070a10, 1);
-    renderer.render(scene, camera);
-  }
-
-  return {
-    renderer,
-    scene,
-    camera,
-    maskTex,
-    loadAndPrewarm,
-    resize,
-    markMaskDirty,
-    render,
-    setPiecesMeshes: setPiecesMeshesPublic,
-    disposePiecesMeshes: disposePiecesMeshesPublic
-  };
+  return new PuzzleRendererImpl(opts);
 }
-
-
