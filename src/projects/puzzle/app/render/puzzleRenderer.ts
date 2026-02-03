@@ -2,8 +2,10 @@ import * as THREE from "three";
 import type { RuntimePiece } from "../runtimeTypes";
 import type { FruitBackgroundPresetsConfig, FruitLayerBits } from "../../../fruits/types";
 import type { FruitBackgroundRenderer } from "../../../fruits/index";
-import { createFruitBackgroundRenderer } from "../../../fruits/index";
-import { createCanvasMaskTexture, createWebGLRenderer2D, createYDownOrthoCamera, resizeYDownOrthoCamera } from "./puzzle/three2d";
+import type { FruitMaskedBackgroundRenderer } from "../../../fruits/index";
+import { createFruitBackgroundRenderer, createFruitMaskedBackgroundRenderer } from "../../../fruits/index";
+import type { PaintSystemGL } from "../paint/paintSystemGL";
+import { createWebGLRenderer2D, createYDownOrthoCamera, resizeYDownOrthoCamera } from "./puzzle/three2d";
 import { createPuzzleFallbackBgTextures } from "./puzzle/fallbackTextures";
 import {
   createPuzzleBackgroundQuads,
@@ -13,14 +15,15 @@ import {
   syncPuzzleBackgroundQuadUniforms,
   type PuzzleBgQuad
 } from "./puzzle/backgroundQuads";
-import { MaskActiveLayerAnalyzer } from "./puzzle/maskActiveLayers";
 import { disposePiecesMeshes, setPiecesMeshes, updatePiecesMeshes } from "./puzzle/pieceMeshes";
+import puzzleVert from "../../../../shaders/puzzleTextured.vert.glsl?raw";
+import texturePresentFrag from "../../../../shaders/texturePresent.frag.glsl?raw";
 
 export type PuzzleRenderer = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.OrthographicCamera;
-  maskTex: THREE.CanvasTexture;
+  maskTex: THREE.Texture;
   loadAndPrewarm(dpr: number): Promise<void>;
   resize(w: number, h: number, dpr: number): void;
   markMaskDirty(): void;
@@ -33,44 +36,55 @@ export class PuzzleRendererImpl implements PuzzleRenderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene: THREE.Scene;
   readonly camera: THREE.OrthographicCamera;
-  readonly maskTex: THREE.CanvasTexture;
+  readonly maskTex: THREE.Texture;
 
   private _resolution: THREE.Vector2;
-  private _fruitBg: FruitBackgroundRenderer | null = null;
+  private _fruitBgLegacy: FruitBackgroundRenderer | null = null;
+  private _fruitBgMasked: FruitMaskedBackgroundRenderer | null = null;
   private _isPrewarmed = false;
   private _isCompiled = false;
   private _fallback: ReturnType<typeof createPuzzleFallbackBgTextures>;
-  private _bgQuads: PuzzleBgQuad[];
-  private _maskAnalyzer: MaskActiveLayerAnalyzer;
+  private _bgQuads: PuzzleBgQuad[] = [];
   private _config: FruitBackgroundPresetsConfig;
   private _shaders: { vert: string; bgFrag: string; pieceFrag: string };
+  private _paint: PaintSystemGL;
+  private _mode: NonNullable<FruitBackgroundPresetsConfig["mode"]>;
+  private _debugMaskQuad: THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial> | null = null;
 
   constructor(opts: {
     canvas: HTMLCanvasElement;
-    paintCanvas: HTMLCanvasElement;
+    paint: PaintSystemGL;
     background3d: FruitBackgroundPresetsConfig;
     shaders: { vert: string; bgFrag: string; pieceFrag: string };
   }) {
     this._config = opts.background3d;
     this._shaders = opts.shaders;
+    this._paint = opts.paint;
+    this._mode = this._config.mode ?? "legacy7rt";
 
     this.renderer = createWebGLRenderer2D(opts.canvas);
     this.scene = new THREE.Scene();
     this.camera = createYDownOrthoCamera(1, 1);
-    this.maskTex = createCanvasMaskTexture(opts.paintCanvas);
+    this._paint.attachRenderer(this.renderer);
+    this.maskTex = this._paint.maskTexture;
     this._resolution = new THREE.Vector2(2, 2);
 
     this._fallback = createPuzzleFallbackBgTextures(opts.background3d);
-    this._bgQuads = createPuzzleBackgroundQuads({
-      scene: this.scene,
-      config: opts.background3d,
-      maskTex: this.maskTex,
-      fallbackTexByBits: this._fallback.textures,
-      resolution: this._resolution,
-      shaders: { vert: opts.shaders.vert, bgFrag: opts.shaders.bgFrag }
-    });
+    if (this._mode === "legacy7rt") {
+      this._bgQuads = createPuzzleBackgroundQuads({
+        scene: this.scene,
+        config: opts.background3d,
+        maskTex: this.maskTex,
+        fallbackTexByBits: this._fallback.textures,
+        resolution: this._resolution,
+        shaders: { vert: opts.shaders.vert, bgFrag: opts.shaders.bgFrag }
+      });
+    }
 
-    this._maskAnalyzer = new MaskActiveLayerAnalyzer({ analyzeSize: 64, analysisIntervalFrames: 30 });
+    if (this._config.debugShowMask) {
+      this._debugMaskQuad = this._createDebugMaskQuad();
+      this.scene.add(this._debugMaskQuad);
+    }
   }
 
   resize(w: number, h: number, dpr: number): void {
@@ -78,54 +92,63 @@ export class PuzzleRendererImpl implements PuzzleRenderer {
     resizeYDownOrthoCamera(this.camera, w, h);
 
     this._resolution.set(w, h);
-    resizePuzzleBackgroundQuads(this._bgQuads, w, h);
-
-    this._fruitBg?.resize(w, h, dpr);
+    this._resizeDebugMaskQuad(w, h);
+    if (this._mode === "legacy7rt") {
+      resizePuzzleBackgroundQuads(this._bgQuads, w, h);
+      this._fruitBgLegacy?.resize(w, h, dpr);
+    } else {
+      this._fruitBgMasked?.resize(w, h, dpr);
+    }
   }
 
   markMaskDirty(): void {
-    this.maskTex.needsUpdate = true;
-    this._maskAnalyzer.markDirty();
+    // RenderTarget texture не требует needsUpdate, но мы можем использовать этот хук
+    // для legacy-пути (анализ активных слоёв) или для отладочных целей.
   }
 
   async loadAndPrewarm(dpr: number): Promise<void> {
     if (this._isPrewarmed) return;
 
-    this._fruitBg = this._config.enabled ? createFruitBackgroundRenderer({ config: this._config }) : null;
-    if (!this._fruitBg) {
+    if (!this._config.enabled) {
       this._isPrewarmed = true;
       return;
     }
 
-    await this._fruitBg.load();
-
-    const w = this.renderer.domElement.width;
-    const h = this.renderer.domElement.height;
-    if (w > 0 && h > 0) {
-      this._fruitBg.resize(w, h, dpr);
+    if (this._mode === "legacy7rt") {
+      this._fruitBgLegacy = createFruitBackgroundRenderer({ config: this._config });
+      await this._fruitBgLegacy.load();
+      const w = this.renderer.domElement.width;
+      const h = this.renderer.domElement.height;
+      if (w > 0 && h > 0) this._fruitBgLegacy.resize(w, h, dpr);
+      this._prewarmLegacyBackground(dpr);
+    } else {
+      this._fruitBgMasked = createFruitMaskedBackgroundRenderer({ config: this._config });
+      await this._fruitBgMasked.load();
+      const w = this.renderer.domElement.width;
+      const h = this.renderer.domElement.height;
+      if (w > 0 && h > 0) this._fruitBgMasked.resize(w, h, dpr);
     }
 
-    this._prewarmFruitBackground(dpr);
     this._compileShaders();
     this._isPrewarmed = true;
   }
 
-  private _prewarmFruitBackground(dpr: number): void {
-    if (!this._fruitBg) return;
+  private _prewarmLegacyBackground(dpr: number): void {
+    if (!this._fruitBgLegacy) return;
 
     const all = new Set<FruitLayerBits>([1, 2, 3, 4, 5, 6, 7]);
-    this._fruitBg.setActiveLayers(all);
+    this._fruitBgLegacy.setActiveLayers(all);
     setPuzzleBackgroundQuadVisibility(this._bgQuads, all);
 
     const t0 = performance.now() * 0.001;
     for (let i = 0; i < 3; i++) {
-      this._fruitBg.update(t0 + i * (1 / 60), dpr);
-      this._fruitBg.renderTargets(this.renderer);
+      this._fruitBgLegacy.update(t0 + i * (1 / 60), dpr);
+      this._fruitBgLegacy.renderTargets(this.renderer);
     }
 
     for (let i = 0; i < this._bgQuads.length; i++) {
       const bits = (i + 1) as FruitLayerBits;
-      setPuzzleBackgroundQuadTexture(this._bgQuads, bits, this._fruitBg.getLayerTexture(bits));
+      setPuzzleBackgroundQuadTexture(this._bgQuads, bits, this._fruitBgLegacy.getLayerTexture(bits));
     }
   }
 
@@ -133,6 +156,32 @@ export class PuzzleRendererImpl implements PuzzleRenderer {
     if (this._isCompiled) return;
     this.renderer.compile(this.scene, this.camera);
     this._isCompiled = true;
+  }
+
+  private _createDebugMaskQuad(): THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial> {
+    const mat = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      uniforms: {
+        tTex: { value: this.maskTex },
+      },
+      vertexShader: puzzleVert,
+      fragmentShader: texturePresentFrag,
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    mesh.renderOrder = 1000;
+    mesh.position.z = 5;
+    return mesh;
+  }
+
+  private _resizeDebugMaskQuad(w: number, h: number): void {
+    if (!this._debugMaskQuad) return;
+    const size = Math.floor(Math.min(w, h) * 0.28);
+    const pad = Math.floor(Math.min(w, h) * 0.02);
+    this._debugMaskQuad.scale.set(size, size, 1);
+    this._debugMaskQuad.position.set(w - pad - size * 0.5, pad + size * 0.5, 5);
   }
 
   setPiecesMeshes(pieces: RuntimePiece[]): void {
@@ -153,52 +202,62 @@ export class PuzzleRendererImpl implements PuzzleRenderer {
     const w = this.renderer.domElement.width;
     const h = this.renderer.domElement.height;
 
-    this._resolution.set(w, h);
-    syncPuzzleBackgroundQuadUniforms(this._bgQuads, this._config);
+    // Если фон отключен — ведём себя как “простой” 2D рендер пазла на clearColor.
+    if (!this._config.enabled) {
+      updatePiecesMeshes({ pieces, w, h, threshold: this._config.maskThreshold });
+      const prevAutoClear = this.renderer.autoClear;
+      this.renderer.autoClear = true;
+      this.renderer.setClearColor(0x070a10, 1);
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.autoClear = prevAutoClear;
+      return;
+    }
 
-    this._renderBackground(w, h, timeSec, dpr);
+    this._resolution.set(w, h);
+    if (this._mode === "legacy7rt") {
+      syncPuzzleBackgroundQuadUniforms(this._bgQuads, this._config);
+      this._renderLegacyBackground(w, h, timeSec, dpr);
+    } else {
+      this._renderMaskedBackground(w, h, timeSec, dpr);
+    }
     updatePiecesMeshes({ pieces, w, h, threshold: this._config.maskThreshold });
 
-    this.renderer.setClearColor(0x070a10, 1);
-    this.renderer.render(this.scene, this.camera);
-  }
-
-  private _renderBackground(w: number, h: number, timeSec: number, dpr: number): void {
-    if (this._fruitBg) {
-      this._renderFruitBackground(w, h, timeSec, dpr);
-    } else {
-      this._renderFallbackBackground();
+    const prevAutoClear = this.renderer.autoClear;
+    if (this._mode !== "legacy7rt") {
+      // Фон+фрукты уже нарисованы отдельными pass'ами. Здесь только оверлей пазлов.
+      this.renderer.autoClear = false;
     }
+    if (this._mode === "legacy7rt") {
+      this.renderer.setClearColor(0x070a10, 1);
+    }
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.autoClear = prevAutoClear;
   }
 
-  private _renderFruitBackground(w: number, h: number, timeSec: number, dpr: number): void {
-    if (!this._fruitBg) return;
-
-    const maskUpdate = this._maskAnalyzer.update({
+  private _renderMaskedBackground(w: number, h: number, timeSec: number, dpr: number): void {
+    if (!this._fruitBgMasked) return;
+    this._fruitBgMasked.update(timeSec, dpr);
+    this._fruitBgMasked.render({
+      renderer: this.renderer,
       maskTex: this.maskTex,
       width: w,
       height: h,
-      threshold: this._config.maskThreshold,
-      timeSec
+      threshold: this._config.maskThreshold
     });
+  }
 
-    if (maskUpdate.didRun) {
-      setPuzzleBackgroundQuadVisibility(this._bgQuads, maskUpdate.activeLayers);
-      if (maskUpdate.didChange) {
-        this._fruitBg.setActiveLayers(maskUpdate.activeLayers);
+  private _renderLegacyBackground(_w: number, _h: number, timeSec: number, dpr: number): void {
+    if (this._fruitBgLegacy) {
+      this._fruitBgLegacy.update(timeSec, dpr);
+      this._fruitBgLegacy.renderTargets(this.renderer);
+      for (let i = 0; i < this._bgQuads.length; i++) {
+        const bits = (i + 1) as FruitLayerBits;
+        setPuzzleBackgroundQuadTexture(this._bgQuads, bits, this._fruitBgLegacy.getLayerTexture(bits));
+        this._bgQuads[i].visible = true;
       }
+      return;
     }
-
-    this._fruitBg.update(timeSec, dpr);
-    this._fruitBg.renderTargets(this.renderer);
-
-    for (let i = 0; i < this._bgQuads.length; i++) {
-      const q = this._bgQuads[i];
-      if (!q.visible) continue;
-      const bits = (i + 1) as FruitLayerBits;
-      const texture = this._fruitBg.getLayerTexture(bits);
-      setPuzzleBackgroundQuadTexture(this._bgQuads, bits, texture);
-    }
+    this._renderFallbackBackground();
   }
 
   private _renderFallbackBackground(): void {
@@ -213,7 +272,7 @@ export class PuzzleRendererImpl implements PuzzleRenderer {
 
 export function createPuzzleRenderer(opts: {
   canvas: HTMLCanvasElement;
-  paintCanvas: HTMLCanvasElement;
+  paint: PaintSystemGL;
   background3d: FruitBackgroundPresetsConfig;
   shaders: { vert: string; bgFrag: string; pieceFrag: string };
 }): PuzzleRenderer {

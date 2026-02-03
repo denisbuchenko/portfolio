@@ -17,6 +17,7 @@ export * from "./core/scene";
 export * from "./core/instancing";
 export * from "./debug/texture";
 export * from "./background/renderer";
+export * from "./background/maskedRenderer";
 export * from "./project";
 export * from "./mount";
 

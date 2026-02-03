@@ -66,6 +66,14 @@ export type FruitLayerPreset = {
 
 export type FruitBackgroundPresetsConfig = {
   enabled: boolean;
+  /**
+   * Режим рендера для puzzle:
+   * - legacy7rt: старый путь (7 отдельных RenderTarget)
+   * - masked1pass: один проход с per-pixel маской (оптимизированный)
+   */
+  mode?: "legacy7rt" | "masked1pass";
+  /** Показывать отладочный оверлей маски (в правом верхнем углу). */
+  debugShowMask?: boolean;
   gltfUrl: string;
   maskThreshold: number;
   instanceMul: number;

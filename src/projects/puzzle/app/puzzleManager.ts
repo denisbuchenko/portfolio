@@ -1,7 +1,7 @@
 import type { PieceGeometry } from "../path";
 import type { DragState, DrawState, RuntimePiece } from "./runtimeTypes";
 import type { PuzzleUI } from "./ui/puzzleUI";
-import type { PaintSystem } from "./paint/paintSystem";
+import type { PaintSystem } from "./paint/types";
 import type { GroupSystem } from "./groups/groupSystem";
 import type { PuzzleRenderer } from "./render/puzzleRenderer";
 import type { XorShift32 } from "../rng";

@@ -1,6 +1,6 @@
 import type { DragState, DrawState, RuntimePiece } from "./runtimeTypes";
 import type { PuzzleUI } from "./ui/puzzleUI";
-import type { PaintSystem } from "./paint/paintSystem";
+import type { PaintSystem } from "./paint/types";
 import type { GroupSystem } from "./groups/groupSystem";
 import { getDpr } from "./utils";
 
@@ -30,8 +30,8 @@ export class InputHandler {
 		};
 	}
 
-	hitTestPiece(rp: RuntimePiece, x: number, y: number, maskBitsAt: (x: number, y: number) => number): boolean {
-		if (maskBitsAt(x, y) !== rp.maskBits) return false;
+	hitTestPiece(rp: RuntimePiece, x: number, y: number, bitsAtPointer: number): boolean {
+		if (bitsAtPointer !== rp.maskBits) return false;
 
 		const pad = rp.img.geom.padPx;
 		const localX = x - (rp.x - pad);
@@ -59,10 +59,11 @@ export class InputHandler {
 		onDrawStart: (draw: DrawState) => void
 	): RuntimePiece[] {
 		const { x, y } = this.canvasPointFromEvent(canvas, e);
+		const bitsAtPointer = maskBitsAt(x, y);
 
 		for (let i = pieces.length - 1; i >= 0; i--) {
 			const rp = pieces[i];
-			if (this.hitTestPiece(rp, x, y, maskBitsAt)) {
+			if (this.hitTestPiece(rp, x, y, bitsAtPointer)) {
 				const reorderedPieces = groupSys.bringGroupToFront(rp.groupId, pieces);
 				const drag: DragState = {
 					pointerId: e.pointerId,
@@ -93,7 +94,8 @@ export class InputHandler {
 	): void {
 		if (!drag || e.pointerId !== drag.pointerId) return;
 		const { x, y } = this.canvasPointFromEvent(canvas, e);
-		if (maskBitsAt(x, y) !== drag.piece.maskBits) return;
+		const bitsAtPointer = maskBitsAt(x, y);
+		if (bitsAtPointer !== drag.piece.maskBits) return;
 		const newX = x - drag.offsetX;
 		const newY = y - drag.offsetY;
 		const dx = newX - drag.piece.x;

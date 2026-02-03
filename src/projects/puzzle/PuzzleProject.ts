@@ -5,7 +5,7 @@ import puzzleBgFrag from "../../shaders/puzzleBgMasked.frag.glsl?raw";
 import puzzlePieceMaskFrag from "../../shaders/puzzlePieceMask.frag.glsl?raw";
 
 import { mountPuzzleUI } from "./app/ui/puzzleUI";
-import { createPaintSystem } from "./app/paint/paintSystem";
+import { createPaintSystemGL } from "./app/paint/paintSystemGL";
 import { createGroupSystem } from "./app/groups/groupSystem";
 import { createPuzzleRenderer } from "./app/render/puzzleRenderer";
 import { InputHandler } from "./app/input";
@@ -15,9 +15,9 @@ import { getDpr, loadImage } from "./app/utils";
 
 export class PuzzleProject {
   private _ui: ReturnType<typeof mountPuzzleUI>;
-  private _paint: ReturnType<typeof createPaintSystem>;
+  private _paint: ReturnType<typeof createPaintSystemGL>;
   private _groupSys: ReturnType<typeof createGroupSystem>;
-  private _renderer: ReturnType<typeof createPuzzleRenderer>;
+  private _renderer: ReturnType<typeof createPuzzleRenderer> | null = null;
   private _input: InputHandler;
   private _manager: PuzzleManager;
   private _rng: XorShift32;
@@ -33,15 +33,15 @@ export class PuzzleProject {
     this._input = new InputHandler();
     this._manager = new PuzzleManager();
 
-    this._paint = createPaintSystem({
+    this._paint = createPaintSystemGL({
       config: CONFIG,
       getDpr,
-      onRedraw: () => this._renderer.markMaskDirty()
+      onRedraw: () => this._renderer?.markMaskDirty()
     });
 
     this._renderer = createPuzzleRenderer({
       canvas: this._ui.canvas,
-      paintCanvas: this._paint.paintCanvas,
+      paint: this._paint,
       background3d: CONFIG.puzzle.background3d,
       shaders: { vert: puzzleVert, bgFrag: puzzleBgFrag, pieceFrag: puzzlePieceMaskFrag }
     });
@@ -67,7 +67,7 @@ export class PuzzleProject {
     try {
       this._sourceImg = await loadImage("/img-lol.jpg");
       await this._rebuild();
-      await this._renderer.loadAndPrewarm(getDpr());
+      await this._renderer?.loadAndPrewarm(getDpr());
 
       if (!this._rafId) this._rafId = window.requestAnimationFrame(() => this._frame());
       this._ui.statusEl.classList.add("puzzle__status--ready");
@@ -133,6 +133,7 @@ export class PuzzleProject {
 
   private async _rebuild(): Promise<void> {
     if (!this._sourceImg) return;
+    if (!this._renderer) return;
     await this._manager.rebuild(
       this._sourceImg,
       this._ui.canvas,
@@ -147,7 +148,7 @@ export class PuzzleProject {
   private _frame(): void {
     this._rafId = window.requestAnimationFrame(() => this._frame());
     const dpr = getDpr();
-    this._renderer.render(this._manager.pieces, performance.now() * 0.001, dpr);
+    this._renderer?.render(this._manager.pieces, performance.now() * 0.001, dpr);
     this._manager.updateStatus(this._ui, this._groupSys);
   }
 }
