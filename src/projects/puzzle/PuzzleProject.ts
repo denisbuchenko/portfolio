@@ -1,55 +1,37 @@
-import type { PieceGeometry } from "./path";
-import { XorShift32 } from "./rng";
 import { CONFIG } from "../../config";
 
 import puzzleVert from "../../shaders/puzzleTextured.vert.glsl?raw";
 import puzzleBgFrag from "../../shaders/puzzleBgMasked.frag.glsl?raw";
 import puzzlePieceMaskFrag from "../../shaders/puzzlePieceMask.frag.glsl?raw";
 
-import type { DragState, DrawState, RuntimePiece } from "./app/runtimeTypes";
-import type { PuzzleUI } from "./app/ui/puzzleUI";
 import { mountPuzzleUI } from "./app/ui/puzzleUI";
-import type { PaintSystem } from "./app/paint/paintSystem";
 import { createPaintSystem } from "./app/paint/paintSystem";
-import { GroupSystem, createGroupSystem } from "./app/groups/groupSystem";
-import { trySnapGroupOnce } from "./app/groups/snapper";
-import type { PuzzleRenderer } from "./app/render/puzzleRenderer";
+import { createGroupSystem } from "./app/groups/groupSystem";
 import { createPuzzleRenderer } from "./app/render/puzzleRenderer";
-import { buildPieces, pickGeometry, scramblePieces } from "./app/build/buildPieces";
+import { InputHandler } from "./app/input";
+import { PuzzleManager } from "./app/puzzleManager";
+import { XorShift32 } from "./rng";
 import { getDpr, loadImage } from "./app/utils";
 
 export class PuzzleProject {
-  private _ui: PuzzleUI;
-  private _paint: PaintSystem;
-  private _groupSys: GroupSystem;
-  private _renderer: PuzzleRenderer;
+  private _ui: ReturnType<typeof mountPuzzleUI>;
+  private _paint: ReturnType<typeof createPaintSystem>;
+  private _groupSys: ReturnType<typeof createGroupSystem>;
+  private _renderer: ReturnType<typeof createPuzzleRenderer>;
+  private _input: InputHandler;
+  private _manager: PuzzleManager;
   private _rng: XorShift32;
 
-  private _hitCanvas: HTMLCanvasElement;
-  private _hitCtx: CanvasRenderingContext2D;
-
-  private _geom: PieceGeometry | null = null;
-  private _pieces: RuntimePiece[] = [];
-  private _drag: DragState = null;
-  private _draw: DrawState = null;
-
-  private _rebuildToken = 0;
   private _sourceImg: HTMLImageElement | null = null;
-
   private _rafId = 0;
   private _resizeRaf = 0;
 
   constructor(host: HTMLElement) {
     this._ui = mountPuzzleUI({ host, config: CONFIG });
-    this._rng = new XorShift32(0x0ddba11);
     this._groupSys = createGroupSystem();
-
-    this._hitCanvas = document.createElement("canvas");
-    this._hitCanvas.width = 2;
-    this._hitCanvas.height = 2;
-    const hitCtx = this._hitCanvas.getContext("2d");
-    if (!hitCtx) throw new Error("2D hit context not available");
-    this._hitCtx = hitCtx;
+    this._rng = new XorShift32(0x0ddba11);
+    this._input = new InputHandler();
+    this._manager = new PuzzleManager();
 
     this._paint = createPaintSystem({
       config: CONFIG,
@@ -94,156 +76,79 @@ export class PuzzleProject {
     }
   }
 
-  private _resizeAll(): { w: number; h: number; dpr: number } {
-    const rect = this._ui.canvas.getBoundingClientRect();
-    const dpr = getDpr();
-    const w = Math.max(1, Math.floor(rect.width * dpr));
-    const h = Math.max(1, Math.floor(rect.height * dpr));
-    if (this._ui.canvas.width !== w) this._ui.canvas.width = w;
-    if (this._ui.canvas.height !== h) this._ui.canvas.height = h;
-    this._paint.resize(w, h);
-    this._renderer.resize(w, h, dpr);
-    return { w, h, dpr };
-  }
-
-  private _canvasPointFromEvent(e: PointerEvent): { x: number; y: number } {
-    const rect = this._ui.canvas.getBoundingClientRect();
-    const dpr = getDpr();
-    return {
-      x: (e.clientX - rect.left) * dpr,
-      y: (e.clientY - rect.top) * dpr
-    };
-  }
-
   private _maskBitsAt(x: number, y: number): number {
     return this._paint.maskBitsAt(x, y, this._ui.canvas.width, this._ui.canvas.height);
   }
 
-  private _hitTestPiece(rp: RuntimePiece, x: number, y: number): boolean {
-    if (this._maskBitsAt(x, y) !== rp.maskBits) return false;
-    const pad = rp.img.geom.padPx;
-    const localX = x - (rp.x - pad);
-    const localY = y - (rp.y - pad);
-    if (localX < 0 || localY < 0) return false;
-    const w = rp.img.bitmap.width;
-    const h = rp.img.bitmap.height;
-    if (localX > w || localY > h) return false;
-    return this._hitCtx.isPointInPath(rp.img.path, localX, localY);
-  }
-
   private _onPointerDown(e: PointerEvent): void {
-    if (!this._geom) return;
-    if (this._drag || this._draw) return;
-    const { x, y } = this._canvasPointFromEvent(e);
+    if (!this._manager.geom) return;
+    if (this._manager.drag || this._manager.draw) return;
 
-    for (let i = this._pieces.length - 1; i >= 0; i--) {
-      const rp = this._pieces[i];
-      if (this._hitTestPiece(rp, x, y)) {
-        this._pieces = this._groupSys.bringGroupToFront(rp.groupId, this._pieces);
-        this._drag = {
-          pointerId: e.pointerId,
-          piece: rp,
-          groupId: rp.groupId,
-          offsetX: x - rp.x,
-          offsetY: y - rp.y
-        };
-        this._ui.canvas.setPointerCapture(e.pointerId);
-        return;
+    const newPieces = this._input.handlePointerDown(
+      e,
+      this._ui.canvas,
+      this._manager.pieces,
+      this._groupSys,
+      this._ui,
+      this._paint,
+      (x, y) => this._maskBitsAt(x, y),
+      (drag, pieces) => {
+        this._manager.setDrag(drag);
+        this._manager.setPieces(pieces);
+      },
+      (draw) => {
+        this._manager.setDraw(draw);
       }
-    }
-
-    this._draw = { pointerId: e.pointerId, color: this._ui.getActiveColor() };
-    this._ui.canvas.setPointerCapture(e.pointerId);
-    this._paint.addPoint(this._draw.color, x, y);
+    );
+    this._manager.setPieces(newPieces);
   }
 
   private _onPointerMove(e: PointerEvent): void {
-    if (!this._drag) return;
-    if (e.pointerId !== this._drag.pointerId) return;
-    const { x, y } = this._canvasPointFromEvent(e);
-    if (this._maskBitsAt(x, y) !== this._drag.piece.maskBits) return;
-    const newX = x - this._drag.offsetX;
-    const newY = y - this._drag.offsetY;
-    const dx = newX - this._drag.piece.x;
-    const dy = newY - this._drag.piece.y;
-    this._groupSys.moveGroup(this._drag.groupId, dx, dy);
+    this._input.handlePointerMove(e, this._ui.canvas, this._manager.drag, this._groupSys, (x, y) =>
+      this._maskBitsAt(x, y)
+    );
   }
 
   private _onPointerMoveDraw(e: PointerEvent): void {
-    if (!this._draw) return;
-    if (e.pointerId !== this._draw.pointerId) return;
-    const { x, y } = this._canvasPointFromEvent(e);
-    this._paint.addPoint(this._draw.color, x, y);
+    this._input.handlePointerMoveDraw(e, this._ui.canvas, this._manager.draw, this._paint);
   }
 
   private _onPointerUpOrCancel(e: PointerEvent): void {
-    const wasDrag = this._drag && e.pointerId === this._drag.pointerId ? this._drag : null;
-    const wasDraw = this._draw && e.pointerId === this._draw.pointerId ? this._draw : null;
-    if (wasDrag) this._drag = null;
-    if (wasDraw) this._draw = null;
-    if (!wasDrag && !wasDraw) return;
-
-    try {
-      this._ui.canvas.releasePointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-
-    if (wasDrag && this._geom) {
-      this._trySnapGroup(wasDrag.groupId);
-    }
-  }
-
-  private _trySnapGroup(groupId: number): void {
-    let currentGroupId = groupId;
-    for (let i = 0; i < 12; i++) {
-      const res = trySnapGroupOnce({
-        groupId: currentGroupId,
-        geom: this._geom!,
-        getDpr,
-        groupSys: this._groupSys,
-        pieces: this._pieces
-      });
-      if (!res) break;
-      this._pieces = res.pieces;
-      currentGroupId = res.mergedInto;
-    }
+    this._input.handlePointerUpOrCancel(
+      e,
+      this._ui.canvas,
+      this._manager.drag,
+      this._manager.draw,
+      (drag) => {
+        this._manager.setDrag(null);
+        if (this._manager.geom && drag) {
+          this._manager.trySnapGroup(drag.groupId, this._groupSys);
+        }
+      },
+      () => {
+        this._manager.setDraw(null);
+      }
+    );
   }
 
   private async _rebuild(): Promise<void> {
-    const token = ++this._rebuildToken;
-    const { w, h, dpr } = this._resizeAll();
     if (!this._sourceImg) return;
-
-    this._geom = pickGeometry(w, h, dpr);
-
-    this._renderer.disposePiecesMeshes(this._pieces);
-    const built = await buildPieces({
-      rows: 4,
-      cols: 4,
-      img: this._sourceImg,
-      geom: this._geom,
-      seed: 0x1eafc0de
-    });
-    if (token !== this._rebuildToken) return;
-
-    this._pieces = built;
-    scramblePieces(this._pieces, this._rng, w, h, this._geom, dpr);
-    this._groupSys.init(this._pieces);
-    this._paint.clear();
-    this._renderer.setPiecesMeshes(this._pieces);
-    this._ui.statusEl.textContent = "Готово";
+    await this._manager.rebuild(
+      this._sourceImg,
+      this._ui.canvas,
+      this._paint,
+      this._renderer,
+      this._groupSys,
+      this._ui,
+      this._rng
+    );
   }
 
   private _frame(): void {
     this._rafId = window.requestAnimationFrame(() => this._frame());
     const dpr = getDpr();
-    this._renderer.render(this._pieces, performance.now() * 0.001, dpr);
-    if (this._geom) {
-      this._ui.statusEl.textContent = `Кусочков: ${this._pieces.length} • Групп: ${this._groupSys.groups.size} • Цвет: ${this._ui
-        .getActiveColor()
-        .toUpperCase()} • DPR: ${dpr.toFixed(2)}`;
-    }
+    this._renderer.render(this._manager.pieces, performance.now() * 0.001, dpr);
+    this._manager.updateStatus(this._ui, this._groupSys);
   }
 }
 
