@@ -19,6 +19,69 @@ const STROKE_COLORS: Record<ColorKey, string> = {
 const MASK_BRIGHTNESS_THRESHOLD = 12;
 const MASK_CANVAS_SIZE = 256;
 
+// ============ Основная фабрика ============
+
+export function createPaintSystem(opts: {
+  config: typeof CONFIG;
+  getDpr: typeof getDprFn;
+  onRedraw?: () => void;
+}): PaintSystem {
+  const { config, getDpr } = opts;
+
+  // Инициализация холстов
+  const paintCanvas = document.createElement("canvas");
+  paintCanvas.width = 2;
+  paintCanvas.height = 2;
+  const paintCtx = paintCanvas.getContext("2d");
+  if (!paintCtx) throw new Error("2D paint context not available");
+
+  const maskSampleCanvas = document.createElement("canvas");
+  maskSampleCanvas.width = MASK_CANVAS_SIZE;
+  maskSampleCanvas.height = MASK_CANVAS_SIZE;
+  const maskSampleCtx = maskSampleCanvas.getContext("2d", { willReadFrequently: true });
+  if (!maskSampleCtx) throw new Error("2D mask sample context not available");
+
+  // Состояние
+  let maskSampleData: ImageData | null = null;
+  const trails: Record<ColorKey, Trail> = {
+    r: { points: [], lengthPx: 0 },
+    g: { points: [], lengthPx: 0 },
+    b: { points: [], lengthPx: 0 },
+  };
+
+  // Перерисовка
+  function redraw(): void {
+    drawTrails(paintCtx!, trails, config, getDpr);
+    maskSampleData = updateMaskSample(maskSampleCtx!, paintCanvas);
+    opts.onRedraw?.();
+  }
+
+  // Публичные методы
+  function addPoint(color: ColorKey, x: number, y: number): void {
+    const maxLength = getMaxTrailLengthPx(config, getDpr);
+    const changed = addPointToTrail(trails[color], x, y, maxLength, getDpr());
+    if (changed) redraw();
+  }
+
+  function clear(): void {
+    clearAllTrails(trails);
+    redraw();
+  }
+
+  function resize(w: number, h: number): void {
+    paintCanvas.width = Math.max(1, w);
+    paintCanvas.height = Math.max(1, h);
+    redraw();
+  }
+
+  function maskBitsAt(x: number, y: number, viewW: number, viewH: number): number {
+    if (!maskSampleData) return 0;
+    return readMaskBits(maskSampleData, x, y, viewW, viewH);
+  }
+
+  return { paintCanvas, resize, clear, addPoint, maskBitsAt };
+}
+
 // ============ Вспомогательные функции ============
 
 function getMaxTrailLengthPx(config: typeof CONFIG, getDpr: typeof getDprFn): number {
@@ -127,67 +190,4 @@ function readMaskBits(
   if (g > MASK_BRIGHTNESS_THRESHOLD) bits |= 2;
   if (b > MASK_BRIGHTNESS_THRESHOLD) bits |= 4;
   return bits;
-}
-
-// ============ Основная фабрика ============
-
-export function createPaintSystem(opts: {
-  config: typeof CONFIG;
-  getDpr: typeof getDprFn;
-  onRedraw?: () => void;
-}): PaintSystem {
-  const { config, getDpr } = opts;
-
-  // Инициализация холстов
-  const paintCanvas = document.createElement("canvas");
-  paintCanvas.width = 2;
-  paintCanvas.height = 2;
-  const paintCtx = paintCanvas.getContext("2d");
-  if (!paintCtx) throw new Error("2D paint context not available");
-
-  const maskSampleCanvas = document.createElement("canvas");
-  maskSampleCanvas.width = MASK_CANVAS_SIZE;
-  maskSampleCanvas.height = MASK_CANVAS_SIZE;
-  const maskSampleCtx = maskSampleCanvas.getContext("2d", { willReadFrequently: true });
-  if (!maskSampleCtx) throw new Error("2D mask sample context not available");
-
-  // Состояние
-  let maskSampleData: ImageData | null = null;
-  const trails: Record<ColorKey, Trail> = {
-    r: { points: [], lengthPx: 0 },
-    g: { points: [], lengthPx: 0 },
-    b: { points: [], lengthPx: 0 },
-  };
-
-  // Перерисовка
-  function redraw(): void {
-    drawTrails(paintCtx!, trails, config, getDpr);
-    maskSampleData = updateMaskSample(maskSampleCtx!, paintCanvas);
-    opts.onRedraw?.();
-  }
-
-  // Публичные методы
-  function addPoint(color: ColorKey, x: number, y: number): void {
-    const maxLength = getMaxTrailLengthPx(config, getDpr);
-    const changed = addPointToTrail(trails[color], x, y, maxLength, getDpr());
-    if (changed) redraw();
-  }
-
-  function clear(): void {
-    clearAllTrails(trails);
-    redraw();
-  }
-
-  function resize(w: number, h: number): void {
-    paintCanvas.width = Math.max(1, w);
-    paintCanvas.height = Math.max(1, h);
-    redraw();
-  }
-
-  function maskBitsAt(x: number, y: number, viewW: number, viewH: number): number {
-    if (!maskSampleData) return 0;
-    return readMaskBits(maskSampleData, x, y, viewW, viewH);
-  }
-
-  return { paintCanvas, resize, clear, addPoint, maskBitsAt };
 }
