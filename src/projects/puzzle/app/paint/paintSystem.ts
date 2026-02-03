@@ -10,11 +10,16 @@ export type PaintSystem = {
   maskBitsAt(x: number, y: number, viewW: number, viewH: number): number;
 };
 
-function strokeForColor(color: ColorKey): string {
-  if (color === "r") return "rgba(255,0,0,1)";
-  if (color === "g") return "rgba(0,255,0,1)";
-  return "rgba(0,0,255,1)";
-}
+// Цвета кистей через маппинг для читаемости
+const STROKE_COLORS: Record<ColorKey, string> = {
+  r: "rgba(255,0,0,1)",
+  g: "rgba(0,255,0,1)",
+  b: "rgba(0,0,255,1)",
+};
+
+// Порог яркости для определения цвета в маске
+const MASK_BRIGHTNESS_THRESHOLD = 12;
+const MASK_CANVAS_SIZE = 256;
 
 export function createPaintSystem(opts: {
   config: typeof CONFIG;
@@ -23,129 +28,136 @@ export function createPaintSystem(opts: {
 }): PaintSystem {
   const { config, getDpr } = opts;
 
+  // Инициализация основного холста
   const paintCanvas = document.createElement("canvas");
   paintCanvas.width = 2;
   paintCanvas.height = 2;
   const paintCtx = paintCanvas.getContext("2d");
   if (!paintCtx) throw new Error("2D paint context not available");
-  const paintCtx2: CanvasRenderingContext2D = paintCtx;
 
-  // Downsample для быстрых CPU hit-test’ов/ограничения перемещения по маске.
+  // Холст для быстрого hit-test'а (даунсемплинг)
   const maskSampleCanvas = document.createElement("canvas");
-  maskSampleCanvas.width = 256;
-  maskSampleCanvas.height = 256;
+  maskSampleCanvas.width = MASK_CANVAS_SIZE;
+  maskSampleCanvas.height = MASK_CANVAS_SIZE;
   const maskSampleCtx = maskSampleCanvas.getContext("2d", { willReadFrequently: true });
   if (!maskSampleCtx) throw new Error("2D mask sample context not available");
-  const maskSampleCtx2: CanvasRenderingContext2D = maskSampleCtx;
 
   let maskSampleData: ImageData | null = null;
-
   const trails: Record<ColorKey, Trail> = {
     r: { points: [], lengthPx: 0 },
     g: { points: [], lengthPx: 0 },
-    b: { points: [], lengthPx: 0 }
+    b: { points: [], lengthPx: 0 },
   };
 
-  function trailMaxLenPx(): number {
-    return config.puzzle.paint.maxTrailLengthCssPx * getDpr();
-  }
+  // Получение максимальной длины трейла в пикселях (с учётом DPR)
+  const getMaxTrailLengthPx = (): number =>
+    config.puzzle.paint.maxTrailLengthCssPx * getDpr();
 
-  function redraw(): void {
-    const w = paintCanvas.width;
-    const h = paintCanvas.height;
-    paintCtx2.setTransform(1, 0, 0, 1, 0, 0);
-    paintCtx2.clearRect(0, 0, w, h);
-
-    paintCtx2.globalCompositeOperation = "lighter";
-    paintCtx2.lineCap = "round";
-    paintCtx2.lineJoin = "round";
-    paintCtx2.imageSmoothingEnabled = true;
-    paintCtx2.lineWidth = Math.max(1, config.puzzle.paint.brushSizeCssPx * getDpr());
-
-    const order: ColorKey[] = ["r", "g", "b"];
-    for (const c of order) {
-      const pts = trails[c].points;
-      if (pts.length < 2) continue;
-      paintCtx2.strokeStyle = strokeForColor(c);
-      paintCtx2.beginPath();
-      paintCtx2.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) paintCtx2.lineTo(pts[i].x, pts[i].y);
-      paintCtx2.stroke();
+  // Обрезка трейла до допустимой длины
+  const trimTrail = (trail: Trail, maxLength: number): void => {
+    while (trail.lengthPx > maxLength && trail.points.length > 1) {
+      const [a, b] = trail.points;
+      const segmentLength = Math.hypot(b.x - a.x, b.y - a.y);
+      trail.points.shift();
+      trail.lengthPx -= segmentLength;
     }
-    paintCtx2.globalCompositeOperation = "source-over";
+  };
 
-    // обновляем downsample буфер
-    maskSampleCtx2.setTransform(1, 0, 0, 1, 0, 0);
-    maskSampleCtx2.clearRect(0, 0, maskSampleCanvas.width, maskSampleCanvas.height);
-    maskSampleCtx2.drawImage(paintCanvas, 0, 0, maskSampleCanvas.width, maskSampleCanvas.height);
-    maskSampleData = maskSampleCtx2.getImageData(0, 0, maskSampleCanvas.width, maskSampleCanvas.height);
+  // Отрисовка всех трейлов на основном холсте
+  const drawTrails = (): void => {
+    const { width: w, height: h } = paintCanvas;
+    paintCtx.setTransform(1, 0, 0, 1, 0, 0);
+    paintCtx.clearRect(0, 0, w, h);
 
+    paintCtx.globalCompositeOperation = "lighter";
+    paintCtx.lineCap = "round";
+    paintCtx.lineJoin = "round";
+    paintCtx.imageSmoothingEnabled = true;
+    paintCtx.lineWidth = Math.max(1, config.puzzle.paint.brushSizeCssPx * getDpr());
+
+    for (const color of ["r", "g", "b"] as ColorKey[]) {
+      const { points } = trails[color];
+      if (points.length < 2) continue;
+
+      paintCtx.strokeStyle = STROKE_COLORS[color];
+      paintCtx.beginPath();
+      paintCtx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        paintCtx.lineTo(points[i].x, points[i].y);
+      }
+      paintCtx.stroke();
+    }
+
+    paintCtx.globalCompositeOperation = "source-over";
+  };
+
+  // Обновление даунсемплированной маски
+  const updateMaskSample = (): void => {
+    maskSampleCtx.setTransform(1, 0, 0, 1, 0, 0);
+    maskSampleCtx.clearRect(0, 0, MASK_CANVAS_SIZE, MASK_CANVAS_SIZE);
+    maskSampleCtx.drawImage(paintCanvas, 0, 0, MASK_CANVAS_SIZE, MASK_CANVAS_SIZE);
+    maskSampleData = maskSampleCtx.getImageData(0, 0, MASK_CANVAS_SIZE, MASK_CANVAS_SIZE);
+  };
+
+  const redraw = (): void => {
+    drawTrails();
+    updateMaskSample();
     opts.onRedraw?.();
-  }
+  };
 
-  function addPoint(color: ColorKey, x: number, y: number): void {
-    const t = trails[color];
-    const pts = t.points;
-    const maxLen = trailMaxLenPx();
+  const addPoint = (color: ColorKey, x: number, y: number): void => {
+    const trail = trails[color];
+    const maxLength = getMaxTrailLengthPx();
+    const dpr = getDpr();
 
-    if (pts.length === 0) {
-      pts.push({ x, y });
-      t.lengthPx = 0;
+    if (trail.points.length === 0) {
+      trail.points.push({ x, y });
+      trail.lengthPx = 0;
       redraw();
       return;
     }
 
-    const last = pts[pts.length - 1];
-    const dx = x - last.x;
-    const dy = y - last.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 0.5 * getDpr()) return;
+    const last = trail.points[trail.points.length - 1];
+    const dist = Math.hypot(x - last.x, y - last.y);
+    if (dist < 0.5 * dpr) return;
 
-    pts.push({ x, y });
-    t.lengthPx += dist;
-
-    while (t.lengthPx > maxLen && pts.length > 1) {
-      const a = pts[0];
-      const b = pts[1];
-      const seg = Math.hypot(b.x - a.x, b.y - a.y);
-      pts.shift();
-      t.lengthPx -= seg;
-    }
-
+    trail.points.push({ x, y });
+    trail.lengthPx += dist;
+    trimTrail(trail, maxLength);
     redraw();
-  }
+  };
 
-  function clear(): void {
-    for (const k of ["r", "g", "b"] as const) {
-      trails[k].points = [];
-      trails[k].lengthPx = 0;
+  const clear = (): void => {
+    for (const color of ["r", "g", "b"] as const) {
+      trails[color].points = [];
+      trails[color].lengthPx = 0;
     }
     redraw();
-  }
+  };
 
-  function resize(w: number, h: number): void {
+  const resize = (w: number, h: number): void => {
     paintCanvas.width = Math.max(1, w);
     paintCanvas.height = Math.max(1, h);
     redraw();
-  }
+  };
 
-  function maskBitsAt(x: number, y: number, viewW: number, viewH: number): number {
+  const maskBitsAt = (x: number, y: number, viewW: number, viewH: number): number => {
     if (!maskSampleData) return 0;
-    const sw = maskSampleCanvas.width;
-    const sh = maskSampleCanvas.height;
-    const sx = Math.max(0, Math.min(sw - 1, Math.floor((x / Math.max(1, viewW)) * sw)));
-    const sy = Math.max(0, Math.min(sh - 1, Math.floor((y / Math.max(1, viewH)) * sh)));
-    const idx = (sy * sw + sx) * 4;
-    const d = maskSampleData.data;
-    const thr = 12; // 0..255
+
+    const sx = Math.floor((x / Math.max(1, viewW)) * MASK_CANVAS_SIZE);
+    const sy = Math.floor((y / Math.max(1, viewH)) * MASK_CANVAS_SIZE);
+    const clampedX = Math.max(0, Math.min(MASK_CANVAS_SIZE - 1, sx));
+    const clampedY = Math.max(0, Math.min(MASK_CANVAS_SIZE - 1, sy));
+
+    const idx = (clampedY * MASK_CANVAS_SIZE + clampedX) * 4;
+    const [r, g, b] = maskSampleData.data.slice(idx, idx + 3);
+
     let bits = 0;
-    if (d[idx + 0] > thr) bits |= 1;
-    if (d[idx + 1] > thr) bits |= 2;
-    if (d[idx + 2] > thr) bits |= 4;
+    if (r > MASK_BRIGHTNESS_THRESHOLD) bits |= 1; // красный
+    if (g > MASK_BRIGHTNESS_THRESHOLD) bits |= 2; // зелёный
+    if (b > MASK_BRIGHTNESS_THRESHOLD) bits |= 4; // синий
     return bits;
-  }
+  };
 
   return { paintCanvas, resize, clear, addPoint, maskBitsAt };
 }
-
-
