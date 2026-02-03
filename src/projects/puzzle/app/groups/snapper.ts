@@ -96,6 +96,10 @@ function findBestSnapMatch(
       
       const neighbor = groupSystem.pieceById.get(check.neighborId);
       if (!neighbor || neighbor.groupId === currentGroupId) continue;
+
+      // Правило: группы могут соединяться только если у них есть хотя бы одна общая маска.
+      // maskSet у кусочка — это maskSet его текущей группы.
+      if (((piece.maskSet | 0) & (neighbor.maskSet | 0)) === 0) continue;
       
       const offsetX = neighbor.x - (piece.x + check.offsetX);
       const offsetY = neighbor.y - (piece.y + check.offsetY);
