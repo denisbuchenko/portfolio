@@ -6,6 +6,12 @@ import type { GroupSystem } from "./groupSystem";
 const SNAP_THRESHOLD_BASE = 10;
 const SNAP_THRESHOLD_RATIO = 0.12;
 
+// --- Основная функция ---
+
+export function snapThresholdPx(getDpr: () => number, geom: PieceGeometry): number {
+    return calculateSnapThreshold(getDpr, geom.cellPx);
+}
+
 export function trySnapGroupOnce(opts: {
     groupId: number;
     geom: PieceGeometry;
@@ -134,10 +140,4 @@ function applySnapAndMerge(
     const reorderedPieces = groupSystem.bringGroupToFront(targetGroupId, allPieces);
 
     return { mergedInto: targetGroupId, pieces: reorderedPieces };
-}
-
-// --- Основная функция ---
-
-export function snapThresholdPx(getDpr: () => number, geom: PieceGeometry): number {
-    return calculateSnapThreshold(getDpr, geom.cellPx);
 }
