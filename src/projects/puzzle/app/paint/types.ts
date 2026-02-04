@@ -7,6 +7,7 @@ import type { ColorKey } from "../runtimeTypes";
 export type PaintSystem = {
   resize(w: number, h: number): void;
   clear(): void;
+  clearColor(color: ColorKey): void;
   addPoint(color: ColorKey, x: number, y: number): void;
   maskBitsAt(x: number, y: number, viewW: number, viewH: number): number;
 };

@@ -10,7 +10,11 @@ export type PuzzleUI = {
   destroy(): void;
 };
 
-export function mountPuzzleUI(opts: { host: HTMLElement; config: typeof CONFIG }): PuzzleUI {
+export function mountPuzzleUI(opts: { 
+  host: HTMLElement; 
+  config: typeof CONFIG;
+  onColorSelect?: (color: ColorKey, wasAlreadyActive: boolean) => void;
+}): PuzzleUI {
   const { host, config } = opts;
   host.classList.add("launcher--puzzle");
   host.innerHTML = `
@@ -61,8 +65,10 @@ export function mountPuzzleUI(opts: { host: HTMLElement; config: typeof CONFIG }
     if (!btn) return;
     const c = btn.getAttribute("data-color") as ColorKey | null;
     if (!c) return;
+    const wasAlreadyActive = c === activeColor;
     activeColor = c;
     syncActiveClass();
+    opts.onColorSelect?.(c, wasAlreadyActive);
   };
 
   colorsRootEl.addEventListener("pointerdown", onPointerDown);

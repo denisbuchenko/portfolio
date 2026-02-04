@@ -6,6 +6,7 @@ export type PaintSystem = {
 	paintCanvas: HTMLCanvasElement;
 	resize(w: number, h: number): void;
 	clear(): void;
+	clearColor(color: ColorKey): void;
 	addPoint(color: ColorKey, x: number, y: number): void;
 	maskBitsAt(x: number, y: number, viewW: number, viewH: number): number;
 };
@@ -75,6 +76,12 @@ export function createPaintSystem(opts: {
 		redraw();
 	}
 
+	function clearColor(color: ColorKey): void {
+		trails[color].points = [];
+		trails[color].lengthPx = 0;
+		redraw();
+	}
+
 	function resize(w: number, h: number): void {
 		paintCanvas.width = Math.max(1, w);
 		paintCanvas.height = Math.max(1, h);
@@ -86,7 +93,7 @@ export function createPaintSystem(opts: {
 		return readMaskBits(maskSampleData, x, y, viewW, viewH);
 	}
 
-	return { paintCanvas, resize, clear, addPoint, maskBitsAt };
+	return { paintCanvas, resize, clear, clearColor, addPoint, maskBitsAt };
 }
 
 // ============ Вспомогательные функции ============

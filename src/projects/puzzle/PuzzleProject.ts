@@ -27,7 +27,15 @@ export class PuzzleProject {
   private _resizeRaf = 0;
 
   constructor(host: HTMLElement) {
-    this._ui = mountPuzzleUI({ host, config: CONFIG });
+    this._ui = mountPuzzleUI({ 
+      host, 
+      config: CONFIG,
+      onColorSelect: (color, wasAlreadyActive) => {
+        if (wasAlreadyActive) {
+          this._paint.clearColor(color);
+        }
+      }
+    });
     this._groupSys = createGroupSystem();
     this._rng = new XorShift32(0x0ddba11);
     this._input = new InputHandler();

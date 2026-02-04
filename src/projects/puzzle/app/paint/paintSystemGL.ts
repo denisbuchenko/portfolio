@@ -11,6 +11,7 @@ export type PaintSystemGL = {
   attachRenderer(renderer: THREE.WebGLRenderer): void;
   resize(w: number, h: number): void;
   clear(): void;
+  clearColor(color: ColorKey): void;
   addPoint(color: ColorKey, x: number, y: number): void;
   /**
    * Возвращает bits (0..7) по текущей маске (для drag/hit-test).
@@ -272,6 +273,12 @@ export function createPaintSystemGL(opts: {
     _redraw();
   }
 
+  function clearColor(color: ColorKey): void {
+    trails[color].points = [];
+    trails[color].lengthPx = 0;
+    _redraw();
+  }
+
   function addPoint(color: ColorKey, x: number, y: number): void {
     const changed = _addPointToTrail(trails[color], x, y, _maxTrailLengthPx(), getDpr());
     if (changed) _redraw();
@@ -314,6 +321,7 @@ export function createPaintSystemGL(opts: {
     attachRenderer,
     resize,
     clear,
+    clearColor,
     addPoint,
     maskBitsAt,
   };
