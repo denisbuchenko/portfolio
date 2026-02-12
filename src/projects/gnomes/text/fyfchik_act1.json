@@ -1,0 +1,235 @@
+{
+  "characterId": "fyfchik",
+  "characterInfo": {
+    "name": "Фыфчик",
+    "age": 70,
+    "description": "Гном-планировщик. Любит порядок так, как некоторые любят успокоительное. Язвительный, резкий, но не злой — скорее испуганный и упрямый.",
+    "arcTheme": "Порядок без доверия — это тюрьма, в которой надзиратель тоже сидит."
+  },
+  "dialogueTree": [
+    {
+      "act": 1,
+      "actTitle": "Протокол контакта",
+      "actDescription": "Первый круг — разведка. Фыфчик проверяет тебя на наблюдательность и показывает, как он прячет страх за “правильностью”.",
+      "nodes": [
+        {
+          "nodeId": "fyfchik_act1_node1",
+          "nodeType": "entry",
+          "replies": [
+            {
+              "id": "fyfchik_act1_node1_rep1",
+              "text": "Стой.\n\nТы вошёл в зону ответственности и уже сделал три вещи неправильно: шум, шаг, взгляд.\n\nЗачем ты здесь?",
+              "playerOptions": [
+                {
+                  "text": "Мне нужен камень. Он открывает сундук.",
+                  "nextReplyId": "fyfchik_act1_node2_rep1"
+                },
+                {
+                  "text": "Слышал, вас тут трое. Где остальные?",
+                  "nextReplyId": "fyfchik_act1_node2_rep1"
+                },
+                {
+                  "text": "Ты звучишь как техподдержка, которая ненавидит людей.",
+                  "nextReplyId": "fyfchik_act1_node3_rep1"
+                },
+                {
+                  "text": "Ладно. Я позже.",
+                  "nextReplyId": null
+                },
+                {
+                  "text": "Подвести итог и закрыть первый круг.",
+                  "nextReplyId": "fyfchik_act1_node5_rep1",
+                  "requiredKnowledge": ["fyfchik_act1_node3_done", "fyfchik_act1_node4_done"],
+                  "lockMode": "disable",
+                  "lockHint": "Сначала разберись в двух вещах: почему Фыфчик так цепляется за “лучше” (узел 3) и что его бесит в Шорагране на самом деле (узел 4)."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "fyfchik_act1_node2",
+          "nodeType": "key_grantor",
+          "replies": [
+            {
+              "id": "fyfchik_act1_node2_rep1",
+              "text": "Камень… да. И он не для туристов.\n\nЕсли хочешь дойти до сути, запомни: у нас тут не “плохие характеры”. У нас тут выгодные маски.\n\nХочешь — дам тебе две улики. Про дуб и про свисток.",
+              "playerOptions": [
+                {
+                  "text": "Про Шораграна (дуб).",
+                  "nextReplyId": "fyfchik_act1_node2_rep2"
+                },
+                {
+                  "text": "Про Пиписера (свисток).",
+                  "nextReplyId": "fyfchik_act1_node2_rep3"
+                },
+                {
+                  "text": "Почему вы не разговариваете?",
+                  "nextReplyId": "fyfchik_act1_node3_rep1"
+                },
+                {
+                  "text": "Я понял. Пойду смотреть и слушать.",
+                  "nextReplyId": "fyfchik_act1_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act1_node2_rep2",
+              "text": "Улика про Шораграна: он умный. И он это знает.\n\nКогда его не слушают — он начинает говорить “сверху”. Это не мудрость. Это защита.\n\nЕсли ты увидишь, что под защитой — страх быть ненужным, ты сможешь с ним разговаривать, а не бодаться.",
+              "playerOptions": [
+                {
+                  "text": "Запомню.",
+                  "nextReplyId": "fyfchik_act1_node2_rep1",
+                  "grantsKnowledge": ["fyfchik_act1_key_for_shoragran"]
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act1_node2_rep3",
+              "text": "Улика про Пиписера: он не “чиллит”. Он прячется.\n\nПока ты смеёшься — ему не надо отвечать. И это удобно.\n\nЕсли хочешь увидеть правду, не требуй от него героизма. Требуй присутствия.",
+              "playerOptions": [
+                {
+                  "text": "Запомню.",
+                  "nextReplyId": "fyfchik_act1_node2_rep1",
+                  "grantsKnowledge": ["fyfchik_act1_key_for_pipiser"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "fyfchik_act1_node3",
+          "nodeType": "locked",
+          "replies": [
+            {
+              "id": "fyfchik_act1_node3_rep1",
+              "text": "Окей. Ты хочешь лезть в нашу ссору.\n\nТогда начнём с неприятного: я считаю себя лучшим.\n\nПочему мне так важно быть лучшим?",
+              "playerOptions": [
+                {
+                  "text": "Похоже, ты боишься, что тебя легко заменить — поэтому давишь и контролируешь.",
+                  "nextReplyId": "fyfchik_act1_node3_rep2",
+                  "requiredKnowledge": ["pipiser_act1_key_for_fyfchik"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужно сначала лучше понять Пиписера. Он видит твой страх, когда ты строишь из себя “правильного”.",
+                  "grantsKnowledge": ["fyfchik_act1_node3_done"]
+                },
+                {
+                  "text": "Пока не знаю. Я ещё не видел вас всех.",
+                  "nextReplyId": "fyfchik_act1_node1_rep1"
+                },
+                {
+                  "text": "Потому что без “лучше” ты не знаешь, кто ты.",
+                  "nextReplyId": "fyfchik_act1_node3_rep3"
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act1_node3_rep2",
+              "text": "Заменить… да.\n\nОзарение №1: мой порядок — это не про лес. Это про меня.\n\nПорядок должен спасать лес. А не моё эго от паники.",
+              "playerOptions": [
+                {
+                  "text": "Ок.",
+                  "nextReplyId": "fyfchik_act1_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act1_node3_rep3",
+              "text": "Неприятно точное замечание.\n\nДа. Я боюсь быть “обычным”.\n\nИ я делаю вид, что обычность — преступление.",
+              "playerOptions": [
+                {
+                  "text": "Вернусь позже.",
+                  "nextReplyId": "fyfchik_act1_node1_rep1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "fyfchik_act1_node4",
+          "nodeType": "locked",
+          "replies": [
+            {
+              "id": "fyfchik_act1_node4_rep1",
+              "text": "Теперь про Шораграна.\n\nЯ говорю, что он “старый метод”. Но это не вся правда.\n\nЧто в правде мне неприятно?",
+              "playerOptions": [
+                {
+                  "text": "Похоже, тебя цепляет его опыт: он видел то, чего ты ещё не успел.",
+                  "nextReplyId": "fyfchik_act1_node4_rep2",
+                  "requiredKnowledge": ["shoragran_act1_key_for_fyfchik"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужно сначала услышать Шораграна. Он попадёт в точку без лишней нежности.",
+                  "grantsKnowledge": ["fyfchik_act1_node4_done"]
+                },
+                {
+                  "text": "Я пока не готов это вслух произносить.",
+                  "nextReplyId": "fyfchik_act1_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act1_node4_rep2",
+              "text": "Да. Завидую.\n\nОзарение №2: я называю чужую мудрость “устаревшей”, чтобы не признать её ценность.\n\nЭто подростково. А мне, к сожалению, не пятнадцать.",
+              "playerOptions": [
+                {
+                  "text": "Идём дальше.",
+                  "nextReplyId": "fyfchik_act1_node1_rep1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "fyfchik_act1_node5",
+          "nodeType": "final",
+          "replies": [
+            {
+              "id": "fyfchik_act1_node5_rep1",
+              "text": "Первый круг закрываем.\n\nЕсли бы мы были взрослыми, мы бы уже поговорили. Но мы — гномы.\n\nДержи две зацепки для их первого финала.",
+              "playerOptions": [
+                {
+                  "text": "Дай зацепки.",
+                  "nextReplyId": "fyfchik_act1_node5_rep2",
+                  "grantsKnowledge": ["fyfchik_act1_node5_key_for_shoragran", "fyfchik_act1_node5_key_for_pipiser"]
+                },
+                {
+                  "text": "Закрываем первый круг — я принёс их ноты для тебя.",
+                  "nextReplyId": "fyfchik_act1_node5_rep3",
+                  "requiredKnowledge": ["shoragran_act1_node5_key_for_fyfchik", "pipiser_act1_node5_key_for_fyfchik"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужны две финальные ноты от Шораграна и Пиписера (их узел 5, акт 1)."
+                },
+                {
+                  "text": "Я вернусь.",
+                  "nextReplyId": null
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act1_node5_rep2",
+              "text": "Про Шораграна: его опыт — карта. Не корона.\n\nПро Пиписера: его свобода — двигатель. Но двигатель без руля превращается в аварию.",
+              "playerOptions": [
+                {
+                  "text": "Понял.",
+                  "nextReplyId": "fyfchik_act1_node5_rep1"
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act1_node5_rep3",
+              "text": "Первый круг закрыт.\n\nМоё озарение: я использовал контроль как способ не проиграть.\n\nВо втором круге будет стыд. Мой.\n\nИ да: если ты пришёл за камнем — ты ещё даже не задал правильный вопрос.",
+              "isFinal": true,
+              "playerOptions": [
+                {
+                  "text": "Окей.",
+                  "nextReplyId": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

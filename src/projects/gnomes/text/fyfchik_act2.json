@@ -1,0 +1,213 @@
+{
+  "characterId": "fyfchik",
+  "characterInfo": {
+    "name": "Фыфчик",
+    "age": 70,
+    "description": "Гном-планировщик. Любит порядок так, как некоторые любят успокоительное. Язвительный, резкий, но не злой — скорее испуганный и упрямый.",
+    "arcTheme": "Порядок без доверия — это тюрьма, в которой надзиратель тоже сидит."
+  },
+  "dialogueTree": [
+    {
+      "act": 2,
+      "actTitle": "Кривая линия",
+      "actDescription": "Второй круг — Фыфчик признаёт стыд и учится не превращать ошибку в приговор. Здесь появляется настоящая уязвимость.",
+      "nodes": [
+        {
+          "nodeId": "fyfchik_act2_node1",
+          "nodeType": "entry",
+          "replies": [
+            {
+              "id": "fyfchik_act2_node1_rep1",
+              "text": "Второй круг.\n\nЯ покажу тебе то, что ненавижу.\n\nСвою ошибку.\n\nСмейся — и мы закончим на этом.",
+              "playerOptions": [
+                {
+                  "text": "Не буду. Покажи.",
+                  "nextReplyId": "fyfchik_act2_node2_rep1"
+                },
+                {
+                  "text": "Давай про то, почему вы трое застряли в молчании.",
+                  "nextReplyId": "fyfchik_act2_node3_rep1"
+                },
+                {
+                  "text": "Подвести итог второго круга.",
+                  "nextReplyId": "fyfchik_act2_node5_rep1",
+                  "requiredKnowledge": ["fyfchik_act2_node3_done", "fyfchik_act2_node4_done"],
+                  "lockMode": "disable",
+                  "lockHint": "Сначала закрой узлы 3 и 4: правда Пиписера про ту боль (узел 3) и взгляд Шораграна на твой “суд” (узел 4)."
+                },
+                {
+                  "text": "Я позже.",
+                  "nextReplyId": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "fyfchik_act2_node2",
+          "nodeType": "key_grantor",
+          "replies": [
+            {
+              "id": "fyfchik_act2_node2_rep1",
+              "text": "Вот рисунок.\n\nВидишь линию? Она должна была быть “правильной”. А она — живая.\n\nИз-за неё я не сказал Пиписеру правду. И выбрал молчание, потому что молчание выглядит аккуратно.\n\nХочешь две зацепки на второй круг — про них?",
+              "playerOptions": [
+                {
+                  "text": "Про Шораграна.",
+                  "nextReplyId": "fyfchik_act2_node2_rep2"
+                },
+                {
+                  "text": "Про Пиписера.",
+                  "nextReplyId": "fyfchik_act2_node2_rep3"
+                },
+                {
+                  "text": "Понял. Вернусь.",
+                  "nextReplyId": "fyfchik_act2_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act2_node2_rep2",
+              "text": "Про Шораграна во втором круге: мне важен его опыт. Но я хочу слышать его, а не должность.\n\nЕсли он сможет сказать “я не уверен” — я буду слушать сильнее, чем раньше.",
+              "playerOptions": [
+                {
+                  "text": "Запомню.",
+                  "nextReplyId": "fyfchik_act2_node2_rep1",
+                  "grantsKnowledge": ["fyfchik_act2_key_for_shoragran"]
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act2_node2_rep3",
+              "text": "Про Пиписера во втором круге: я должен признать правду без оправданий.\n\nЯ не забыл. Я испугался ошибки. И выбрал молчание.\n\nМолчание ранит сильнее кривой линии.",
+              "playerOptions": [
+                {
+                  "text": "Запомню.",
+                  "nextReplyId": "fyfchik_act2_node2_rep1",
+                  "grantsKnowledge": ["fyfchik_act2_key_for_pipiser"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "fyfchik_act2_node3",
+          "nodeType": "locked",
+          "replies": [
+            {
+              "id": "fyfchik_act2_node3_rep1",
+              "text": "Мне нужна правда от Пиписера.\n\nНе шутка. Не “да ладно”.\n\nЧто его тогда реально ранило?",
+              "playerOptions": [
+                {
+                  "text": "Похоже, боль была не в рисунке. Боль была в отсутствии правды.",
+                  "nextReplyId": "fyfchik_act2_node3_rep2",
+                  "requiredKnowledge": ["pipiser_act2_key_for_fyfchik"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужно сначала вытянуть Пиписера из его “лёгкости” (его 2 акт).",
+                  "grantsKnowledge": ["fyfchik_act2_node3_done"]
+                },
+                {
+                  "text": "Я ещё не добыл эту правду.",
+                  "nextReplyId": "fyfchik_act2_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act2_node3_rep2",
+              "text": "Озарение: мой контроль был не про порядок. Он был про страх быть плохим.\n\nЯ могу быть точным и честным одновременно.\n\nЭто два навыка. Не один.",
+              "playerOptions": [
+                {
+                  "text": "Ок.",
+                  "nextReplyId": "fyfchik_act2_node1_rep1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "fyfchik_act2_node4",
+          "nodeType": "locked",
+          "replies": [
+            {
+              "id": "fyfchik_act2_node4_rep1",
+              "text": "Теперь Шорагран.\n\nЧто он во мне видит, кроме раздражающего контроля?",
+              "playerOptions": [
+                {
+                  "text": "Похоже, он видит заботу. Но ты путаешь заботу с судом.",
+                  "nextReplyId": "fyfchik_act2_node4_rep2",
+                  "requiredKnowledge": ["shoragran_act2_key_for_fyfchik"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужно принести взгляд Шораграна (его 2 акт).",
+                  "grantsKnowledge": ["fyfchik_act2_node4_done"]
+                },
+                {
+                  "text": "Я ещё не довёл его до честности.",
+                  "nextReplyId": "fyfchik_act2_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act2_node4_rep2",
+              "text": "Суд…\n\nОзарение: когда я унижаю — я просто кричу “мне страшно” другим языком.\n\nЛадно. Я попробую говорить нормально.",
+              "playerOptions": [
+                {
+                  "text": "Дальше.",
+                  "nextReplyId": "fyfchik_act2_node1_rep1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "fyfchik_act2_node5",
+          "nodeType": "final",
+          "replies": [
+            {
+              "id": "fyfchik_act2_node5_rep1",
+              "text": "Второй круг — закрываем.\n\nДержи две финальные зацепки для их вторых кругов.",
+              "playerOptions": [
+                {
+                  "text": "Дай зацепки.",
+                  "nextReplyId": "fyfchik_act2_node5_rep2",
+                  "grantsKnowledge": ["fyfchik_act2_node5_key_for_shoragran", "fyfchik_act2_node5_key_for_pipiser"]
+                },
+                {
+                  "text": "Закрыть второй круг — я принёс их ноты для тебя.",
+                  "nextReplyId": "fyfchik_act2_node5_rep3",
+                  "requiredKnowledge": ["shoragran_act2_node5_key_for_fyfchik", "pipiser_act2_node5_key_for_fyfchik"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужны две финальные ноты от Шораграна и Пиписера (их узел 5, акт 2)."
+                },
+                {
+                  "text": "Я вернусь.",
+                  "nextReplyId": null
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act2_node5_rep2",
+              "text": "Про Шораграна: “я не уверен” — это не крах. Это зрелость.\n\nПро Пиписера: “я остаюсь” — это не клетка. Это выбор.",
+              "playerOptions": [
+                {
+                  "text": "Понял.",
+                  "nextReplyId": "fyfchik_act2_node5_rep1"
+                }
+              ]
+            },
+            {
+              "id": "fyfchik_act2_node5_rep3",
+              "text": "Второй круг закрыт.\n\nМоё озарение: я прятал страх за точностью.\n\nТретий круг — действие. Капканы. План. И ни одной истерики. Попробуем.",
+              "isFinal": true,
+              "playerOptions": [
+                {
+                  "text": "Окей.",
+                  "nextReplyId": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

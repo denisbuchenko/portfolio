@@ -119,8 +119,27 @@ export class DialogueUI {
       btn.style.textAlign = "left";
       btn.style.whiteSpace = "normal";
       btn.style.lineHeight = "1.35";
-      btn.textContent = opt.text;
-      btn.addEventListener("click", () => this._onChoose?.(opt));
+      btn.disabled = !opt.isEnabled;
+      btn.style.opacity = opt.isEnabled ? "1" : "0.55";
+      btn.style.cursor = opt.isEnabled ? "pointer" : "not-allowed";
+
+      // Текст + (опционально) подсказка замка.
+      btn.innerHTML = "";
+      const t = document.createElement("div");
+      t.textContent = opt.text;
+      btn.appendChild(t);
+
+      if (!opt.isEnabled && opt.lockHint) {
+        const hint = document.createElement("div");
+        hint.textContent = opt.lockHint;
+        hint.style.marginTop = "4px";
+        hint.style.fontSize = "12px";
+        hint.style.lineHeight = "1.25";
+        hint.style.color = "var(--muted)";
+        btn.appendChild(hint);
+      }
+
+      if (opt.isEnabled) btn.addEventListener("click", () => this._onChoose?.(opt));
       this._options.appendChild(btn);
     }
   }

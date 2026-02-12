@@ -39,5 +39,13 @@ export type DialoguePlayerOption = {
   nextReplyId: string | null;
   requiredKnowledge?: string[];
   grantsKnowledge?: string[];
+  /**
+   * Как вести себя, если requiredKnowledge не хватает:
+   * - "hide" (по умолчанию): опция вообще не показывается (текущее поведение)
+   * - "disable": опция показывается, но недоступна (как "замок" в UI)
+   */
+  lockMode?: "hide" | "disable";
+  /** Подсказка игроку, что нужно принести/узнать, чтобы открыть опцию. */
+  lockHint?: string;
 };
 

@@ -6,6 +6,9 @@ export type DialogueViewOption = {
   text: string;
   option: DialoguePlayerOption;
   isVisible: boolean;
+  isEnabled: boolean;
+  missingKnowledge: string[];
+  lockHint: string;
 };
 
 export type DialogueViewState = {
@@ -54,8 +57,8 @@ export class DialogueEngine {
 
     // Проверка доступности (в духе ТЗ): если нет ни одного видимого варианта ответа — считаем акт закрытым.
     const view = this._buildViewState(idx, characterId, act, firstReply);
-    const hasAnyVisible = view.options.some((o) => o.isVisible);
-    if (!hasAnyVisible) {
+    const hasAnyEnabled = view.options.some((o) => o.isVisible && o.isEnabled);
+    if (!hasAnyEnabled) {
       return { lockedReason: "Этот акт пока недоступен. Вернись позже, когда соберёшь нужные знания." };
     }
 
@@ -71,6 +74,17 @@ export class DialogueEngine {
     if (!idx) return { ended: true };
 
     const option = visibleOption.option;
+    // Защита от попытки выбрать "замок" (disabled) или скрытую опцию.
+    const required = option.requiredKnowledge ?? [];
+    const missing = required.filter((k) => !this._knowledge.has(k));
+    if (missing.length > 0) {
+      // Ничего не меняем — UI должен был не дать нажать, но пусть движок будет устойчивым.
+      const actData = idx.actsByNumber.get(this._active.act);
+      const current = actData ? idx.replyById.get(this._active.replyId) : null;
+      if (!current) return { ended: true };
+      return { state: this._buildViewState(idx, this._active.characterId, this._active.act, current) };
+    }
+
     const grants = option.grantsKnowledge ?? [];
     if (grants.length > 0) this._knowledge.addMany(grants);
 
@@ -86,14 +100,15 @@ export class DialogueEngine {
       return { ended: true };
     }
 
-    // Финал акта — выдаём ключ и закрываем.
+    // Переходим на следующую реплику.
+    this._active.replyId = next.id;
+
+    // Финал акта: выдаём ключ завершения, но даём UI показать финальный текст.
+    // Закрытие происходит обычным путём через option.nextReplyId === null.
     if (next.isFinal) {
       this._knowledge.add(this._actCompleteKey(this._active.characterId, this._active.act));
-      this._active = null;
-      return { ended: true };
     }
 
-    this._active.replyId = next.id;
     return { state: this._buildViewState(idx, this._active.characterId, this._active.act, next) };
   }
 
@@ -109,8 +124,30 @@ export class DialogueEngine {
   ): DialogueViewState {
     const options = (reply.playerOptions ?? []).map((opt) => {
       const required = opt.requiredKnowledge ?? [];
-      const isVisible = required.every((k) => this._knowledge.has(k));
-      return { text: opt.text, option: opt, isVisible };
+      const missingKnowledge = required.filter((k) => !this._knowledge.has(k));
+
+      if (missingKnowledge.length === 0) {
+        return {
+          text: opt.text,
+          option: opt,
+          isVisible: true,
+          isEnabled: true,
+          missingKnowledge: [],
+          lockHint: "",
+        };
+      }
+
+      const lockMode = opt.lockMode ?? "hide";
+      const isVisible = lockMode === "disable";
+      const lockHint = opt.lockHint ?? "Нужно узнать кое-что ещё. Поговори с другими гномами.";
+      return {
+        text: opt.text,
+        option: opt,
+        isVisible,
+        isEnabled: false,
+        missingKnowledge,
+        lockHint,
+      };
     });
 
     return {

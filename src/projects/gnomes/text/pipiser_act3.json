@@ -1,0 +1,221 @@
+{
+  "characterId": "pipiser",
+  "characterInfo": {
+    "name": "Пиписер",
+    "age": 30,
+    "description": "Ироничный гном, который выглядит как лёгкость, а живёт как тревога. Шутит слишком точно. Пропадает слишком вовремя. Любит флейту — потому что на флейте можно сказать больше, чем ртом.",
+    "arcTheme": "Свобода — это не исчезнуть. Свобода — это остаться, когда страшно."
+  },
+  "dialogueTree": [
+    {
+      "act": 3,
+      "actTitle": "Остаться",
+      "actDescription": "Третий круг — дело в лесу и финальная честность. После полного прохождения всех троих откроется эпилог про камень.",
+      "nodes": [
+        {
+          "nodeId": "pipiser_act3_node1",
+          "nodeType": "entry",
+          "replies": [
+            {
+              "id": "pipiser_act3_node1_rep1",
+              "text": "Третий круг.\n\nЯ остаюсь.\n\nСмешно, да? Человек, который исчезал всю жизнь, вдруг решил быть.\n\nНу, посмотрим, насколько меня хватит.",
+              "playerOptions": [
+                {
+                  "text": "Что мне важно понять про Фыфчика сейчас?",
+                  "nextReplyId": "pipiser_act3_node2_rep1"
+                },
+                {
+                  "text": "Что мне важно понять про Шораграна сейчас?",
+                  "nextReplyId": "pipiser_act3_node2_rep2"
+                },
+                {
+                  "text": "Я принёс тебе слова от Фыфчика.",
+                  "nextReplyId": "pipiser_act3_node3_rep1"
+                },
+                {
+                  "text": "Я принёс тебе слова от Шораграна.",
+                  "nextReplyId": "pipiser_act3_node4_rep1"
+                },
+                {
+                  "text": "Финал: закрыть третий круг.",
+                  "nextReplyId": "pipiser_act3_node5_rep1",
+                  "requiredKnowledge": ["pipiser_act3_node3_done", "pipiser_act3_node4_done"],
+                  "lockMode": "disable",
+                  "lockHint": "Сначала принеси две последние части: финальные слова Фыфчика и Шораграна для Пиписера."
+                },
+                {
+                  "text": "Эпилог: про камень (после полного прохождения всех троих).",
+                  "nextReplyId": "pipiser_act3_node1_rep_epilogue",
+                  "requiredKnowledge": ["pipiser_act3_complete", "shoragran_act3_complete", "fyfchik_act3_complete"],
+                  "lockMode": "disable",
+                  "lockHint": "Сначала закрой третий круг у всех троих. Тогда я скажу правду без дыма."
+                },
+                {
+                  "text": "Я позже.",
+                  "nextReplyId": null
+                }
+              ]
+            },
+            {
+              "id": "pipiser_act3_node1_rep_epilogue",
+              "text": "Ладно. Камень.\n\nОн у меня.\n\nНе потому что я вор. А потому что я испугался, что вы друг друга разнесёте вместе с лесом.\n\nСто лет назад они ругались так, что даже деревья делали вид, будто это не про них.\n\nЯ спрятал камень. И сделал вид, что я “просто чиллю”.\n\nСундук? Открывай.\n\nИ запомни: иногда ключ — это не предмет. Это момент, когда трое перестают прятаться в своих выгодных масках.\n\nА теперь иди. Я догоню. С флейтой. Без героизма.",
+              "isFinal": true,
+              "playerOptions": [
+                {
+                  "text": "Конец.",
+                  "nextReplyId": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "pipiser_act3_node2",
+          "nodeType": "key_grantor",
+          "replies": [
+            {
+              "id": "pipiser_act3_node2_rep1",
+              "text": "Про Фыфчика сейчас: когда он не давит — слышно заботу.\n\nМне важно, чтобы он был рядом, а не сверху. И чтобы это было не один раз “на эмоциях”.",
+              "playerOptions": [
+                {
+                  "text": "Понял.",
+                  "nextReplyId": "pipiser_act3_node1_rep1",
+                  "grantsKnowledge": ["pipiser_act3_key_for_fyfchik"]
+                }
+              ]
+            },
+            {
+              "id": "pipiser_act3_node2_rep2",
+              "text": "Про Шораграна сейчас: мне важно, чтобы он просто гордился.\n\nБез лекций. Без стыда. Без “я же говорил”.\n\nДа, я знаю, как это звучит. Мне тоже не нравится.",
+              "playerOptions": [
+                {
+                  "text": "Понял.",
+                  "nextReplyId": "pipiser_act3_node1_rep1",
+                  "grantsKnowledge": ["pipiser_act3_key_for_shoragran"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "pipiser_act3_node3",
+          "nodeType": "locked",
+          "replies": [
+            {
+              "id": "pipiser_act3_node3_rep1",
+              "text": "Фыфчик.\n\nЧто он сказал про меня в третьем круге?",
+              "playerOptions": [
+                {
+                  "text": "Он предлагает партнёрство: риск, но не одиночкой. Он прикрывает.",
+                  "nextReplyId": "pipiser_act3_node3_rep2",
+                  "requiredKnowledge": ["fyfchik_act3_key_for_pipiser"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужно сначала дойти до его взрослого “договорились” (его 3 акт).",
+                  "grantsKnowledge": ["pipiser_act3_node3_done"]
+                },
+                {
+                  "text": "Я ещё не говорил с ним.",
+                  "nextReplyId": "pipiser_act3_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "pipiser_act3_node3_rep2",
+              "text": "Договор…\n\nОзарение: меня можно уважать не “терпя”, а выбирая.\n\nОк. Я в деле. Без побега.",
+              "playerOptions": [
+                {
+                  "text": "Ок.",
+                  "nextReplyId": "pipiser_act3_node1_rep1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "pipiser_act3_node4",
+          "nodeType": "locked",
+          "replies": [
+            {
+              "id": "pipiser_act3_node4_rep1",
+              "text": "Шорагран.\n\nЧто он сказал про меня — честно?",
+              "playerOptions": [
+                {
+                  "text": "Он признаёт: тебе нужна свобода, но ты остаёшься в команде. Не исчезаешь.",
+                  "nextReplyId": "pipiser_act3_node4_rep2",
+                  "requiredKnowledge": ["shoragran_act3_key_for_pipiser"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужно сначала дойти до его просьбы о помощи (его 3 акт).",
+                  "grantsKnowledge": ["pipiser_act3_node4_done"]
+                },
+                {
+                  "text": "Я ещё не говорил с ним.",
+                  "nextReplyId": "pipiser_act3_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "pipiser_act3_node4_rep2",
+              "text": "Озарение: свобода исчезает не когда ты рядом.\nСвобода исчезает, когда ты один и боишься.\n\nОк. Я рядом.",
+              "playerOptions": [
+                {
+                  "text": "Пора к финалу.",
+                  "nextReplyId": "pipiser_act3_node1_rep1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "pipiser_act3_node5",
+          "nodeType": "final",
+          "replies": [
+            {
+              "id": "pipiser_act3_node5_rep1",
+              "text": "Финал третьего круга: капканы.\n\nЯ лезу в мерзкие места. Фыфчик фиксирует. Шорагран ведёт.\n\nФлейты — это наш общий сигнал: “мы вместе”.\n\nПафос? Да.\n\nРаботает? Ещё как.",
+              "playerOptions": [
+                {
+                  "text": "Дай финальные зацепки для их третьих кругов.",
+                  "nextReplyId": "pipiser_act3_node5_rep2",
+                  "grantsKnowledge": ["pipiser_act3_node5_key_for_fyfchik", "pipiser_act3_node5_key_for_shoragran"]
+                },
+                {
+                  "text": "Закрыть третий круг — я принёс их ноты для тебя.",
+                  "nextReplyId": "pipiser_act3_node5_rep3",
+                  "requiredKnowledge": ["fyfchik_act3_node5_key_for_pipiser", "shoragran_act3_node5_key_for_pipiser"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужны две финальные ноты от Фыфчика и Шораграна (их узел 5, акт 3)."
+                },
+                {
+                  "text": "Я вернусь.",
+                  "nextReplyId": null
+                }
+              ]
+            },
+            {
+              "id": "pipiser_act3_node5_rep2",
+              "text": "Про Фыфчика: план без сердца — клетка.\n\nПро Шораграна: если он рядом — я не обязан играть “весёлого”.",
+              "playerOptions": [
+                {
+                  "text": "Понял.",
+                  "nextReplyId": "pipiser_act3_node5_rep1"
+                }
+              ]
+            },
+            {
+              "id": "pipiser_act3_node5_rep3",
+              "text": "Третий круг закрыт.\n\nМоё финальное озарение: я не обязан быть маской, чтобы меня любили.\n\nПро камень — вернись, когда все трое закроют третий круг. Тогда я скажу правду без дыма.",
+              "isFinal": true,
+              "playerOptions": [
+                {
+                  "text": "Понял.",
+                  "nextReplyId": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
