@@ -4,6 +4,7 @@ import { tryCreateWebGL2Context } from "./webgl/context";
 import { ParticleApp } from "./projects/particles";
 import { mountPuzzleProject } from "./projects/puzzle/PuzzleProject";
 import { mountFruitsProject } from "./projects/fruits";
+import { mountGnomesProject } from "./projects/gnomes";
 
 const overlay = createOverlay();
 
@@ -18,6 +19,7 @@ function showPicker(): void {
         <button id="btn-project-particles" class="btn" type="button">Частицы</button>
         <button id="btn-project-puzzle" class="btn" type="button">Пазл</button>
         <button id="btn-project-fruits" class="btn" type="button">Фрукты</button>
+        <button id="btn-project-gnomes" class="btn" type="button">Гномы</button>
       </div>
       <p class="launcher__hint">Выбери проект, который нужно открыть.</p>
     </div>
@@ -26,11 +28,13 @@ function showPicker(): void {
   const btnParticles = document.getElementById("btn-project-particles") as HTMLButtonElement | null;
   const btnPuzzle = document.getElementById("btn-project-puzzle") as HTMLButtonElement | null;
   const btnFruits = document.getElementById("btn-project-fruits") as HTMLButtonElement | null;
-  if (!btnParticles || !btnPuzzle || !btnFruits) return;
+  const btnGnomes = document.getElementById("btn-project-gnomes") as HTMLButtonElement | null;
+  if (!btnParticles || !btnPuzzle || !btnFruits || !btnGnomes) return;
 
   btnParticles.addEventListener("click", () => startParticles());
   btnPuzzle.addEventListener("click", () => startPuzzle());
   btnFruits.addEventListener("click", () => void startFruits());
+  btnGnomes.addEventListener("click", () => startGnomes());
 }
 
 function hidePicker(): void {
@@ -91,6 +95,15 @@ async function startFruits(): Promise<void> {
     // eslint-disable-next-line no-console
     console.error(e);
   }
+}
+
+function startGnomes(): void {
+  hidePicker();
+  overlay.hide();
+  const el = document.getElementById("project-picker");
+  if (!el) return;
+  el.style.display = "grid";
+  mountGnomesProject(el);
 }
 
 showPicker();
