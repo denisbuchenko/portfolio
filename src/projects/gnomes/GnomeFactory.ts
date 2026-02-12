@@ -55,6 +55,12 @@ export class GnomeFactory {
     // Выравнивание: центр по XZ и \"ступни\" на y=0.
     this._centerAndGround(cloned);
 
+    // Невидимый коллайдер для \"уверенного\" клика по гному (а не по отдельным мешам).
+    // Это особенно полезно, когда модель состоит из многих частей и по тонким элементам трудно попасть raycast'ом.
+    const pickCollider = this._createPickCollider(cloned);
+    pickCollider.name = "GnomePickCollider";
+    root.add(pickCollider);
+
     // Тени.
     root.traverse((o) => {
       const mesh = o as THREE.Mesh;
@@ -74,6 +80,32 @@ export class GnomeFactory {
     controller.playByIndex(animIndex, { fadeSec: 0.01 });
 
     return new GnomeInstance({ root, controller });
+  }
+
+  private _createPickCollider(target: THREE.Object3D): THREE.Mesh {
+    target.updateMatrixWorld(true);
+
+    const box = new THREE.Box3().setFromObject(target);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+
+    // \"Капсула\" вокруг персонажа.
+    const height = Math.max(0.001, size.y);
+    const radius = Math.max(0.08, Math.max(size.x, size.z) * 0.6);
+    const length = Math.max(0.001, height - radius * 2);
+
+    const geo = new THREE.CapsuleGeometry(radius, length, 6, 10);
+    const mat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0.0,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0, height * 0.5, 0);
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    return mesh;
   }
 
   private _centerAndGround(target: THREE.Object3D): void {

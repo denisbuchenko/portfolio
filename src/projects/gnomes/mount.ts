@@ -18,6 +18,13 @@ export function mountGnomesProject(host: HTMLElement): () => void {
   wrapper.style.pointerEvents = "auto";
   host.appendChild(wrapper);
 
+  const uiRoot = document.createElement("div");
+  uiRoot.style.position = "absolute";
+  uiRoot.style.inset = "0";
+  uiRoot.style.pointerEvents = "none"; // сами компоненты внутри включат pointerEvents
+  uiRoot.style.zIndex = "20";
+  wrapper.appendChild(uiRoot);
+
   const canvas = document.createElement("canvas");
   canvas.style.width = "100%";
   canvas.style.height = "100%";
@@ -75,7 +82,7 @@ export function mountGnomesProject(host: HTMLElement): () => void {
   // Всегда стартуем с первого гнома.
   window.scrollTo(0, 0);
 
-  const app = new GnomesApp({ canvas, statusEl: status });
+  const app = new GnomesApp({ canvas, statusEl: status, uiRoot });
   let disposed = false;
   void app.start().catch((e) => {
     if (disposed) return;
