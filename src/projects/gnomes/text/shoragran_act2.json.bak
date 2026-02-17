@@ -1,0 +1,213 @@
+{
+  "characterId": "shoragran",
+  "characterInfo": {
+    "name": "Шорагран",
+    "age": 300,
+    "description": "Старый лесной гном. Не мистик, а мастер: точный, язвительный, с грустью в голосе. Его самая неприятная боль — стать «мебелью», которую терпят из вежливости.",
+    "arcTheme": "Уважение не выбивают опытом. Его зарабатывают присутствием."
+  },
+  "dialogueTree": [
+    {
+      "act": 2,
+      "actTitle": "Сломанная роль",
+      "actDescription": "Второй круг — честность без красивых слов. Шорагран учится говорить не «я знаю», а «мне страшно».",
+      "nodes": [
+        {
+          "nodeId": "shoragran_act2_node1",
+          "nodeType": "entry",
+          "replies": [
+            {
+              "id": "shoragran_act2_node1_rep1",
+              "text": "Вернулся.\n\nХорошо. Значит, тебя не стошнило от нас.\n\nВо втором круге я не буду играть в мудреца. Мне это самому надоело.\n\nС чего начнём?",
+              "playerOptions": [
+                {
+                  "text": "С тебя. Что ты скрываешь за «опытом»?",
+                  "nextReplyId": "shoragran_act2_node2_rep1"
+                },
+                {
+                  "text": "Давай про то, что мешает вам троим говорить нормально.",
+                  "nextReplyId": "shoragran_act2_node3_rep1"
+                },
+                {
+                  "text": "Подвести итог второго круга.",
+                  "nextReplyId": "shoragran_act2_node5_rep1",
+                  "requiredKnowledge": ["shoragran_act2_node3_done", "shoragran_act2_node4_done"],
+                  "lockMode": "disable",
+                  "lockHint": "Сначала закрой два узла: признание Шораграна (узел 3) и его честность перед друзьями (узел 4)."
+                },
+                {
+                  "text": "Я позже.",
+                  "nextReplyId": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "shoragran_act2_node2",
+          "nodeType": "key_grantor",
+          "replies": [
+            {
+              "id": "shoragran_act2_node2_rep1",
+              "text": "Я скрываю простое: я не успеваю.\n\nФыфчик быстрее. Пиписер легче. А я всё время пытаюсь доказать, что я не зря прожил триста лет.\n\nЭто звучит мерзко, да? Вот именно.\n\nДержи две зацепки на второй круг — про них двоих.",
+              "playerOptions": [
+                {
+                  "text": "Про Фыфчика?",
+                  "nextReplyId": "shoragran_act2_node2_rep2"
+                },
+                {
+                  "text": "Про Пиписера?",
+                  "nextReplyId": "shoragran_act2_node2_rep3"
+                },
+                {
+                  "text": "Понял. Вернусь.",
+                  "nextReplyId": "shoragran_act2_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "shoragran_act2_node2_rep2",
+              "text": "Зацепка про Фыфчика: он боится быть обычным. Поэтому превращает любую ошибку в преступление.\n\nЕсли он хоть раз скажет «я не уверен» — это будет не слабость. Это будет взрослая сила.",
+              "playerOptions": [
+                {
+                  "text": "Запомню.",
+                  "nextReplyId": "shoragran_act2_node2_rep1",
+                  "grantsKnowledge": ["shoragran_act2_key_for_fyfchik"]
+                }
+              ]
+            },
+            {
+              "id": "shoragran_act2_node2_rep3",
+              "text": "Зацепка про Пиписера: он талантливый. И это его проклятие.\n\nТалант позволяет исчезать красиво. А потом оставаться одному с виной.\n\nЕсли он останется — это будет не «клетка». Это будет выбор.",
+              "playerOptions": [
+                {
+                  "text": "Запомню.",
+                  "nextReplyId": "shoragran_act2_node2_rep1",
+                  "grantsKnowledge": ["shoragran_act2_key_for_pipiser"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "shoragran_act2_node3",
+          "nodeType": "locked",
+          "replies": [
+            {
+              "id": "shoragran_act2_node3_rep1",
+              "text": "Мне нужна одна вещь от Фыфчика.\n\nНе «согласен/не согласен». А честный взгляд.\n\nЧто он во мне уважает, когда перестаёт злиться?",
+              "playerOptions": [
+                {
+                  "text": "Похоже, он помнит: ты первый научил его слушать лес, а не формулы.",
+                  "nextReplyId": "shoragran_act2_node3_rep2",
+                  "requiredKnowledge": ["fyfchik_act2_key_for_shoragran"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужно принести признание от Фыфчика (его 2 акт).",
+                  "grantsKnowledge": ["shoragran_act2_node3_done"]
+                },
+                {
+                  "text": "Я ещё не вытащил из него это.",
+                  "nextReplyId": "shoragran_act2_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "shoragran_act2_node3_rep2",
+              "text": "Вот.\n\nОзарение: уважение не живёт в статусе. Оно живёт в памяти.\n\nЯ могу быть важным не как «главный», а как «рядом».",
+              "playerOptions": [
+                {
+                  "text": "Ок.",
+                  "nextReplyId": "shoragran_act2_node1_rep1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "shoragran_act2_node4",
+          "nodeType": "locked",
+          "replies": [
+            {
+              "id": "shoragran_act2_node4_rep1",
+              "text": "Теперь Пиписер.\n\nЧего он хочет от меня услышать? Не притчу. Одну человеческую фразу.",
+              "playerOptions": [
+                {
+                  "text": "Похоже, он хочет, чтобы ты был рядом без оценок. Просто “рад, что ты есть”.",
+                  "nextReplyId": "shoragran_act2_node4_rep2",
+                  "requiredKnowledge": ["pipiser_act2_key_for_shoragran"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужно принести правду от Пиписера (его 2 акт).",
+                  "grantsKnowledge": ["shoragran_act2_node4_done"]
+                },
+                {
+                  "text": "Пока не знаю.",
+                  "nextReplyId": "shoragran_act2_node1_rep1"
+                }
+              ]
+            },
+            {
+              "id": "shoragran_act2_node4_rep2",
+              "text": "Мда.\n\nОзарение: если я не скажу это вслух — я сам создам ту “ненужность”, которой боюсь.\n\nЭто мерзко просто. Но честно.",
+              "playerOptions": [
+                {
+                  "text": "Идём дальше.",
+                  "nextReplyId": "shoragran_act2_node1_rep1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "nodeId": "shoragran_act2_node5",
+          "nodeType": "final",
+          "replies": [
+            {
+              "id": "shoragran_act2_node5_rep1",
+              "text": "Второй круг закрываем так: не “мы молодцы”, а “мы хотя бы не врём себе”.\n\nДержи две финальные зацепки для их вторых кругов.",
+              "playerOptions": [
+                {
+                  "text": "Дай зацепки.",
+                  "nextReplyId": "shoragran_act2_node5_rep2",
+                  "grantsKnowledge": ["shoragran_act2_node5_key_for_fyfchik", "shoragran_act2_node5_key_for_pipiser"]
+                },
+                {
+                  "text": "Закрываем второй круг — я принёс их ноты для тебя.",
+                  "nextReplyId": "shoragran_act2_node5_rep3",
+                  "requiredKnowledge": ["fyfchik_act2_node5_key_for_shoragran", "pipiser_act2_node5_key_for_shoragran"],
+                  "lockMode": "disable",
+                  "lockHint": "Нужны две финальные ноты от Фыфчика и Пиписера (их узел 5, акт 2)."
+                },
+                {
+                  "text": "Я вернусь.",
+                  "nextReplyId": null
+                }
+              ]
+            },
+            {
+              "id": "shoragran_act2_node5_rep2",
+              "text": "Про Фыфчика: если он сможет признать ошибку — он станет точнее, а не слабее.\n\nПро Пиписера: если он останется — он перестанет платить за свободу одиночеством.",
+              "playerOptions": [
+                {
+                  "text": "Принял.",
+                  "nextReplyId": "shoragran_act2_node5_rep1"
+                }
+              ]
+            },
+            {
+              "id": "shoragran_act2_node5_rep3",
+              "text": "Второй круг закрыт.\n\nМоё озарение: я прятал страх за ролью.\n\nТретий круг — это не разговор. Это действие. Лес воняет железом. Капканы. И это не романтика.",
+              "isFinal": true,
+              "playerOptions": [
+                {
+                  "text": "Понял.",
+                  "nextReplyId": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
