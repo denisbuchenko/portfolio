@@ -15,7 +15,8 @@
     "cytoscape-dagre": "^2.5.0",
     "cytoscape-edgehandles": "^4.0.1",
     "dagre": "^0.8.5",
-    "three": "^0.160.0"
+    "three": "^0.160.0",
+    "three-mesh-bvh": "^0.9.8"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
