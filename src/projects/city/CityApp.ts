@@ -57,11 +57,11 @@ export class CityApp {
     CITY_GAMEPLAY.bikerMotion.collisionTipLocalOffset?.z ?? 0
   );
 
-  private _activeTurn: -1 | 0 | 1 = 0;
   private _turnLeftActions: THREE.AnimationAction[] = [];
   private _turnRightActions: THREE.AnimationAction[] = [];
-  private _turnReturning: -1 | 1 | null = null;
   private _turnPending: -1 | 1 | null = null;
+  private _turnActive: -1 | 1 = -1; // какой набор клипов сейчас “активен” по весу (по дефолту right)
+  private _turnPhase: "completed" | "forward" | "hold" | "reverse" = "completed";
   private _resetTimer: number | null = null;
 
   // World data
@@ -269,9 +269,11 @@ export class CityApp {
       this._pedalActions.push(a);
     }
 
-    // Повороты: подготовим actions (весом 0).
-    this._turnLeftActions = this._createTurnActions(biker.animations, -1);
-    this._turnRightActions = this._createTurnActions(biker.animations, 1);
+    // Повороты: подготовим actions.
+    // IMPORTANT: в нашем вводе `turn=1` означает “влево”, `turn=-1` означает “вправо”.
+    this._turnLeftActions = this._createTurnActions(biker.animations, 1);
+    this._turnRightActions = this._createTurnActions(biker.animations, -1);
+    this._initTurnActions();
 
     // Начальная точка tip (чтобы первый raycast не был мусором).
     this._bikerRoot.updateMatrixWorld(true);
@@ -528,80 +530,144 @@ export class CityApp {
   }
 
   /**
+   * Анимация поворота должна быть “включена” с самого начала, но стоять на первом ключевом кадре.
+   * По дефолту активен набор `right`.
+   */
+  private _initTurnActions(): void {
+    // Ставим оба набора на первый кадр и паузим.
+    for (const a of [...this._turnLeftActions, ...this._turnRightActions]) {
+      a.enabled = true;
+      a.clampWhenFinished = true;
+      a.setLoop(THREE.LoopOnce, 1);
+      a.play(); // чтобы action был “живой” в миксере
+      a.paused = true;
+      a.time = 0;
+      a.setEffectiveWeight(0);
+      a.setEffectiveTimeScale(1);
+    }
+
+    // По умолчанию “включены right”, но всё равно на первом ключе.
+    this._turnActive = -1;
+    this._turnPhase = "completed";
+    this._turnPending = null;
+    this._setTurnWeights(-1);
+  }
+
+  /**
    * Анимация руля:
    * - при начале поворота: клип проигрывается до конца и залипает на последнем кадре
    * - при отпускании: клип проигрывается назад до нуля (по той же траектории), затем вес уходит в 0
    * - при смене направления: быстро возвращаемся в нейтраль, затем запускаем второе направление
    */
   private _updateTurnAnimation(requested: -1 | 0 | 1): void {
-    // Если сейчас “возвращаемся” назад — ждём окончания.
-    if (this._turnReturning !== null) {
-      const actions = this._turnReturning === -1 ? this._turnLeftActions : this._turnRightActions;
+    // requested: 1=left, -1=right, 0=none
+    const want: -1 | 1 | null = requested === 0 ? null : requested;
+
+    // 1) Стадия reverse: ждём пока вернёмся на 0, и только потом можем переключать сторону.
+    if (this._turnPhase === "reverse") {
+      const actions = this._getTurnActions(this._turnActive);
       if (this._areActionsAtStart(actions)) {
-        this._fadeOutActions(actions, 0.06);
-        this._turnReturning = null;
-        this._activeTurn = 0;
-        const next = this._turnPending;
-        this._turnPending = null;
-        if (next !== null) {
-          this._startTurnForward(next, CITY_ANIMATION.biker.turn.fadeIn.durationSec);
-          this._activeTurn = next;
+        for (const a of actions) {
+          a.paused = true;
+          a.time = 0;
         }
+        this._turnPhase = "completed";
+
+        const pending = this._turnPending;
+        this._turnPending = null;
+        if (pending !== null) {
+          this._turnActive = pending;
+          this._setTurnWeights(pending);
+          this._startTurnForward(pending, CITY_ANIMATION.biker.turn.fadeIn.durationSec);
+          this._turnPhase = "forward";
+        }
+      }
+
+      // Исключение: если во время reverse нажали ту же сторону — разворачиваемся обратно и докручиваем до конца.
+      if (want !== null && want === this._turnActive) {
+        this._turnPending = null;
+        this._startTurnForward(this._turnActive, CITY_ANIMATION.biker.turn.reverseSnap.durationSec);
+        this._turnPhase = "forward";
+      } else if (want !== null && want !== this._turnActive) {
+        // Противоположная сторона — просто ждём конца reverse и держим в pending.
+        this._turnPending = want;
       }
       return;
     }
 
-    if (requested === this._activeTurn) return;
-
-    // Из нейтрали -> в поворот.
-    if (this._activeTurn === 0 && requested !== 0) {
-      this._startTurnForward(requested, CITY_ANIMATION.biker.turn.fadeIn.durationSec);
-      this._activeTurn = requested;
+    // 2) completed: стоим на первом ключе, анимация “завершена”.
+    if (this._turnPhase === "completed") {
+      if (want === null) return;
+      if (this._turnActive !== want) {
+        this._turnActive = want;
+        this._setTurnWeights(want);
+        this._snapTurnToStart(want);
+      }
+      this._startTurnForward(want, CITY_ANIMATION.biker.turn.fadeIn.durationSec);
+      this._turnPhase = "forward";
       return;
     }
 
-    // Из поворота -> в нейтраль (отпустили).
-    if (this._activeTurn !== 0 && requested === 0) {
-      this._startTurnReturn(this._activeTurn, CITY_ANIMATION.biker.turn.returnToNeutral.durationSec);
-      this._turnReturning = this._activeTurn;
+    // 3) forward/hold: анимация “незавершена” (либо идём вперёд, либо залипли в конце).
+    if (this._turnPhase === "forward") {
+      const actions = this._getTurnActions(this._turnActive);
+      if (this._areActionsAtEnd(actions)) {
+        for (const a of actions) {
+          a.paused = true;
+          a.time = a.getClip().duration;
+        }
+        this._turnPhase = "hold";
+      }
+    }
+
+    if (this._turnPhase === "hold") {
+      // держим последний кадр
+    }
+
+    // Отпустили — reverse назад до 0.
+    if (want === null) {
+      this._startTurnReturn(this._turnActive, CITY_ANIMATION.biker.turn.returnToNeutral.durationSec);
+      this._turnPhase = "reverse";
       return;
     }
 
-    // Смена направления: сначала быстро возвращаемся, потом запускаем новое.
-    if (this._activeTurn !== 0 && requested !== 0 && requested !== this._activeTurn) {
-      this._turnPending = requested;
-      this._startTurnReturn(this._activeTurn, CITY_ANIMATION.biker.turn.reverseSnap.durationSec);
-      this._turnReturning = this._activeTurn;
+    // Нажали другую сторону, пока “незавершено”: сначала reverse до 0, потом новое.
+    if (want !== this._turnActive) {
+      this._turnPending = want;
+      this._startTurnReturn(this._turnActive, CITY_ANIMATION.biker.turn.reverseSnap.durationSec);
+      this._turnPhase = "reverse";
+      return;
     }
+
+    // Нажали ту же сторону:
+    // - если мы были в hold — ничего не делаем (уже на последнем кадре)
+    // - если мы были в forward — продолжаем вперёд
   }
 
   private _startTurnForward(dir: -1 | 1, travelSec: number): void {
-    const actions = dir === -1 ? this._turnLeftActions : this._turnRightActions;
-    const other = dir === -1 ? this._turnRightActions : this._turnLeftActions;
-    // На всякий случай убираем влияние противоположного направления.
-    this._fadeOutActions(other, 0.05);
+    const actions = this._getTurnActions(dir);
     for (const a of actions) {
       const d = a.getClip().duration;
       a.enabled = true;
       a.clampWhenFinished = true;
       a.setLoop(THREE.LoopOnce, 1);
-      a.reset();
+      a.paused = false;
       a.timeScale = _timeScaleFor(d, travelSec);
-      a.setEffectiveWeight(1);
       a.play();
     }
   }
 
   private _startTurnReturn(dir: -1 | 1, travelSec: number): void {
-    const actions = dir === -1 ? this._turnLeftActions : this._turnRightActions;
+    const actions = this._getTurnActions(dir);
     for (const a of actions) {
       const d = a.getClip().duration;
       a.enabled = true;
       a.clampWhenFinished = true;
       a.setLoop(THREE.LoopOnce, 1);
-      a.setEffectiveWeight(1);
+      a.paused = false;
       a.play();
-      a.time = d;
+      // начинаем “с текущего положения”: если мы в hold — это d, если в forward — это уже накопленное время
+      if (a.time > d) a.time = d;
       a.timeScale = -_timeScaleFor(d, travelSec);
     }
   }
@@ -617,6 +683,34 @@ export class CityApp {
       if (a.time > 0.001) return false;
     }
     return true;
+  }
+
+  private _areActionsAtEnd(actions: readonly THREE.AnimationAction[]): boolean {
+    for (const a of actions) {
+      const d = a.getClip().duration;
+      if (a.time < d - 0.001) return false;
+    }
+    return true;
+  }
+
+  private _getTurnActions(dir: -1 | 1): THREE.AnimationAction[] {
+    // dir: 1=left, -1=right
+    return dir === 1 ? this._turnLeftActions : this._turnRightActions;
+  }
+
+  private _setTurnWeights(dir: -1 | 1): void {
+    const leftW = dir === 1 ? 1 : 0;
+    const rightW = dir === -1 ? 1 : 0;
+    for (const a of this._turnLeftActions) a.setEffectiveWeight(leftW);
+    for (const a of this._turnRightActions) a.setEffectiveWeight(rightW);
+  }
+
+  private _snapTurnToStart(dir: -1 | 1): void {
+    const actions = this._getTurnActions(dir);
+    for (const a of actions) {
+      a.paused = true;
+      a.time = 0;
+    }
   }
 
   private _updateCollisionActivation(): void {
@@ -697,7 +791,11 @@ export class CityApp {
     this._bikerRoot.visible = false;
     this._bikerRoot.position.copy(this._startWorldPos);
     this._bikerRoot.rotation.set(0, 0, 0);
-    this._activeTurn = 0;
+    this._turnPending = null;
+    this._turnActive = -1;
+    this._turnPhase = "completed";
+    this._setTurnWeights(-1);
+    this._snapTurnToStart(-1);
     this._fadeOutActions(this._turnLeftActions, 0.05);
     this._fadeOutActions(this._turnRightActions, 0.05);
     for (const a of this._pedalActions) a.setEffectiveTimeScale(0.0001);
