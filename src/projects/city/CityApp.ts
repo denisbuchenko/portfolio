@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CITY_ANIMATION, CITY_ASSETS, CITY_CAMERA, CITY_GAMEPLAY, CITY_WORLD } from "./cityConfig";
+import { CITY_ANIMATION, CITY_ASSETS, CITY_CAMERA, CITY_GAMEPLAY, CITY_TUNING, CITY_WORLD } from "./cityConfig";
 import { CHEL_DEFAULT_MANIFEST } from "./contracts";
 import { loadGltf, enableShadowsAndSrgb } from "./three/loadGltf";
 import { buildMeshBvh, disposeMeshBvh, installMeshBvhRaycast } from "./three/meshBvh";
@@ -79,6 +79,20 @@ export class CityApp {
   private _tmpQ2 = new THREE.Quaternion();
   private _tmpV3a = new THREE.Vector3();
   private _tmpV3b = new THREE.Vector3();
+
+  // Occlusion (дом загораживает персонажа)
+  private _allBuildingMeshes: THREE.Mesh[] = [];
+  private _meshToBuilding = new Map<string, { root: THREE.Object3D; meshes: THREE.Mesh[] }>();
+  private _occlusionStates = new Map<
+    THREE.Object3D,
+    {
+      meshes: THREE.Mesh[];
+      from: number;
+      current: number;
+      target: number;
+      t01: number;
+    }
+  >();
 
   constructor(opts: { host: HTMLElement; canvas: HTMLCanvasElement; uiRoot: HTMLDivElement }) {
     this._host = opts.host;
@@ -226,6 +240,7 @@ export class CityApp {
 
     // Индекс домов (для видимости/коллизий).
     this._buildings.buildFromCityScene(this._cityRoot);
+    this._indexBuildingMeshes();
     // Начинаем со скрытых домов — появятся при попадании в окно видимости.
     for (const b of this._buildings.buildings) {
       b.targetVisible = false;
@@ -284,6 +299,17 @@ export class CityApp {
     this._bikerRoot.updateMatrixWorld(true);
     this._prevTip.copy(this._bikerRoot.localToWorld(this._tipLocal.clone()));
   };
+
+  private _indexBuildingMeshes(): void {
+    this._allBuildingMeshes = [];
+    this._meshToBuilding.clear();
+    for (const b of this._buildings.buildings) {
+      for (const m of b.meshes) {
+        this._allBuildingMeshes.push(m);
+        this._meshToBuilding.set(m.uuid, { root: b.root, meshes: b.meshes });
+      }
+    }
+  }
 
   private _applyFloorPriority(root: THREE.Object3D): void {
     const floorMeshes: THREE.Mesh[] = [];
@@ -492,6 +518,9 @@ export class CityApp {
     this._applyGameplayCameraFixedView(cam, this._bikerRoot.position, CITY_CAMERA.gameplay.view.followLerp);
     this._activeCamera = cam;
 
+    // Дом может загораживать персонажа — делаем его полупрозрачным.
+    this._updateBikerOcclusion(cam, dtSec);
+
     // Дома: видимость строго по frustum камеры (в игре — тоже).
     this._buildings.setVisibilityByCamera(cam, 0);
     this._buildings.updateAppear(dtSec, 0.25);
@@ -500,6 +529,112 @@ export class CityApp {
     for (const a of this._pedalActions) {
       a.setEffectiveTimeScale(Math.max(0, speed01) * CITY_ANIMATION.biker.pedals.maxPlaybackSpeed);
     }
+  }
+
+  private _updateBikerOcclusion(camera: THREE.Camera, dtSec: number): void {
+    if (!this._bikerRoot) return;
+    if (this._allBuildingMeshes.length === 0) return;
+
+    // Целимся в “верх” персонажа, чтобы дом прозрачнел, когда реально перекрывает его.
+    const targetY = CITY_CAMERA.gameplay.view.targetY;
+    this._tmpV3a.set(this._bikerRoot.position.x, targetY, this._bikerRoot.position.z);
+
+    this._tmpV3b.subVectors(this._tmpV3a, camera.position);
+    const len = this._tmpV3b.length();
+    if (len <= 0.0001) return;
+    this._tmpV3b.multiplyScalar(1 / len);
+
+    this._raycaster.set(camera.position, this._tmpV3b);
+    this._raycaster.near = 0;
+    this._raycaster.far = len;
+
+    const candidates = this._activeBuildingMeshes.length > 0 ? this._activeBuildingMeshes : this._allBuildingMeshes;
+    const hits = this._raycaster.intersectObjects(candidates, false);
+
+    let nextRoot: THREE.Object3D | null = null;
+    let nextMeshes: THREE.Mesh[] | null = null;
+
+    for (const hit of hits) {
+      const m = hit.object as THREE.Mesh;
+      const entry = this._meshToBuilding.get(m.uuid);
+      if (!entry) continue;
+      if (!entry.root.visible) continue;
+      nextRoot = entry.root;
+      nextMeshes = entry.meshes;
+      break;
+    }
+
+    const occlOpacity = CITY_TUNING.occlusion.buildingOpacity;
+    const fadeSec = CITY_TUNING.occlusion.fadeSec;
+
+    // Обновляем target для всех активных transitions.
+    for (const [root, st] of this._occlusionStates) {
+      const desired = root === nextRoot ? occlOpacity : 1;
+      if (Math.abs(desired - st.target) > 1e-6) {
+        st.from = st.current;
+        st.target = desired;
+        st.t01 = 0;
+      }
+    }
+
+    // Если появился новый окклюдер — добавляем state.
+    if (nextRoot && nextMeshes && !this._occlusionStates.has(nextRoot)) {
+      this._occlusionStates.set(nextRoot, {
+        meshes: nextMeshes,
+        from: 1,
+        current: 1,
+        target: occlOpacity,
+        t01: 0
+      });
+      // Включаем “окклюзионные” материалы сразу (opacity будет анимироваться).
+      for (const mesh of nextMeshes) this._ensureMeshOcclusionMaterial(mesh, 1);
+    }
+
+    // Анимируем opacity (квадратичная).
+    const dt01 = fadeSec <= 0 ? 1 : Math.min(1, Math.max(0, dtSec) / fadeSec);
+    for (const [root, st] of this._occlusionStates) {
+      if (Math.abs(st.current - st.target) <= 1e-4) {
+        st.current = st.target;
+      } else {
+        st.t01 = Math.min(1, st.t01 + dt01);
+        const eased = _easeInOutQuad(st.t01);
+        st.current = st.from + (st.target - st.from) * eased;
+      }
+
+      for (const mesh of st.meshes) this._applyMeshOcclusionOpacity(mesh, st.current);
+
+      // Полностью восстановили — возвращаем материалы и убираем state.
+      if (st.target >= 0.999 && st.t01 >= 1) {
+        for (const mesh of st.meshes) this._restoreMeshOcclusion(mesh);
+        this._occlusionStates.delete(root);
+      }
+    }
+  }
+
+  private _ensureMeshOcclusionMaterial(mesh: THREE.Mesh, opacity: number): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ud = mesh.userData as any;
+    if (!ud._cityOcclusionOrigMaterial) ud._cityOcclusionOrigMaterial = mesh.material;
+    if (!ud._cityOcclusionMaterial) ud._cityOcclusionMaterial = _cloneOcclusionMaterial(mesh.material, opacity);
+    mesh.material = ud._cityOcclusionMaterial;
+    _setMaterialOpacity(ud._cityOcclusionMaterial, opacity);
+  }
+
+  private _applyMeshOcclusionOpacity(mesh: THREE.Mesh, opacity: number): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ud = mesh.userData as any;
+    if (!ud._cityOcclusionMaterial) {
+      this._ensureMeshOcclusionMaterial(mesh, opacity);
+      return;
+    }
+    mesh.material = ud._cityOcclusionMaterial;
+    _setMaterialOpacity(ud._cityOcclusionMaterial, opacity);
+  }
+
+  private _restoreMeshOcclusion(mesh: THREE.Mesh): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ud = mesh.userData as any;
+    if (ud._cityOcclusionOrigMaterial) mesh.material = ud._cityOcclusionOrigMaterial;
   }
 
   private _createTurnActions(clips: THREE.AnimationClip[], dir: -1 | 1): THREE.AnimationAction[] {
@@ -934,4 +1069,37 @@ export class CityApp {
 
 function _timeScaleFor(clipDurationSec: number, travelSec: number): number {
   return clipDurationSec / Math.max(0.001, travelSec);
+}
+
+function _cloneOcclusionMaterial(
+  material: THREE.Material | THREE.Material[],
+  opacity: number
+): THREE.Material | THREE.Material[] {
+  if (Array.isArray(material)) return material.map((m) => _cloneOcclusionMaterial(m, opacity) as THREE.Material);
+  const m = material.clone();
+  m.transparent = true;
+  m.opacity = opacity;
+  // Ключевой момент для “без внутренностей”: пишем depth, чтобы задние/внутренние полигоны не просвечивали.
+  m.depthWrite = true;
+  m.depthTest = true;
+  m.side = THREE.FrontSide;
+  m.needsUpdate = true;
+  return m;
+}
+
+function _setMaterialOpacity(material: THREE.Material | THREE.Material[], opacity: number): void {
+  if (Array.isArray(material)) {
+    for (const m of material) _setMaterialOpacity(m, opacity);
+    return;
+  }
+  material.transparent = true;
+  material.opacity = opacity;
+  material.depthWrite = true;
+  material.side = THREE.FrontSide;
+  material.needsUpdate = true;
+}
+
+function _easeInOutQuad(x: number): number {
+  const t = Math.max(0, Math.min(1, x));
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) * 0.5;
 }
