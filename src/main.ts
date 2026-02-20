@@ -5,6 +5,7 @@ import { ParticleApp } from "./projects/particles";
 import { mountPuzzleProject } from "./projects/puzzle/PuzzleProject";
 import { mountFruitsProject } from "./projects/fruits";
 import { mountGnomesProject } from "./projects/gnomes";
+import { mountGnomesDialogueEditor } from "./projects/gnomes/editor";
 
 const overlay = createOverlay();
 
@@ -20,6 +21,7 @@ function showPicker(): void {
         <button id="btn-project-puzzle" class="btn" type="button">Пазл</button>
         <button id="btn-project-fruits" class="btn" type="button">Фрукты</button>
         <button id="btn-project-gnomes" class="btn" type="button">Гномы</button>
+        <button id="btn-project-gnomes-editor" class="btn" type="button">Редактор диалогов (Гномы)</button>
       </div>
       <p class="launcher__hint">Выбери проект, который нужно открыть.</p>
     </div>
@@ -29,12 +31,14 @@ function showPicker(): void {
   const btnPuzzle = document.getElementById("btn-project-puzzle") as HTMLButtonElement | null;
   const btnFruits = document.getElementById("btn-project-fruits") as HTMLButtonElement | null;
   const btnGnomes = document.getElementById("btn-project-gnomes") as HTMLButtonElement | null;
-  if (!btnParticles || !btnPuzzle || !btnFruits || !btnGnomes) return;
+  const btnGnomesEditor = document.getElementById("btn-project-gnomes-editor") as HTMLButtonElement | null;
+  if (!btnParticles || !btnPuzzle || !btnFruits || !btnGnomes || !btnGnomesEditor) return;
 
   btnParticles.addEventListener("click", () => startParticles());
   btnPuzzle.addEventListener("click", () => startPuzzle());
   btnFruits.addEventListener("click", () => void startFruits());
   btnGnomes.addEventListener("click", () => startGnomes());
+  btnGnomesEditor.addEventListener("click", () => startGnomesDialogueEditor());
 }
 
 function hidePicker(): void {
@@ -104,6 +108,15 @@ function startGnomes(): void {
   if (!el) return;
   el.style.display = "grid";
   mountGnomesProject(el);
+}
+
+function startGnomesDialogueEditor(): void {
+  hidePicker();
+  overlay.hide();
+  const el = document.getElementById("project-picker");
+  if (!el) return;
+  el.style.display = "block";
+  mountGnomesDialogueEditor(el);
 }
 
 showPicker();

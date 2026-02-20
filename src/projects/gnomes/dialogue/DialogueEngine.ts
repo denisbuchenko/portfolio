@@ -55,6 +55,11 @@ export class DialogueEngine {
 
     const firstReply = entry.replies[0];
 
+    // Ключи за вход в реплику (если они заданы на реплике).
+    if (firstReply.grantsKnowledge && firstReply.grantsKnowledge.length > 0) {
+      this._knowledge.addMany(firstReply.grantsKnowledge);
+    }
+
     // Проверка доступности (в духе ТЗ): если нет ни одного видимого варианта ответа — считаем акт закрытым.
     const view = this._buildViewState(idx, characterId, act, firstReply);
     const hasAnyEnabled = view.options.some((o) => o.isVisible && o.isEnabled);
@@ -102,6 +107,11 @@ export class DialogueEngine {
 
     // Переходим на следующую реплику.
     this._active.replyId = next.id;
+
+    // Ключи за вход в реплику (если они заданы на реплике).
+    if (next.grantsKnowledge && next.grantsKnowledge.length > 0) {
+      this._knowledge.addMany(next.grantsKnowledge);
+    }
 
     // Финал акта: выдаём ключ завершения, но даём UI показать финальный текст.
     // Закрытие происходит обычным путём через option.nextReplyId === null.

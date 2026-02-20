@@ -28,8 +28,15 @@ export type DialogueNode = {
 
 export type DialogueReply = {
   id: string;
+  /** Авторское описание/ремарка (может быть показана в редакторе/в будущем в UI). */
+  narration?: string;
   text?: string;
   playerOptions?: DialoguePlayerOption[];
+  /**
+   * Ключи, которые игрок получает за сам факт "дошёл до этой реплики" (прочитал/увидел).
+   * Используется как "флаг знания", аналогично grantsKnowledge у playerOptions.
+   */
+  grantsKnowledge?: string[];
   isFinal?: boolean;
   isSilent?: boolean;
 };
