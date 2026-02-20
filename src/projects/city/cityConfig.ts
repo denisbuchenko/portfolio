@@ -90,6 +90,15 @@ export const CITY_CAMERA = {
   gameplay: {
     usePerspective: true,
     orthoViewSize: 26,
+    /** Фиксированный “3/4” ракурс: камера не вращается, только следует по плоскости. */
+    view: {
+      yawDeg: 45,
+      pitchDeg: -35,
+      rollDeg: 0,
+      distance: 26,
+      targetY: 0.8,
+      followLerp: 0.12
+    },
     extraTransform: {
       positionOffset: { x: 0, y: 0, z: 0 },
       rotationOffsetDeg: { x: 0, y: 0, z: 0 }

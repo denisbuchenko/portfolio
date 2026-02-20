@@ -74,6 +74,11 @@ export class CityApp {
   private _gameT = 0;
   private _cruiseSpeed = CITY_GAMEPLAY.bikerMotion.speed.cruiseSpeed;
   private _forward = new THREE.Vector3(0, 0, -1);
+  private _gameplayBaseQuat = new THREE.Quaternion();
+  private _tmpQ = new THREE.Quaternion();
+  private _tmpQ2 = new THREE.Quaternion();
+  private _tmpV3a = new THREE.Vector3();
+  private _tmpV3b = new THREE.Vector3();
 
   constructor(opts: { host: HTMLElement; canvas: HTMLCanvasElement; uiRoot: HTMLDivElement }) {
     this._host = opts.host;
@@ -423,7 +428,7 @@ export class CityApp {
     this._focusT = 0;
     const overviewCam = (CITY_CAMERA.overview.usePerspective ?? false) ? this._overviewPerspectiveCamera : this._overviewCamera;
     this._focusFrom.copy(overviewCam.position);
-    this._focusTo.copy(this._computeGameplayCameraPos(this._startWorldPos, this._forward));
+    this._focusTo.copy(this._computeGameplayCameraPos(this._startWorldPos));
   }
 
   private _updateFocus(dtSec: number): void {
@@ -433,11 +438,7 @@ export class CityApp {
     const pos = new THREE.Vector3().lerpVectors(this._focusFrom, this._focusTo, k);
     const cam = this._getGameplayCamera();
     cam.position.copy(pos);
-
-    // Диабло-взгляд: смотрим в точку чуть впереди.
-    const target = new THREE.Vector3(this._startWorldPos.x, 0.8, this._startWorldPos.z);
-    cam.lookAt(target);
-    this._applyCameraExtraTransform(cam, "gameplay");
+    this._applyGameplayCameraFixedRotation(cam);
     this._activeCamera = cam;
 
     if (t01 >= 1) {
@@ -487,12 +488,8 @@ export class CityApp {
     this._updateCollisionActivation();
     this._checkCollision();
 
-    // Камера следует за велосипедистом (диабло-взгляд).
-    const desired = this._computeGameplayCameraPos(this._bikerRoot.position, this._forward);
     const cam = this._getGameplayCamera();
-    cam.position.lerp(desired, 0.08);
-    cam.lookAt(this._bikerRoot.position.x, 0.8, this._bikerRoot.position.z);
-    this._applyCameraExtraTransform(cam, "gameplay");
+    this._applyGameplayCameraFixedView(cam, this._bikerRoot.position, CITY_CAMERA.gameplay.view.followLerp);
     this._activeCamera = cam;
 
     // Дома: видимость строго по frustum камеры (в игре — тоже).
@@ -809,13 +806,57 @@ export class CityApp {
     this._prevTip.copy(this._bikerRoot.localToWorld(this._tipLocal.clone()));
   }
 
-  private _computeGameplayCameraPos(targetPos: THREE.Vector3, forward: THREE.Vector3): THREE.Vector3 {
-    const pitchRad = (CITY_CAMERA.focusStart.gameplayPitchDeg * Math.PI) / 180;
-    const dist = CITY_CAMERA.focusStart.gameplayDistance;
-    const back = Math.cos(pitchRad) * dist;
-    const up = Math.sin(pitchRad) * dist;
-    const behind = new THREE.Vector3().copy(forward).multiplyScalar(-back);
-    return new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z).add(behind).add(new THREE.Vector3(0, up, 0));
+  private _computeGameplayCameraPos(targetPos: THREE.Vector3): THREE.Vector3 {
+    const view = CITY_CAMERA.gameplay.view;
+    const yaw = (view.yawDeg * Math.PI) / 180;
+    const pitch = (view.pitchDeg * Math.PI) / 180;
+    const roll = (view.rollDeg * Math.PI) / 180;
+
+    this._gameplayBaseQuat.setFromEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"));
+    const q = this._composeGameplayQuaternionInto(this._tmpQ);
+
+    const forward = this._tmpV3a.set(0, 0, -1).applyQuaternion(q);
+    const target = this._tmpV3b.set(targetPos.x, view.targetY, targetPos.z);
+    const pos = target.addScaledVector(forward, -view.distance);
+
+    const off = CITY_CAMERA.gameplay.extraTransform.positionOffset;
+    pos.add(this._tmpV3a.set(off.x, off.y, off.z).applyQuaternion(q));
+    return pos.clone(); // used only for focus target; ok to allocate here
+  }
+
+  private _applyGameplayCameraFixedRotation(camera: THREE.Camera): void {
+    camera.quaternion.copy(this._composeGameplayQuaternionInto(this._tmpQ));
+  }
+
+  private _applyGameplayCameraFixedView(camera: THREE.Camera, targetPos: THREE.Vector3, followLerp: number): void {
+    const view = CITY_CAMERA.gameplay.view;
+    const yaw = (view.yawDeg * Math.PI) / 180;
+    const pitch = (view.pitchDeg * Math.PI) / 180;
+    const roll = (view.rollDeg * Math.PI) / 180;
+
+    // Фиксированный поворот (3/4) + доп. поворот из конфига.
+    this._gameplayBaseQuat.setFromEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"));
+    camera.quaternion.copy(this._composeGameplayQuaternionInto(this._tmpQ));
+
+    // Позиция: держим персонажа на оси взгляда, камера ездит только по плоскости.
+    const forward = this._tmpV3a.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    const desired = this._tmpV3b.set(targetPos.x, view.targetY, targetPos.z).addScaledVector(forward, -view.distance);
+
+    // Доп. локальный сдвиг.
+    const off = CITY_CAMERA.gameplay.extraTransform.positionOffset;
+    desired.add(this._tmpV3a.set(off.x, off.y, off.z).applyQuaternion(camera.quaternion));
+
+    const k = Math.max(0, Math.min(1, followLerp));
+    camera.position.lerp(desired, k);
+  }
+
+  private _composeGameplayQuaternionInto(tmpOut: THREE.Quaternion): THREE.Quaternion {
+    const extraRot = CITY_CAMERA.gameplay.extraTransform.rotationOffsetDeg;
+    this._tmpQ2.setFromEuler(
+      new THREE.Euler((extraRot.x * Math.PI) / 180, (extraRot.y * Math.PI) / 180, (extraRot.z * Math.PI) / 180, "XYZ")
+    );
+    tmpOut.copy(this._gameplayBaseQuat).multiply(this._tmpQ2);
+    return tmpOut;
   }
 
   private _getGameplayCamera(): THREE.Camera {
