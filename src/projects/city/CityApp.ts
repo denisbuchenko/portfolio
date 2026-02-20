@@ -391,8 +391,11 @@ export class CityApp {
     this._applyCameraExtraTransform(cam, "overview");
     this._activeCamera = cam;
 
-    // Дома: видимость строго по frustum камеры, чтобы анимация начиналась у края экрана.
-    this._buildings.setVisibilityByCamera(cam, 0);
+    // Режим города: игнорируем левую/правую границы и следим только за верхом/низом.
+    // Хотим “пару пикселей” отступа от края -> переводим px -> NDC.
+    const edgePx = 3;
+    const edgeInsetNdc = (2 * edgePx) / Math.max(1, h);
+    this._buildings.setVisibilityByVerticalBounds(cam, edgeInsetNdc);
     this._buildings.updateAppear(_dtSec, 0.35);
 
     // Start кнопка — в центре карты.

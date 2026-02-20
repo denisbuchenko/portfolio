@@ -72,6 +72,33 @@ export class BuildingsIndex {
   }
 
   /**
+   * ONLY для режима города (overview):
+   * Игнорируем левую/правую границы и следим только за верхом/низом экрана.
+   *
+   * `edgeInsetNdc` — насколько “внутрь” отступаем от реального края (в NDC),
+   * чтобы анимация стартовала, когда дом уже буквально в паре пикселей от границы.
+   *
+   * Видимым считаем дом, если его bbox по Y пересекает диапазон [-1+inset .. 1-inset].
+   */
+  setVisibilityByVerticalBounds(camera: THREE.Camera, edgeInsetNdc = 0): BuildingEntry[] {
+    const changed: BuildingEntry[] = [];
+    const inset = Math.max(0, edgeInsetNdc);
+    const yMin = -1 + inset;
+    const yMax = 1 - inset;
+
+    camera.updateMatrixWorld(true);
+
+    for (const b of this._buildings) {
+      const next = _boxOverlapsVerticalNdc(camera, b.box, yMin, yMax);
+      if (next !== b.targetVisible) {
+        b.targetVisible = next;
+        changed.push(b);
+      }
+    }
+    return changed;
+  }
+
+  /**
    * Плавно анимирует появление/исчезновение по Y (scale.y): “растём в высоту”.
    */
   updateAppear(dtSec: number, speedSec: number): void {
@@ -83,11 +110,10 @@ export class BuildingsIndex {
       b.root.scale.set(b.baseScale.x, b.baseScale.y * eased, b.baseScale.z);
 
       // Порог “супертонкий дом”: чтобы не конфликтовал с другими мешами.
-      // - на появлении: не показываем самые первые кадры (почти ноль масштаба)
+      // - на появлении: не показываем самый первый “0.00x” кадр
       // - на исчезновении: скрываем чуть раньше, чем доходим до совсем тонкого состояния
       const showEps = 0.02;
       const hideEps = 0.08;
-
       if (b.appear01 <= showEps) {
         b.root.visible = false;
       } else if (!b.targetVisible && b.appear01 <= hideEps) {
@@ -111,3 +137,34 @@ function _smoothstep01(x: number): number {
 const _tmpMat = new THREE.Matrix4();
 const _tmpFrustum = new THREE.Frustum();
 const _tmpBox = new THREE.Box3();
+const _tmpV = new THREE.Vector3();
+
+function _boxOverlapsVerticalNdc(camera: THREE.Camera, worldBox: THREE.Box3, yMin: number, yMax: number): boolean {
+  const min = worldBox.min;
+  const max = worldBox.max;
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let any = false;
+
+  const xs = [min.x, max.x];
+  const ys = [min.y, max.y];
+  const zs = [min.z, max.z];
+
+  for (const x of xs) {
+    for (const y of ys) {
+      for (const z of zs) {
+        _tmpV.set(x, y, z).project(camera);
+        if (!Number.isFinite(_tmpV.y) || !Number.isFinite(_tmpV.z)) continue;
+        if (_tmpV.z < -1 || _tmpV.z > 1) continue;
+        any = true;
+        if (_tmpV.y < minY) minY = _tmpV.y;
+        if (_tmpV.y > maxY) maxY = _tmpV.y;
+      }
+    }
+  }
+
+  if (!any) return false;
+  return maxY >= yMin && minY <= yMax;
+}
+
