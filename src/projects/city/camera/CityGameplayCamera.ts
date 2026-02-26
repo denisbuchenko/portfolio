@@ -12,6 +12,15 @@ export class CityGameplayCamera {
   private _tmpV3a = new THREE.Vector3();
   private _tmpV3b = new THREE.Vector3();
 
+  computeFixedQuaternionInto(out: THREE.Quaternion): THREE.Quaternion {
+    const view = CITY_CAMERA.gameplay.view;
+    const yaw = (view.yawDeg * Math.PI) / 180;
+    const pitch = (view.pitchDeg * Math.PI) / 180;
+    const roll = (view.rollDeg * Math.PI) / 180;
+    this._baseQuat.setFromEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"));
+    return this._composeGameplayQuaternionInto(out);
+  }
+
   computeCameraPosForTarget(targetPos: THREE.Vector3): THREE.Vector3 {
     const view = CITY_CAMERA.gameplay.view;
     const yaw = (view.yawDeg * Math.PI) / 180;

@@ -29,6 +29,7 @@ export class CityApp {
   private _overviewCamera: THREE.OrthographicCamera;
   private _overviewPerspectiveCamera: THREE.PerspectiveCamera;
   private _gameCamera: THREE.PerspectiveCamera;
+  private _focusCamera: THREE.PerspectiveCamera;
   private _gameOrthoCamera: THREE.OrthographicCamera;
   private _activeCamera: THREE.Camera;
 
@@ -112,6 +113,11 @@ export class CityApp {
     this._gameCamera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
     this._gameCamera.position.set(0, 12, 18);
     this._gameCamera.lookAt(0, 0, 0);
+
+    // Временная камера для плавного перехода overview -> gameplay без "скачка" при смене типа камеры.
+    this._focusCamera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+    this._focusCamera.position.set(0, 12, 18);
+    this._focusCamera.lookAt(0, 0, 0);
 
     this._gameOrthoCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 2000);
     this._gameOrthoCamera.position.set(0, 12, 18);
@@ -323,6 +329,9 @@ export class CityApp {
     this._gameCamera.aspect = aspect;
     this._gameCamera.updateProjectionMatrix();
 
+    this._focusCamera.aspect = aspect;
+    this._focusCamera.updateProjectionMatrix();
+
     // Игровая ортхо-камера: size задаётся конфигом, подстраиваем по aspect.
     const halfH = (CITY_CAMERA.gameplay.orthoViewSize * 0.5);
     const halfW = halfH * aspect;
@@ -424,6 +433,12 @@ export class CityApp {
   private _focusT = 0;
   private _focusFrom = new THREE.Vector3();
   private _focusTo = new THREE.Vector3();
+  private _focusFromQuat = new THREE.Quaternion();
+  private _focusToQuat = new THREE.Quaternion();
+  private _focusFromFov = 55;
+  private _focusToFov = 55;
+  private _tmpDir = new THREE.Vector3();
+  private _tmpFocusPos = new THREE.Vector3();
 
   private _beginFocusToStart(): void {
     if (!this._cityRoot) return;
@@ -434,23 +449,75 @@ export class CityApp {
     this._startBtn.setVisible(false);
     this._focusT = 0;
     const overviewCam = (CITY_CAMERA.overview.usePerspective ?? false) ? this._overviewPerspectiveCamera : this._overviewCamera;
+
+    // Старт перехода: ровно текущее состояние overview камеры.
     this._focusFrom.copy(overviewCam.position);
+    this._focusFromQuat.copy(overviewCam.quaternion);
+    this._focusFromFov = this._getFovForCamera(overviewCam);
+
+    // Конец перехода: игровая камера.
     this._focusTo.copy(this._gameplayCamera.computeCameraPosForTarget(this._startWorldPos));
+    this._gameplayCamera.computeFixedQuaternionInto(this._focusToQuat);
+    this._focusToFov = this._gameCamera.fov;
+
+    // Переход выполняем перспективной камерой, но стартовые параметры подгоняем так,
+    // чтобы при смене типа камеры (ортхо->персп) не было "попа".
+    this._focusCamera.position.copy(this._focusFrom);
+    this._focusCamera.quaternion.copy(this._focusFromQuat);
+    this._focusCamera.fov = this._focusFromFov;
+    this._focusCamera.updateProjectionMatrix();
+    this._activeCamera = this._focusCamera;
   }
 
   private _updateFocus(dtSec: number): void {
     this._focusT += dtSec;
     const t01 = Math.min(1, this._focusT / Math.max(0.001, CITY_CAMERA.focusStart.travelSec));
     const k = t01 * t01 * (3 - 2 * t01); // smoothstep
-    const pos = new THREE.Vector3().lerpVectors(this._focusFrom, this._focusTo, k);
-    const cam = this._getGameplayCamera();
-    cam.position.copy(pos);
-    this._gameplayCamera.applyFixedRotation(cam);
-    this._activeCamera = cam;
+    this._tmpFocusPos.lerpVectors(this._focusFrom, this._focusTo, k);
+
+    // Плавно интерполируем pos + quat + fov на transition-камере.
+    // Это убирает скачок при первом кадре после клика (смена типа камеры) и скачок в конце перехода.
+    this._focusCamera.position.copy(this._tmpFocusPos);
+    this._focusCamera.quaternion.slerpQuaternions(this._focusFromQuat, this._focusToQuat, k);
+    this._focusCamera.fov = THREE.MathUtils.lerp(this._focusFromFov, this._focusToFov, k);
+    this._focusCamera.updateProjectionMatrix();
+    this._activeCamera = this._focusCamera;
 
     if (t01 >= 1) {
+      // Перед переключением синхронизируем игровую камеру с финальным состоянием transition-камеры,
+      // чтобы не было "попа" от смены объекта камеры.
+      this._gameCamera.position.copy(this._focusCamera.position);
+      this._gameCamera.quaternion.copy(this._focusCamera.quaternion);
+      this._gameCamera.fov = this._focusToFov;
+      this._gameCamera.updateProjectionMatrix();
       this._beginPlaying();
     }
+  }
+
+  private _getFovForCamera(camera: THREE.Camera): number {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyCam = camera as any;
+    if (anyCam.isPerspectiveCamera) {
+      const c = camera as THREE.PerspectiveCamera;
+      return THREE.MathUtils.clamp(c.fov, 10, 120);
+    }
+    if (!anyCam.isOrthographicCamera) return 55;
+
+    const c = camera as THREE.OrthographicCamera;
+
+    // Для ортхо считаем эквивалентный FOV так, чтобы на плоскости y=0 масштаб совпал.
+    const orthoHeight = Math.abs(c.top - c.bottom) / Math.max(1e-6, c.zoom || 1);
+    const pos = c.position;
+    c.getWorldDirection(this._tmpDir);
+    const dy = this._tmpDir.y;
+    if (Math.abs(dy) < 1e-6) return 25;
+
+    // Пересечение луча камеры с плоскостью y=0.
+    const t = -pos.y / dy;
+    const dist = Math.max(1e-3, Math.abs(t));
+    const fovRad = 2 * Math.atan((orthoHeight * 0.5) / dist);
+    const fovDeg = (fovRad * 180) / Math.PI;
+    return THREE.MathUtils.clamp(fovDeg, 10, 120);
   }
 
   private _beginPlaying(): void {
