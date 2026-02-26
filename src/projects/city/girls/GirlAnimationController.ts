@@ -53,6 +53,7 @@ export class GirlAnimationController {
   }
 
   playStay(opts?: Readonly<{ fadeSec?: number; restart?: boolean }>): void {
+    this._girl.setFlVisible(false);
     this._girl.play(CITY_GIRLS.animations.stay, {
       fadeSec: opts?.fadeSec ?? 0.15,
       loop: THREE.LoopRepeat,
@@ -63,6 +64,7 @@ export class GirlAnimationController {
   }
 
   playHello(opts?: Readonly<{ fadeSec?: number; restart?: boolean }>): void {
+    this._girl.setFlVisible(false);
     this._girl.play(CITY_GIRLS.animations.hello, {
       fadeSec: opts?.fadeSec ?? CITY_GIRLS.hello.fadeSec,
       loop: THREE.LoopOnce,
@@ -73,6 +75,7 @@ export class GirlAnimationController {
   }
 
   playLove(opts?: Readonly<{ fadeSec?: number; restart?: boolean }>): void {
+    this._girl.setFlVisible(true);
     this._girl.play(CITY_GIRLS.animations.love, {
       fadeSec: opts?.fadeSec ?? CITY_GIRLS.love.fadeSec,
       loop: THREE.LoopOnce,
@@ -83,6 +86,7 @@ export class GirlAnimationController {
   }
 
   playLove2(opts?: Readonly<{ fadeSec?: number; restart?: boolean }>): void {
+    this._girl.setFlVisible(true);
     this._girl.play(CITY_GIRLS.animations.love2, {
       fadeSec: opts?.fadeSec ?? CITY_GIRLS.love.fadeSec,
       loop: THREE.LoopRepeat,

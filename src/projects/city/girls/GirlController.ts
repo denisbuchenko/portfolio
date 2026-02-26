@@ -18,6 +18,8 @@ export class GirlController {
   private _active: THREE.AnimationAction | null = null;
   private _finishedQueue: string[] = [];
 
+  private _fl: THREE.Object3D | null = null;
+
   private _tmpV3a = new THREE.Vector3();
   private _tmpV3b = new THREE.Vector3();
   private _tmpQ = new THREE.Quaternion();
@@ -26,6 +28,11 @@ export class GirlController {
   constructor(opts: Readonly<{ id: string; instance: GirlInstance }>) {
     this.id = opts.id;
     this.instance = opts.instance;
+
+    // Вспомогательный объект в ассете (public/city/Girl.gltf): "fl"
+    // Должен быть видим только в love/love2.
+    this._fl = this.instance.root.getObjectByName("fl") ?? null;
+    if (this._fl) this._fl.visible = false;
 
     for (const clip of this.instance.clips) {
       const a = this.instance.mixer.clipAction(clip);
@@ -103,6 +110,11 @@ export class GirlController {
     }
 
     this.instance.root.quaternion.slerp(this._tmpQ, THREE.MathUtils.clamp(slerp01, 0, 1));
+  }
+
+  setFlVisible(visible: boolean): void {
+    if (!this._fl) return;
+    this._fl.visible = visible;
   }
 
   play(name: string, opts?: _PlayOpts): void {
