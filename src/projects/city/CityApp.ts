@@ -572,6 +572,8 @@ export class CityApp {
         if (clipName === CITY_GIRLS.animations.hello) {
           st.helloCooldownSec = CITY_GIRLS.hello.repeatDelaySec;
           st.mode = "stay";
+          // Синхронизация: hello кончился → цилиндр прячем.
+          this._setGirlGoalVisible(g, false);
           g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: CITY_GIRLS.hello.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity, restart: true });
         } else if (clipName === CITY_GIRLS.animations.love) {
           st.mode = "love2";
@@ -594,12 +596,9 @@ export class CityApp {
 
       const near = distToGirl <= CITY_GIRLS.hello.distance;
 
-      // Цилиндр-цель появляется только при приближении (и пока цель не достигнута).
-      g.goal.visible = CITY_GIRLS.debug.showGoalCylinders && near && !st.goalReached;
-
       if (!st.goalReached && distToGoal <= CITY_GIRLS.goal.reachRadius) {
         st.goalReached = true;
-        g.goal.visible = false;
+        this._setGirlGoalVisible(g, false);
         st.mode = "love";
         // eslint-disable-next-line no-console
         console.log("[CityGirl] goal reached", { id: g.id, markerName: g.markerName });
@@ -612,6 +611,8 @@ export class CityApp {
 
           if (st.helloCooldownSec <= 0 && !g.controller.isActive(CITY_GIRLS.animations.hello)) {
             st.mode = "hello";
+            // Синхронизация: старт hello → показываем цилиндр.
+            this._setGirlGoalVisible(g, true);
             g.controller.play(CITY_GIRLS.animations.hello, {
               fadeSec: CITY_GIRLS.hello.fadeSec,
               loop: THREE.LoopOnce,
@@ -622,6 +623,7 @@ export class CityApp {
           }
         } else {
           // Вышли из радиуса: возвращаемся к исходной позиции/повороту.
+          this._setGirlGoalVisible(g, false);
           g.controller.setWorldPosition(g.home.position);
           g.controller.setWorldQuaternion(g.home.quaternion);
           // Мягкий возврат (помогает, если девочка успела развернуться).
@@ -661,24 +663,28 @@ export class CityApp {
 
   private _createGirlGoalCylinder(girlRoot: THREE.Object3D): THREE.Mesh {
     const geo = new THREE.CylinderGeometry(CITY_GIRLS.goal.radius, CITY_GIRLS.goal.radius, CITY_GIRLS.goal.height, 32, 1, false);
-    const mat = new THREE.MeshStandardMaterial({
+    // Важно: цилиндр лежит очень близко к дороге, а у пола включён polygonOffset → depth может "съесть" цилиндр.
+    // Поэтому делаем материал без depthTest и чуть ярче — это чисто UI/маркер цели.
+    const mat = new THREE.MeshBasicMaterial({
       color: CITY_GIRLS.goal.color,
       transparent: true,
       opacity: CITY_GIRLS.goal.opacity,
       depthWrite: false,
-      emissive: new THREE.Color(CITY_GIRLS.goal.color),
-      emissiveIntensity: 0.35
+      depthTest: false,
+      side: THREE.DoubleSide
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = "GirlGoalCylinder";
     mesh.castShadow = false;
     mesh.receiveShadow = false;
+    mesh.renderOrder = 20;
 
     const pos = girlRoot.getWorldPosition(new THREE.Vector3());
     const q = girlRoot.getWorldQuaternion(new THREE.Quaternion());
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q).normalize();
     mesh.position.copy(pos).addScaledVector(forward, CITY_GIRLS.goal.offsetForward);
-    mesh.position.y = pos.y + CITY_GIRLS.goal.y;
+    // Поднимаем так, чтобы цилиндр гарантированно был над поверхностью.
+    mesh.position.y = pos.y + CITY_GIRLS.goal.y + CITY_GIRLS.goal.height * 0.5 + 0.03;
 
     mesh.visible = CITY_GIRLS.debug.showGoalCylinders;
     return mesh;
@@ -701,7 +707,7 @@ export class CityApp {
       g.controller.setWorldQuaternion(g.home.quaternion);
 
       // visuals
-      g.goal.visible = false;
+      this._setGirlGoalVisible(g, false);
 
       // animation
       g.controller.consumeFinished();
@@ -709,6 +715,11 @@ export class CityApp {
 
       if (g.bounds) g.bounds.update();
     }
+  }
+
+  private _setGirlGoalVisible(g: _GirlRuntime, visible: boolean): void {
+    // Полный контроль видимости в одном месте (для синхронизации с анимацией/состояниями).
+    g.goal.visible = (CITY_GIRLS.debug.showGoalCylinders ?? true) && visible && !g.state.goalReached;
   }
 
   private _updateOverview(_dtSec: number): void {
