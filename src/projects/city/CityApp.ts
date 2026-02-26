@@ -8,8 +8,26 @@ import { TurnInput } from "./input/TurnInput";
 import { StartButton } from "./ui/StartButton";
 import { CrashOverlay } from "./ui/CrashOverlay";
 import { BuildingsIndex } from "./world/BuildingsIndex";
+import { CITY_GIRLS } from "./girls/girlsConfig";
+import { GirlLoader } from "./girls/GirlLoader";
+import { GirlController } from "./girls/GirlController";
 
 type _Mode = "overview" | "focusStart" | "playing" | "crashed";
+
+type _GirlRuntime = Readonly<{
+  id: string;
+  markerName: string;
+  controller: GirlController;
+  goal: THREE.Mesh;
+  axes?: THREE.AxesHelper;
+  bounds?: THREE.BoxHelper;
+  state: {
+    mode: "stay" | "hello" | "love" | "love2";
+    helloCooldownSec: number;
+    wasNear: boolean;
+    goalReached: boolean;
+  };
+}>;
 
 export class CityApp {
   private _host: HTMLElement;
@@ -44,6 +62,8 @@ export class CityApp {
   private _bikerRoot: THREE.Group | null = null;
   private _bikerMixer: THREE.AnimationMixer | null = null;
   private _pedalActions: THREE.AnimationAction[] = [];
+  private _girlLoader: GirlLoader | null = null;
+  private _girls: _GirlRuntime[] = [];
 
   private _buildings = new BuildingsIndex();
   private _activeBuildingMeshes: THREE.Mesh[] = [];
@@ -181,6 +201,15 @@ export class CityApp {
     this._crashOverlay.dispose();
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
 
+    for (const g of this._girls) {
+      g.controller.dispose();
+      g.goal.removeFromParent();
+      g.axes?.removeFromParent();
+      g.bounds?.removeFromParent();
+    }
+    this._girls = [];
+    this._girlLoader = null;
+
     this._bikerMixer = null;
     this._bikerRoot?.removeFromParent();
     this._cityRoot?.removeFromParent();
@@ -234,6 +263,9 @@ export class CityApp {
     this._cityRoot.updateMatrixWorld(true);
     this._mapBox.setFromObject(this._cityRoot);
     this._mapBox.getCenter(this._mapCenter);
+
+    // NPC girls (явная инициализация).
+    await this._initGirls();
 
     // “Пол главнее”: убираем z-fighting/конфликты при пересечениях со сплющенными домами.
     this._applyFloorPriority(this._cityRoot);
@@ -377,9 +409,232 @@ export class CityApp {
       // wait (reset/reload будет добавлен позже)
     }
 
+    // Девочки: миксеры обновляем всегда, а игровую логику — только в режиме playing.
+    for (const g of this._girls) g.controller.update(dtSec);
+    if (this._mode === "playing") {
+      this._updateGirls(dtSec);
+    }
+
     this._bikerMixer?.update(dtSec);
     this._renderer.render(this._scene, this._activeCamera);
   };
+
+  private async _initGirls(): Promise<void> {
+    if (!this._cityRoot) return;
+
+    this._girlLoader = new GirlLoader();
+    await this._girlLoader.load();
+
+    this._girls = [];
+
+    const markers = this._resolveGirlMarkers(this._cityRoot);
+
+    // eslint-disable-next-line no-console
+    console.log("[CityGirl] init", { requested: CITY_GIRLS.markerNames.slice(0), resolved: markers.map((m) => m.name) });
+
+    for (let i = 0; i < markers.length; i++) {
+      const markerName = markers[i].name;
+      const marker = markers[i].object3d;
+
+      // Маркер — пустышка. Прячем.
+      marker.traverse((o) => {
+        o.visible = false;
+      });
+
+      const markerPos = new THREE.Vector3();
+      const markerQ = new THREE.Quaternion();
+      marker.getWorldPosition(markerPos);
+      marker.getWorldQuaternion(markerQ);
+
+      // eslint-disable-next-line no-console
+      console.log("[CityGirl] marker", { markerName, markerPos: markerPos.toArray() });
+
+      const instance = this._girlLoader.createInstance({ name: `GirlNpc-${i + 1}` });
+      this._scene.add(instance.root);
+
+      // Ставим на карту: XZ из маркера, Y = 0 как у игрока.
+      instance.root.position.set(markerPos.x, 0, markerPos.z);
+      instance.root.quaternion.copy(markerQ);
+      if (Math.abs(CITY_GIRLS.spawnExtraYawDeg) > 1e-6) {
+        instance.root.rotation.y += (CITY_GIRLS.spawnExtraYawDeg * Math.PI) / 180;
+      }
+
+      // Debug helpers.
+      let axes: THREE.AxesHelper | undefined;
+      let bounds: THREE.BoxHelper | undefined;
+      if (CITY_GIRLS.debug.showAxes) {
+        axes = new THREE.AxesHelper(2.2);
+        axes.name = "GirlNpcAxes";
+        instance.root.add(axes);
+      }
+      if (CITY_GIRLS.debug.showBounds) {
+        bounds = new THREE.BoxHelper(instance.root, 0xff00ff);
+        bounds.name = "GirlNpcBounds";
+        bounds.update();
+        this._scene.add(bounds);
+      }
+
+      const controller = new GirlController({ id: `girl-${i + 1}`, instance });
+
+      const goal = this._createGirlGoalCylinder(instance.root);
+      this._scene.add(goal);
+
+      this._girls.push({
+        id: `girl-${i + 1}`,
+        markerName,
+        controller,
+        goal,
+        axes,
+        bounds,
+        state: {
+          mode: "stay",
+          helloCooldownSec: 0,
+          wasNear: false,
+          goalReached: false
+        }
+      });
+    }
+  }
+
+  private _resolveGirlMarkers(root: THREE.Object3D): ReadonlyArray<{ name: string; object3d: THREE.Object3D }> {
+    // 1) Пробуем точные имена из конфига.
+    const exact: { name: string; object3d: THREE.Object3D }[] = [];
+    const missing: string[] = [];
+    for (const name of CITY_GIRLS.markerNames) {
+      const o = root.getObjectByName(name);
+      if (o) exact.push({ name, object3d: o });
+      else missing.push(name);
+    }
+    if (exact.length > 0) return exact;
+
+    // 2) Авто-поиск: в city.glb имена могут отличаться от city.gltf.
+    const candidates: { name: string; object3d: THREE.Object3D; num: number }[] = [];
+    const anyUserLike: string[] = [];
+
+    root.traverse((o) => {
+      const raw = (o.name ?? "").trim();
+      if (!raw) return;
+      const lower = raw.toLowerCase();
+      if (lower.includes("user")) anyUserLike.push(raw);
+
+      // "user 1" / "user1" / "user_1" / "users/user 1" etc.
+      const m = /user[^0-9]*([0-9]+)/i.exec(raw);
+      if (!m) return;
+      const num = Number(m[1]);
+      if (!Number.isFinite(num)) return;
+      candidates.push({ name: raw, object3d: o, num });
+    });
+
+    candidates.sort((a, b) => a.num - b.num);
+
+    // eslint-disable-next-line no-console
+    console.warn("[CityGirl] exact markers not found; auto-scan", {
+      missing,
+      foundUserLikeCount: anyUserLike.length,
+      foundUserLikeSample: anyUserLike.slice(0, 30),
+      resolvedCount: candidates.length,
+      resolvedNames: candidates.map((c) => c.name)
+    });
+
+    return candidates;
+  }
+
+  private _updateGirls(dtSec: number): void {
+    if (!this._bikerRoot) return;
+
+    const biker = this._bikerRoot.position;
+    const dt = Math.max(0, dtSec);
+
+    for (const g of this._girls) {
+      const st = g.state;
+
+      // Finished clips → transitions
+      const finished = g.controller.consumeFinished();
+      for (const clipName of finished) {
+        if (clipName === CITY_GIRLS.animations.hello) {
+          st.helloCooldownSec = CITY_GIRLS.hello.repeatDelaySec;
+          st.mode = "stay";
+          g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: CITY_GIRLS.hello.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity });
+        } else if (clipName === CITY_GIRLS.animations.love) {
+          st.mode = "love2";
+          g.controller.play(CITY_GIRLS.animations.love2, { fadeSec: CITY_GIRLS.love.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity });
+        }
+      }
+
+      st.helloCooldownSec = Math.max(0, st.helloCooldownSec - dt);
+
+      // Distances in XZ.
+      const girlPos = g.controller.instance.root.getWorldPosition(this._tmpV3a);
+      const dx = biker.x - girlPos.x;
+      const dz = biker.z - girlPos.z;
+      const distToGirl = Math.sqrt(dx * dx + dz * dz);
+
+      const goalPos = g.goal.getWorldPosition(this._tmpV3b);
+      const gx = biker.x - goalPos.x;
+      const gz = biker.z - goalPos.z;
+      const distToGoal = Math.sqrt(gx * gx + gz * gz);
+
+      const near = distToGirl <= CITY_GIRLS.hello.distance;
+
+      if (!st.goalReached && distToGoal <= CITY_GIRLS.goal.reachRadius) {
+        st.goalReached = true;
+        g.goal.visible = false;
+        st.mode = "love";
+        // eslint-disable-next-line no-console
+        console.log("[CityGirl] goal reached", { id: g.id, markerName: g.markerName });
+        g.controller.play(CITY_GIRLS.animations.love, { fadeSec: CITY_GIRLS.love.fadeSec, loop: THREE.LoopOnce, repetitions: 1, clampWhenFinished: true, restart: true });
+      }
+
+      if (!st.goalReached) {
+        if (near) {
+          g.controller.faceToWorld(biker, CITY_GIRLS.hello.faceSlerp01);
+
+          if (st.helloCooldownSec <= 0 && !g.controller.isActive(CITY_GIRLS.animations.hello)) {
+            st.mode = "hello";
+            g.controller.play(CITY_GIRLS.animations.hello, {
+              fadeSec: CITY_GIRLS.hello.fadeSec,
+              loop: THREE.LoopOnce,
+              repetitions: 1,
+              clampWhenFinished: true,
+              restart: true
+            });
+          }
+        } else if (st.wasNear) {
+          st.mode = "stay";
+          st.helloCooldownSec = 0;
+          g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: CITY_GIRLS.hello.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity });
+        }
+        st.wasNear = near;
+      }
+
+      if (g.bounds) g.bounds.update();
+    }
+  }
+
+  private _createGirlGoalCylinder(girlRoot: THREE.Object3D): THREE.Mesh {
+    const geo = new THREE.CylinderGeometry(CITY_GIRLS.goal.radius, CITY_GIRLS.goal.radius, CITY_GIRLS.goal.height, 32, 1, false);
+    const mat = new THREE.MeshStandardMaterial({
+      color: CITY_GIRLS.goal.color,
+      transparent: true,
+      opacity: CITY_GIRLS.goal.opacity,
+      depthWrite: false,
+      emissive: new THREE.Color(CITY_GIRLS.goal.color),
+      emissiveIntensity: 0.35
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = "GirlGoalCylinder";
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+
+    const pos = girlRoot.getWorldPosition(new THREE.Vector3());
+    const q = girlRoot.getWorldQuaternion(new THREE.Quaternion());
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q).normalize();
+    mesh.position.copy(pos).addScaledVector(forward, CITY_GIRLS.goal.offsetForward);
+    mesh.position.y = pos.y + CITY_GIRLS.goal.y;
+
+    mesh.visible = CITY_GIRLS.debug.showGoalCylinders;
+    return mesh;
+  }
 
   private _updateOverview(_dtSec: number): void {
     if (!this._cityRoot) return;
