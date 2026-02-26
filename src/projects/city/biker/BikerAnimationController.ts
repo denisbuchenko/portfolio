@@ -28,6 +28,10 @@ export class BikerAnimationController {
     this._turnLeftActions = this._createTurnActions(opts.clips, opts.turnLeftNames);
     this._turnRightActions = this._createTurnActions(opts.clips, opts.turnRightNames);
     this._initTurnActions();
+
+    // Важно: применяем первый ключевой кадр right/right armR/right armL сразу,
+    // чтобы не мигать bind/A-позой до первого update().
+    this._applyPoseSnapshot();
   }
 
   update(dtSec: number): void {
@@ -40,7 +44,12 @@ export class BikerAnimationController {
    */
   setPedalSpeed01(speed01: number, maxPlaybackSpeed: number): void {
     const k = Math.max(0, speed01) * Math.max(0, maxPlaybackSpeed);
-    for (const a of this._pedalActions) a.setEffectiveTimeScale(k);
+    // Когда speed01=0, педали не должны "держать" первый кадр и портить дефолтную позу.
+    const w = THREE.MathUtils.clamp(speed01, 0, 1);
+    for (const a of this._pedalActions) {
+      a.setEffectiveWeight(w);
+      a.setEffectiveTimeScale(k);
+    }
   }
 
   /**
@@ -125,7 +134,10 @@ export class BikerAnimationController {
 
   reset(): void {
     // Педали — в ноль.
-    for (const a of this._pedalActions) a.setEffectiveTimeScale(0.0001);
+    for (const a of this._pedalActions) {
+      a.setEffectiveWeight(0);
+      a.setEffectiveTimeScale(0.0001);
+    }
 
     // Повороты — вернуть на старт.
     this._turnPending = null;
@@ -137,6 +149,16 @@ export class BikerAnimationController {
     this._fadeOutActions(this._turnRightActions, 0.05);
   }
 
+  private _applyPoseSnapshot(): void {
+    // Педали на старте не должны мешать дефолтной позе.
+    for (const a of this._pedalActions) a.setEffectiveWeight(0);
+    // Right-поза: right + arms, на первом ключе.
+    this._setTurnWeights(-1);
+    this._snapTurnToStart(-1);
+    // delta > 0, чтобы миксер гарантированно “применил” треки в текущем времени.
+    this._mixer.update(1e-6);
+  }
+
   private _createPedalActions(clips: THREE.AnimationClip[], pedalClipNames: readonly string[]): THREE.AnimationAction[] {
     const actions: THREE.AnimationAction[] = [];
     for (const name of pedalClipNames) {
@@ -146,7 +168,8 @@ export class BikerAnimationController {
       a.enabled = true;
       a.setLoop(THREE.LoopRepeat, Infinity);
       a.play();
-      a.setEffectiveWeight(1);
+      // Вес задаём через `setPedalSpeed01`, чтобы speed01=0 не портил позу.
+      a.setEffectiveWeight(0);
       a.setEffectiveTimeScale(0.0001);
       actions.push(a);
     }

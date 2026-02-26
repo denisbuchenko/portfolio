@@ -42,6 +42,9 @@ export class GirlController {
       repetitions: Infinity,
       clampWhenFinished: false
     });
+
+    // Важно: применяем первый ключевой кадр сразу, чтобы не мигать bind/A-позой до первого update().
+    this._applyPoseSnapshot();
   }
 
   dispose(): void {
@@ -133,6 +136,11 @@ export class GirlController {
       a.fadeIn(fadeSec);
     }
     this._active = a;
+  }
+
+  private _applyPoseSnapshot(): void {
+    // delta > 0, чтобы миксер гарантированно “применил” треки в текущем времени.
+    this.instance.mixer.update(1e-6);
   }
 
   private _onFinished = (e: unknown): void => {
