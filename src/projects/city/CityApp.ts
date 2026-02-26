@@ -3,40 +3,20 @@ import { CITY_ANIMATION, CITY_ASSETS, CITY_CAMERA, CITY_GAMEPLAY, CITY_TUNING, C
 import { CHEL_DEFAULT_MANIFEST } from "./contracts";
 import { loadGltf, enableShadowsAndSrgb } from "./three/loadGltf";
 import { installMeshBvhRaycast } from "./three/meshBvh";
+import { projectToScreen } from "./three/projectToScreen";
 import { ScrollInput } from "./input/ScrollInput";
 import { TurnInput } from "./input/TurnInput";
 import { StartButton } from "./ui/StartButton";
 import { CrashOverlay } from "./ui/CrashOverlay";
-import { CITY_GIRLS } from "./girls/girlsConfig";
-import { GirlLoader } from "./girls/GirlLoader";
-import { GirlController } from "./girls/GirlController";
-import { GirlAnimationController } from "./girls/GirlAnimationController";
+import { CityGirlsSystem } from "./girls/CityGirlsSystem";
 import { BikerLoader } from "./biker/BikerLoader";
 import { BikerAnimationController } from "./biker/BikerAnimationController";
 import { CityWorldController } from "./cityWorld/CityWorldController";
 import { CityGameLogic } from "./gameLogic/CityGameLogic";
+import { CityGameplayCamera } from "./camera/CityGameplayCamera";
+import { applyCityCameraExtraTransform } from "./camera/cityCameraExtraTransform";
 
 type _Mode = "overview" | "focusStart" | "playing" | "crashed";
-
-type _GirlRuntime = Readonly<{
-  id: string;
-  markerName: string;
-  controller: GirlController;
-  anim: GirlAnimationController;
-  goal: THREE.Mesh;
-  axes?: THREE.AxesHelper;
-  bounds?: THREE.BoxHelper;
-  helloRing?: THREE.Mesh;
-  home: {
-    position: THREE.Vector3;
-    quaternion: THREE.Quaternion;
-  };
-  state: {
-    mode: "stay" | "hello" | "love" | "love2";
-    wasNear: boolean;
-    goalReached: boolean;
-  };
-}>;
 
 export class CityApp {
   private _host: HTMLElement;
@@ -71,8 +51,8 @@ export class CityApp {
   private _bikerRoot: THREE.Group | null = null;
   private _bikerAnim: BikerAnimationController | null = null;
   private _gameLogic: CityGameLogic | null = null;
-  private _girlLoader: GirlLoader | null = null;
-  private _girls: _GirlRuntime[] = [];
+  private _girlsSystem: CityGirlsSystem;
+  private _gameplayCamera = new CityGameplayCamera();
 
   private _world = new CityWorldController();
   private _tipLocal = new THREE.Vector3(
@@ -91,11 +71,6 @@ export class CityApp {
 
   // Gameplay state
   private _cruiseSpeed = CITY_GAMEPLAY.bikerMotion.speed.cruiseSpeed;
-  private _gameplayBaseQuat = new THREE.Quaternion();
-  private _tmpQ = new THREE.Quaternion();
-  private _tmpQ2 = new THREE.Quaternion();
-  private _tmpV3a = new THREE.Vector3();
-  private _tmpV3b = new THREE.Vector3();
 
   // NOTE: город/дома/окклюзия/коллизии — в `CityWorldController`.
 
@@ -120,6 +95,8 @@ export class CityApp {
 
     this._scene = new THREE.Scene();
     this._scene.background = new THREE.Color(0x070a10);
+
+    this._girlsSystem = new CityGirlsSystem({ scene: this._scene });
 
     this._overviewCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 2000);
     // Камера смотрит строго вниз, поэтому фиксируем up, чтобы не было "рандомного" поворота экрана.
@@ -182,14 +159,7 @@ export class CityApp {
     this._crashOverlay.dispose();
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
 
-    for (const g of this._girls) {
-      g.controller.dispose();
-      g.goal.removeFromParent();
-      g.axes?.removeFromParent();
-      g.bounds?.removeFromParent();
-    }
-    this._girls = [];
-    this._girlLoader = null;
+    this._girlsSystem.dispose();
 
     this._bikerAnim = null;
     this._gameLogic = null;
@@ -249,7 +219,7 @@ export class CityApp {
     this._mapBox.getCenter(this._mapCenter);
 
     // NPC girls (явная инициализация).
-    await this._initGirls();
+    await this._girlsSystem.init({ cityRoot: this._cityRoot });
 
     // “Пол главнее”: убираем z-fighting/конфликты при пересечениях со сплющенными домами.
     this._applyFloorPriority(this._cityRoot);
@@ -315,15 +285,7 @@ export class CityApp {
       world: this._world,
       bikerRoot: this._bikerRoot,
       bikerAnim: this._bikerAnim,
-      girls: this._girls.map((g) => ({
-        controller: g.controller,
-        anim: g.anim,
-        goal: g.goal,
-        homePos: g.home.position,
-        homeQ: g.home.quaternion,
-        state: g.state,
-        setGoalVisible: (visible) => this._setGirlGoalVisible(g, visible),
-      }))
+      girls: this._girlsSystem.asGameLogicGirls()
     });
   };
 
@@ -394,225 +356,11 @@ export class CityApp {
     }
 
     // Девочки: миксеры обновляем всегда, логика реакций — в `CityGameLogic` внутри `_updatePlaying`.
-    for (const g of this._girls) {
-      g.controller.update(dtSec);
-      g.bounds?.update();
-    }
+    this._girlsSystem.updateAlways(dtSec);
 
     this._bikerAnim?.update(dtSec);
     this._renderer.render(this._scene, this._activeCamera);
   };
-
-  private async _initGirls(): Promise<void> {
-    if (!this._cityRoot) return;
-
-    this._girlLoader = new GirlLoader();
-    await this._girlLoader.load();
-
-    this._girls = [];
-
-    const markers = this._resolveGirlMarkers(this._cityRoot);
-
-    // eslint-disable-next-line no-console
-    console.log("[CityGirl] init", { requested: CITY_GIRLS.markerNames.slice(0), resolved: markers.map((m) => m.name) });
-
-    for (let i = 0; i < markers.length; i++) {
-      const markerName = markers[i].name;
-      const marker = markers[i].object3d;
-
-      // Маркер — пустышка. Прячем.
-      marker.traverse((o) => {
-        o.visible = false;
-      });
-
-      const markerPos = new THREE.Vector3();
-      const markerQ = new THREE.Quaternion();
-      marker.getWorldPosition(markerPos);
-      marker.getWorldQuaternion(markerQ);
-
-      // eslint-disable-next-line no-console
-      console.log("[CityGirl] marker", { markerName, markerPos: markerPos.toArray() });
-
-      const instance = this._girlLoader.createInstance({ name: `GirlNpc-${i + 1}` });
-      this._scene.add(instance.root);
-
-      // Ставим на карту: XZ из маркера, Y = 0 как у игрока.
-      instance.root.position.set(markerPos.x, 0, markerPos.z);
-      instance.root.quaternion.copy(markerQ);
-      if (Math.abs(CITY_GIRLS.spawnExtraYawDeg) > 1e-6) {
-        instance.root.rotation.y += (CITY_GIRLS.spawnExtraYawDeg * Math.PI) / 180;
-      }
-
-      const homePos = instance.root.position.clone();
-      const homeQ = instance.root.quaternion.clone();
-
-      // Debug helpers.
-      let axes: THREE.AxesHelper | undefined;
-      let bounds: THREE.BoxHelper | undefined;
-      let helloRing: THREE.Mesh | undefined;
-      if (CITY_GIRLS.debug.showAxes) {
-        axes = new THREE.AxesHelper(2.2);
-        axes.name = "GirlNpcAxes";
-        instance.root.add(axes);
-      }
-      if (CITY_GIRLS.debug.showBounds) {
-        bounds = new THREE.BoxHelper(instance.root, 0xff00ff);
-        bounds.name = "GirlNpcBounds";
-        bounds.update();
-        this._scene.add(bounds);
-      }
-      if (CITY_GIRLS.debug.showHelloRadiusRing) {
-        helloRing = this._createGirlHelloRadiusRing(CITY_GIRLS.hello.distance);
-        helloRing.position.set(homePos.x, homePos.y + CITY_GIRLS.debug.helloRadiusRing.y, homePos.z);
-        this._scene.add(helloRing);
-      }
-
-      const controller = new GirlController({ id: `girl-${i + 1}`, instance });
-
-      const goal = this._createGirlGoalCylinder(instance.root);
-      this._scene.add(goal);
-      // Появляется только при приближении.
-      goal.visible = false;
-
-      this._girls.push({
-        id: `girl-${i + 1}`,
-        markerName,
-        controller,
-        anim: new GirlAnimationController(controller),
-        goal,
-        axes,
-        bounds,
-        helloRing,
-        home: { position: homePos, quaternion: homeQ },
-        state: {
-          mode: "stay",
-          wasNear: false,
-          goalReached: false
-        }
-      });
-    }
-  }
-
-  private _resolveGirlMarkers(root: THREE.Object3D): ReadonlyArray<{ name: string; object3d: THREE.Object3D }> {
-    // 1) Пробуем точные имена из конфига.
-    const exact: { name: string; object3d: THREE.Object3D }[] = [];
-    const missing: string[] = [];
-    for (const name of CITY_GIRLS.markerNames) {
-      const o = root.getObjectByName(name);
-      if (o) exact.push({ name, object3d: o });
-      else missing.push(name);
-    }
-    if (exact.length > 0) return exact;
-
-    // 2) Авто-поиск: в city.glb имена могут отличаться от city.gltf.
-    const candidates: { name: string; object3d: THREE.Object3D; num: number }[] = [];
-    const anyUserLike: string[] = [];
-
-    root.traverse((o) => {
-      const raw = (o.name ?? "").trim();
-      if (!raw) return;
-      const lower = raw.toLowerCase();
-      if (lower.includes("user")) anyUserLike.push(raw);
-
-      // "user 1" / "user1" / "user_1" / "users/user 1" etc.
-      const m = /user[^0-9]*([0-9]+)/i.exec(raw);
-      if (!m) return;
-      const num = Number(m[1]);
-      if (!Number.isFinite(num)) return;
-      candidates.push({ name: raw, object3d: o, num });
-    });
-
-    candidates.sort((a, b) => a.num - b.num);
-
-    // eslint-disable-next-line no-console
-    console.warn("[CityGirl] exact markers not found; auto-scan", {
-      missing,
-      foundUserLikeCount: anyUserLike.length,
-      foundUserLikeSample: anyUserLike.slice(0, 30),
-      resolvedCount: candidates.length,
-      resolvedNames: candidates.map((c) => c.name)
-    });
-
-    return candidates;
-  }
-
-  private _createGirlHelloRadiusRing(radius: number): THREE.Mesh {
-    const t = Math.max(0.01, CITY_GIRLS.debug.helloRadiusRing.thickness);
-    const inner = Math.max(0.001, radius - t);
-    const outer = Math.max(inner + 0.001, radius);
-    const geo = new THREE.RingGeometry(inner, outer, 48, 1);
-    const mat = new THREE.MeshBasicMaterial({
-      color: CITY_GIRLS.debug.helloRadiusRing.color,
-      transparent: true,
-      opacity: CITY_GIRLS.debug.helloRadiusRing.opacity,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.name = "GirlHelloRadiusRing";
-    mesh.rotation.x = -Math.PI / 2; // XY -> XZ
-    mesh.renderOrder = 10;
-    return mesh;
-  }
-
-  private _createGirlGoalCylinder(girlRoot: THREE.Object3D): THREE.Mesh {
-    const geo = new THREE.CylinderGeometry(CITY_GIRLS.goal.radius, CITY_GIRLS.goal.radius, CITY_GIRLS.goal.height, 32, 1, false);
-    // Важно: цилиндр лежит очень близко к дороге, а у пола включён polygonOffset → depth может "съесть" цилиндр.
-    // Поэтому делаем материал без depthTest и чуть ярче — это чисто UI/маркер цели.
-    const mat = new THREE.MeshBasicMaterial({
-      color: CITY_GIRLS.goal.color,
-      transparent: true,
-      opacity: CITY_GIRLS.goal.opacity,
-      depthWrite: false,
-      depthTest: false,
-      side: THREE.DoubleSide
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.name = "GirlGoalCylinder";
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    mesh.renderOrder = 20;
-
-    const pos = girlRoot.getWorldPosition(new THREE.Vector3());
-    const q = girlRoot.getWorldQuaternion(new THREE.Quaternion());
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q).normalize();
-    mesh.position.copy(pos).addScaledVector(forward, CITY_GIRLS.goal.offsetForward);
-    // Поднимаем так, чтобы цилиндр гарантированно был над поверхностью.
-    mesh.position.y = pos.y + CITY_GIRLS.goal.y + CITY_GIRLS.goal.height * 0.5 + 0.03;
-
-    mesh.visible = CITY_GIRLS.debug.showGoalCylinders;
-    return mesh;
-  }
-
-  private _resetGirlsToHome(reason: string): void {
-    if (this._girls.length === 0) return;
-    // eslint-disable-next-line no-console
-    console.log("[CityGirl] reset", { reason });
-
-    for (const g of this._girls) {
-      // state
-      g.state.mode = "stay";
-      g.state.wasNear = false;
-      g.state.goalReached = false;
-
-      // transform
-      g.controller.setWorldPosition(g.home.position);
-      g.controller.setWorldQuaternion(g.home.quaternion);
-
-      // visuals
-      this._setGirlGoalVisible(g, false);
-
-      // animation
-      g.anim.resetToStay();
-
-      if (g.bounds) g.bounds.update();
-    }
-  }
-
-  private _setGirlGoalVisible(g: _GirlRuntime, visible: boolean): void {
-    // Полный контроль видимости в одном месте (для синхронизации с анимацией/состояниями).
-    g.goal.visible = (CITY_GIRLS.debug.showGoalCylinders ?? true) && visible && !g.state.goalReached;
-  }
 
   private _updateOverview(_dtSec: number): void {
     if (!this._cityRoot) return;
@@ -654,7 +402,7 @@ export class CityApp {
       this._overviewCamera.updateProjectionMatrix();
     }
 
-    this._applyCameraExtraTransform(cam, "overview");
+    applyCityCameraExtraTransform(cam, "overview");
     this._activeCamera = cam;
 
     // Режим города: игнорируем левую/правую границы и следим только за верхом/низом.
@@ -664,7 +412,7 @@ export class CityApp {
     this._world.updateOverviewVisibility(cam, edgeInsetNdc, _dtSec);
 
     // Start кнопка — в центре карты.
-    const p = this._projectToScreen(this._startWorldPos, w, h, cam);
+    const p = projectToScreen(this._startWorldPos, w, h, cam);
     if (p) {
       this._startBtn.setVisible(true);
       this._startBtn.setScreenPosition(p);
@@ -679,7 +427,7 @@ export class CityApp {
 
   private _beginFocusToStart(): void {
     if (!this._cityRoot) return;
-    this._resetGirlsToHome("focusStart");
+    this._girlsSystem.resetToHome("focusStart");
     this._mode = "focusStart";
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
@@ -687,7 +435,7 @@ export class CityApp {
     this._focusT = 0;
     const overviewCam = (CITY_CAMERA.overview.usePerspective ?? false) ? this._overviewPerspectiveCamera : this._overviewCamera;
     this._focusFrom.copy(overviewCam.position);
-    this._focusTo.copy(this._computeGameplayCameraPos(this._startWorldPos));
+    this._focusTo.copy(this._gameplayCamera.computeCameraPosForTarget(this._startWorldPos));
   }
 
   private _updateFocus(dtSec: number): void {
@@ -697,7 +445,7 @@ export class CityApp {
     const pos = new THREE.Vector3().lerpVectors(this._focusFrom, this._focusTo, k);
     const cam = this._getGameplayCamera();
     cam.position.copy(pos);
-    this._applyGameplayCameraFixedRotation(cam);
+    this._gameplayCamera.applyFixedRotation(cam);
     this._activeCamera = cam;
 
     if (t01 >= 1) {
@@ -736,7 +484,7 @@ export class CityApp {
     }
 
     const cam = this._getGameplayCamera();
-    this._applyGameplayCameraFixedView(cam, this._bikerRoot.position, CITY_CAMERA.gameplay.view.followLerp);
+    this._gameplayCamera.applyFixedView(cam, this._bikerRoot.position, CITY_CAMERA.gameplay.view.followLerp);
     this._activeCamera = cam;
 
     // Дом может загораживать персонажа — делаем его полупрозрачным.
@@ -758,7 +506,7 @@ export class CityApp {
   private _onCrash(): void {
     if (this._mode === "crashed") return;
     this._mode = "crashed";
-    this._resetGirlsToHome("crash");
+    this._girlsSystem.resetToHome("crash");
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
     this._crashOverlay.show();
@@ -770,7 +518,7 @@ export class CityApp {
   private _resetToOverview(): void {
     if (!this._bikerRoot) return;
     this._mode = "overview";
-    this._resetGirlsToHome("resetToOverview");
+    this._girlsSystem.resetToHome("resetToOverview");
     this._scroll.setEnabled(true);
     this._turn.setEnabled(false);
     this._crashOverlay.hide();
@@ -785,77 +533,8 @@ export class CityApp {
     this._world.resetCollisionState(this._bikerRoot);
   }
 
-  private _computeGameplayCameraPos(targetPos: THREE.Vector3): THREE.Vector3 {
-    const view = CITY_CAMERA.gameplay.view;
-    const yaw = (view.yawDeg * Math.PI) / 180;
-    const pitch = (view.pitchDeg * Math.PI) / 180;
-    const roll = (view.rollDeg * Math.PI) / 180;
-
-    this._gameplayBaseQuat.setFromEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"));
-    const q = this._composeGameplayQuaternionInto(this._tmpQ);
-
-    const forward = this._tmpV3a.set(0, 0, -1).applyQuaternion(q);
-    const target = this._tmpV3b.set(targetPos.x, view.targetY, targetPos.z);
-    const pos = target.addScaledVector(forward, -view.distance);
-
-    const off = CITY_CAMERA.gameplay.extraTransform.positionOffset;
-    pos.add(this._tmpV3a.set(off.x, off.y, off.z).applyQuaternion(q));
-    return pos.clone(); // used only for focus target; ok to allocate here
-  }
-
-  private _applyGameplayCameraFixedRotation(camera: THREE.Camera): void {
-    camera.quaternion.copy(this._composeGameplayQuaternionInto(this._tmpQ));
-  }
-
-  private _applyGameplayCameraFixedView(camera: THREE.Camera, targetPos: THREE.Vector3, followLerp: number): void {
-    const view = CITY_CAMERA.gameplay.view;
-    const yaw = (view.yawDeg * Math.PI) / 180;
-    const pitch = (view.pitchDeg * Math.PI) / 180;
-    const roll = (view.rollDeg * Math.PI) / 180;
-
-    // Фиксированный поворот (3/4) + доп. поворот из конфига.
-    this._gameplayBaseQuat.setFromEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"));
-    camera.quaternion.copy(this._composeGameplayQuaternionInto(this._tmpQ));
-
-    // Позиция: держим персонажа на оси взгляда, камера ездит только по плоскости.
-    const forward = this._tmpV3a.set(0, 0, -1).applyQuaternion(camera.quaternion);
-    const desired = this._tmpV3b.set(targetPos.x, view.targetY, targetPos.z).addScaledVector(forward, -view.distance);
-
-    // Доп. локальный сдвиг.
-    const off = CITY_CAMERA.gameplay.extraTransform.positionOffset;
-    desired.add(this._tmpV3a.set(off.x, off.y, off.z).applyQuaternion(camera.quaternion));
-
-    const k = Math.max(0, Math.min(1, followLerp));
-    camera.position.lerp(desired, k);
-  }
-
-  private _composeGameplayQuaternionInto(tmpOut: THREE.Quaternion): THREE.Quaternion {
-    const extraRot = CITY_CAMERA.gameplay.extraTransform.rotationOffsetDeg;
-    this._tmpQ2.setFromEuler(
-      new THREE.Euler((extraRot.x * Math.PI) / 180, (extraRot.y * Math.PI) / 180, (extraRot.z * Math.PI) / 180, "XYZ")
-    );
-    tmpOut.copy(this._gameplayBaseQuat).multiply(this._tmpQ2);
-    return tmpOut;
-  }
-
   private _getGameplayCamera(): THREE.Camera {
     return CITY_CAMERA.gameplay.usePerspective ? this._gameCamera : this._gameOrthoCamera;
-  }
-
-  private _applyCameraExtraTransform(camera: THREE.Camera, kind: "overview" | "gameplay"): void {
-    const cfg = kind === "overview" ? (CITY_CAMERA.overview.extraTransform ?? null) : CITY_CAMERA.gameplay.extraTransform;
-    if (!cfg) return;
-
-    // 1) Доп. поворот: умножаем quaternion на offset-quaternion (локальные оси камеры).
-    const r = cfg.rotationOffsetDeg;
-    const euler = new THREE.Euler((r.x * Math.PI) / 180, (r.y * Math.PI) / 180, (r.z * Math.PI) / 180, "XYZ");
-    const q = new THREE.Quaternion().setFromEuler(euler);
-    camera.quaternion.multiply(q);
-
-    // 2) Доп. сдвиг: трактуем positionOffset как локальный оффсет камеры (вправо/вверх/вперёд).
-    const p = cfg.positionOffset;
-    const local = new THREE.Vector3(p.x, p.y, p.z).applyQuaternion(camera.quaternion);
-    camera.position.add(local);
   }
 
   /**
@@ -892,22 +571,6 @@ export class CityApp {
       if (isFree(p)) return p;
     }
     return p0; // fallback
-  }
-
-  private _projectToScreen(
-    world: THREE.Vector3,
-    w: number,
-    h: number,
-    camera: THREE.Camera
-  ): { x: number; y: number } | null {
-    const v = world.clone().project(camera);
-    if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.z)) return null;
-    // z outside clip space
-    if (v.z < -1 || v.z > 1) return null;
-    return {
-      x: (v.x * 0.5 + 0.5) * w,
-      y: (-v.y * 0.5 + 0.5) * h
-    };
   }
 }
 
