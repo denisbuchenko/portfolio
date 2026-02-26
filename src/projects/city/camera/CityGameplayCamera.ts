@@ -21,6 +21,21 @@ export class CityGameplayCamera {
     return this._composeGameplayQuaternionInto(out);
   }
 
+  computeDesiredPositionInto(out: THREE.Vector3, targetPos: THREE.Vector3, distanceMultiplier = 1, targetYOverride?: number): THREE.Vector3 {
+    const view = CITY_CAMERA.gameplay.view;
+    const q = this.computeFixedQuaternionInto(this._tmpQ);
+    const forward = this._tmpV3a.set(0, 0, -1).applyQuaternion(q);
+
+    const dist = view.distance * Math.max(0.05, distanceMultiplier);
+    const ty = targetYOverride ?? view.targetY;
+    out.set(targetPos.x, ty, targetPos.z).addScaledVector(forward, -dist);
+
+    // Доп. локальный сдвиг.
+    const off = CITY_CAMERA.gameplay.extraTransform.positionOffset;
+    out.add(this._tmpV3a.set(off.x, off.y, off.z).applyQuaternion(q));
+    return out;
+  }
+
   computeCameraPosForTarget(targetPos: THREE.Vector3): THREE.Vector3 {
     const view = CITY_CAMERA.gameplay.view;
     const yaw = (view.yawDeg * Math.PI) / 180;

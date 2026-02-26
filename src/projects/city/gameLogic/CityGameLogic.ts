@@ -76,13 +76,14 @@ export class CityGameLogic {
    * Тик режима playing.
    * Возвращает текущую позицию героя (удобно для камеры).
    */
-  updatePlaying(params: Readonly<{ dtSec: number; speedIdleSec: number; speedRampSec: number; cruiseSpeed: number; turnRadiusStart: number; turnRadiusMin: number; turnRadiusEaseSec: number; pedalsMaxPlaybackSpeed: number; collisionActivation: { enableRadius: number; disableRadius: number } }>): THREE.Vector3 {
+  updatePlaying(params: Readonly<{ dtSec: number; speedIdleSec: number; speedRampSec: number; cruiseSpeed: number; speedMul: number; turnRadiusStart: number; turnRadiusMin: number; turnRadiusEaseSec: number; pedalsMaxPlaybackSpeed: number; collisionActivation: { enableRadius: number; disableRadius: number } }>): THREE.Vector3 {
     const dt = Math.max(0, params.dtSec);
     this._gameT += dt;
 
     // Speed: idle -> ramp -> cruise.
     const speed01 = this._gameT <= params.speedIdleSec ? 0 : Math.min(1, (this._gameT - params.speedIdleSec) / Math.max(0.001, params.speedRampSec));
-    const speed = params.cruiseSpeed * speed01;
+    const speedMul = THREE.MathUtils.clamp(params.speedMul, 0, 1);
+    const speed = params.cruiseSpeed * speed01 * speedMul;
 
     // Turn + animation.
     const input = this._turn.snapshot();
@@ -106,7 +107,7 @@ export class CityGameLogic {
     // (возврат collision flag можно добавить позже, если захотим полностью вынести crash flow).
 
     // Pedals.
-    this._bikerAnim?.setPedalSpeed01(speed01, params.pedalsMaxPlaybackSpeed);
+    this._bikerAnim?.setPedalSpeed01(speed01 * speedMul, params.pedalsMaxPlaybackSpeed);
 
     // Girls (без камеры/окклюзии — это остаётся в CityApp/world).
     this._updateGirls(dt);

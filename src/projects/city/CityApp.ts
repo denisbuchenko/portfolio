@@ -8,7 +8,7 @@ import { ScrollInput } from "./input/ScrollInput";
 import { TurnInput } from "./input/TurnInput";
 import { StartButton } from "./ui/StartButton";
 import { CrashOverlay } from "./ui/CrashOverlay";
-import { CityGirlsSystem } from "./girls/CityGirlsSystem";
+import { CityGirlsSystem, type CityGirlRuntime } from "./girls/CityGirlsSystem";
 import { CITY_GIRLS } from "./girls/girlsConfig";
 import { BikerLoader } from "./biker/BikerLoader";
 import { BikerAnimationController } from "./biker/BikerAnimationController";
@@ -17,7 +17,7 @@ import { CityGameLogic } from "./gameLogic/CityGameLogic";
 import { CityGameplayCamera } from "./camera/CityGameplayCamera";
 import { applyCityCameraExtraTransform } from "./camera/cityCameraExtraTransform";
 
-type _Mode = "overview" | "focusStart" | "playing" | "crashed";
+type _Mode = "overview" | "focusStart" | "playing" | "encounter" | "crashed";
 
 export class CityApp {
   private _host: HTMLElement;
@@ -355,13 +355,11 @@ export class CityApp {
 
     this._turn.update(dtSec);
 
-    if (this._mode === "overview") {
-      this._updateOverview(dtSec);
-    } else if (this._mode === "focusStart") {
-      this._updateFocus(dtSec);
-    } else if (this._mode === "playing") {
-      this._updatePlaying(dtSec);
-    } else if (this._mode === "crashed") {
+    if (this._mode === "overview") this._updateOverview(dtSec);
+    else if (this._mode === "focusStart") this._updateFocus(dtSec);
+    else if (this._mode === "playing") this._updatePlaying(dtSec);
+    else if (this._mode === "encounter") this._updateEncounter(dtSec);
+    else if (this._mode === "crashed") {
       // wait (reset/reload будет добавлен позже)
     }
 
@@ -444,6 +442,24 @@ export class CityApp {
   // Proximity zoom (камера приближается при подъезде к девочкам)
   private _proximityDistanceMul = 1;
   private _tmpGirlPos = new THREE.Vector3();
+
+  // Speed scaling (замедление/остановка)
+  private _speedMul = 1;
+
+  private _encounter:
+    | null
+    | {
+        girlId: string;
+        phase: "stopping" | "focusIn" | "love" | "hold" | "return" | "resume";
+        cameraW: number;
+        holdSecLeft: number;
+        loveStarted: boolean;
+      } = null;
+
+  private _tmpGoalPos = new THREE.Vector3();
+  private _tmpCamFollow = new THREE.Vector3();
+  private _tmpCamFocus = new THREE.Vector3();
+  private _tmpCamDesired = new THREE.Vector3();
 
   private _beginFocusToStart(): void {
     if (!this._cityRoot) return;
@@ -532,22 +548,63 @@ export class CityApp {
     this._gameLogic?.reset();
     this._bikerRoot!.visible = true;
     this._crashOverlay.hide();
+    this._speedMul = 1;
+    this._encounter = null;
   }
 
   private _updatePlaying(dtSec: number): void {
     if (!this._bikerRoot) return;
+
+    // Замедление при подъезде к цилиндру цели.
+    const slowdownCfg = CITY_GAMEPLAY.girlEncounter.slowdown;
+    const nearestGoalBefore = slowdownCfg.enabled ? this._findNearestGirlGoalDistance() : null;
+    let targetSpeedMul = 1;
+    if (nearestGoalBefore && slowdownCfg.enabled) {
+      const reactionR = CITY_GIRLS.hello.distance;
+      const activationR = reactionR * Math.max(1, slowdownCfg.activationRadiusMultiplier);
+      const reachR = CITY_GIRLS.goal.reachRadius;
+      const edgeMul = THREE.MathUtils.clamp(slowdownCfg.edgeSpeedMultiplier, 0.05, 1);
+      const d = nearestGoalBefore.distToGoal;
+
+      if (d <= reachR) {
+        targetSpeedMul = 0;
+      } else if (d < activationR) {
+        const t = 1 - (d - reachR) / Math.max(1e-6, activationR - reachR); // 0..1
+        const t01 = THREE.MathUtils.clamp(t, 0, 1);
+        const eased = slowdownCfg.curve === "linear" ? t01 : t01 * t01 * (3 - 2 * t01); // smoothstep
+        targetSpeedMul = THREE.MathUtils.lerp(1, edgeMul, eased);
+      }
+    }
+
+    const isSlowing = targetSpeedMul < this._speedMul;
+    const easeSec = Math.max(0.001, isSlowing ? slowdownCfg.approachEaseSec : slowdownCfg.releaseEaseSec);
+    const alphaSpeed = 1 - Math.exp(-Math.max(0, dtSec) / easeSec);
+    this._speedMul = THREE.MathUtils.lerp(this._speedMul, targetSpeedMul, alphaSpeed);
+
     // Движение героя + реакция девочек (чистая оркестрация — в отдельном файле).
     this._gameLogic?.updatePlaying({
       dtSec,
       speedIdleSec: CITY_GAMEPLAY.bikerMotion.speed.idleSec,
       speedRampSec: CITY_GAMEPLAY.bikerMotion.speed.rampSec,
       cruiseSpeed: this._cruiseSpeed,
+      speedMul: this._speedMul,
       turnRadiusStart: CITY_GAMEPLAY.bikerMotion.turn.radiusStart,
       turnRadiusMin: CITY_GAMEPLAY.bikerMotion.turn.radiusMin,
       turnRadiusEaseSec: CITY_GAMEPLAY.bikerMotion.turn.radiusEaseSec,
       pedalsMaxPlaybackSpeed: CITY_ANIMATION.biker.pedals.maxPlaybackSpeed,
       collisionActivation: CITY_GAMEPLAY.collisions.activation
     });
+
+    // Въехали в цилиндр цели -> катсцена.
+    const nearestGoalAfter = this._findNearestGirlGoalDistance();
+    if (
+      nearestGoalAfter &&
+      nearestGoalAfter.distToGoal <= CITY_GIRLS.goal.reachRadius &&
+      !nearestGoalAfter.girl.state.goalReached
+    ) {
+      this._beginEncounter(nearestGoalAfter.girl);
+      return;
+    }
 
     // Коллизии: после движения проверяем hit по tip.
     if (this._world.checkCollision(this._bikerRoot)) {
@@ -592,7 +649,9 @@ export class CityApp {
     }
 
     const cam = this._getGameplayCamera();
-    this._gameplayCamera.applyFixedView(cam, this._bikerRoot.position, CITY_CAMERA.gameplay.view.followLerp, this._proximityDistanceMul);
+    this._gameplayCamera.computeFixedQuaternionInto(cam.quaternion);
+    const followDesired = this._gameplayCamera.computeDesiredPositionInto(this._tmpCamFollow, this._bikerRoot.position, this._proximityDistanceMul);
+    cam.position.lerp(followDesired, THREE.MathUtils.clamp(CITY_CAMERA.gameplay.view.followLerp, 0, 1));
     this._activeCamera = cam;
 
     // Дом может загораживать персонажа — делаем его полупрозрачным.
@@ -608,12 +667,163 @@ export class CityApp {
     this._world.updatePlayingVisibility(cam, dtSec);
   }
 
+  private _updateEncounter(dtSec: number): void {
+    if (!this._bikerRoot || !this._encounter) return;
+
+    const cfg = CITY_GAMEPLAY.girlEncounter;
+    const enc = this._encounter;
+    const girl = this._girlsSystem.girls.find((g) => g.id === enc.girlId) ?? null;
+    if (!girl) {
+      this._mode = "playing";
+      this._turn.setEnabled(true);
+      this._encounter = null;
+      return;
+    }
+
+    let finishEncounter = false;
+
+    // Во время катсцены не управляем поворотом.
+    this._turn.setEnabled(false);
+
+    // Управление скоростью: остановка/восстановление.
+    if (enc.phase === "resume") {
+      const a = 1 - Math.exp(-Math.max(0, dtSec) / Math.max(0.001, cfg.resume.easeSec));
+      this._speedMul = THREE.MathUtils.lerp(this._speedMul, 1, a);
+    } else {
+      const a = 1 - Math.exp(-Math.max(0, dtSec) / Math.max(0.001, cfg.stop.easeSec));
+      this._speedMul = THREE.MathUtils.lerp(this._speedMul, 0, a);
+    }
+
+    // Держим педали/движение синхронизированными через gameLogic.
+    this._gameLogic?.updatePlaying({
+      dtSec,
+      speedIdleSec: CITY_GAMEPLAY.bikerMotion.speed.idleSec,
+      speedRampSec: CITY_GAMEPLAY.bikerMotion.speed.rampSec,
+      cruiseSpeed: this._cruiseSpeed,
+      speedMul: this._speedMul,
+      turnRadiusStart: CITY_GAMEPLAY.bikerMotion.turn.radiusStart,
+      turnRadiusMin: CITY_GAMEPLAY.bikerMotion.turn.radiusMin,
+      turnRadiusEaseSec: CITY_GAMEPLAY.bikerMotion.turn.radiusEaseSec,
+      pedalsMaxPlaybackSpeed: CITY_ANIMATION.biker.pedals.maxPlaybackSpeed,
+      collisionActivation: CITY_GAMEPLAY.collisions.activation
+    });
+
+    // Фазы:
+    if (enc.phase === "stopping") {
+      if (this._speedMul <= 0.03) this._encounter.phase = "focusIn";
+    }
+
+    if (enc.phase === "focusIn") {
+      const a = 1 - Math.exp(-Math.max(0, dtSec) / Math.max(0.001, cfg.camera.focusInSec));
+      this._encounter.cameraW = THREE.MathUtils.lerp(this._encounter.cameraW, 1, a);
+      if (this._encounter.cameraW >= 0.995) this._encounter.phase = "love";
+    }
+
+    if (enc.phase === "love") {
+      if (!this._encounter.loveStarted) {
+        girl.state.goalReached = true;
+        this._girlsSystem.setGoalVisible(girl, false);
+        girl.anim.playLove({ restart: true });
+        this._encounter.loveStarted = true;
+      }
+      const res = girl.anim.tick(dtSec);
+      if (res.loveFinished) {
+        this._encounter.phase = "hold";
+        this._encounter.holdSecLeft = cfg.camera.holdSec;
+      }
+    } else {
+      // В катсцене всё равно тикаем, чтобы love2 продолжал жить.
+      girl.anim.tick(dtSec);
+    }
+
+    if (enc.phase === "hold") {
+      this._encounter.holdSecLeft = Math.max(0, this._encounter.holdSecLeft - Math.max(0, dtSec));
+      if (this._encounter.holdSecLeft <= 0) this._encounter.phase = "return";
+    }
+
+    if (enc.phase === "return") {
+      const a = 1 - Math.exp(-Math.max(0, dtSec) / Math.max(0.001, cfg.camera.returnSec));
+      this._encounter.cameraW = THREE.MathUtils.lerp(this._encounter.cameraW, 0, a);
+      if (this._encounter.cameraW <= 0.01) this._encounter.phase = "resume";
+    }
+
+    if (enc.phase === "resume") {
+      if (this._speedMul >= 0.98) {
+        finishEncounter = true;
+      }
+    }
+
+    // Камера: считаем 2 "желания" и смешиваем по весу.
+    const cam = this._getGameplayCamera();
+    this._gameplayCamera.computeFixedQuaternionInto(cam.quaternion);
+    const followDesired = this._gameplayCamera.computeDesiredPositionInto(this._tmpCamFollow, this._bikerRoot.position, 1);
+    girl.controller.instance.root.getWorldPosition(this._tmpGirlPos);
+    const focusDesired = this._gameplayCamera.computeDesiredPositionInto(
+      this._tmpCamFocus,
+      this._tmpGirlPos,
+      cfg.camera.focusDistanceMultiplier,
+      cfg.camera.focusTargetY
+    );
+    this._tmpCamDesired.copy(followDesired).lerp(focusDesired, THREE.MathUtils.clamp(enc.cameraW, 0, 1));
+    cam.position.lerp(this._tmpCamDesired, THREE.MathUtils.clamp(CITY_CAMERA.gameplay.view.followLerp, 0, 1));
+    this._activeCamera = cam;
+
+    // Мир продолжаем обновлять мягко.
+    this._world.updateBikerOcclusion({
+      camera: cam,
+      bikerPos: this._bikerRoot.position,
+      targetY: CITY_CAMERA.gameplay.view.targetY,
+      dtSec,
+      config: CITY_TUNING.occlusion
+    });
+    this._world.updatePlayingVisibility(cam, dtSec);
+
+    if (finishEncounter) {
+      this._mode = "playing";
+      this._turn.setEnabled(true);
+      this._encounter = null;
+    }
+  }
+
+  private _beginEncounter(girl: CityGirlRuntime): void {
+    if (this._mode === "encounter") return;
+    this._mode = "encounter";
+    this._encounter = {
+      girlId: girl.id,
+      phase: "stopping",
+      cameraW: 0,
+      holdSecLeft: 0,
+      loveStarted: false
+    };
+  }
+
+  private _findNearestGirlGoalDistance(): null | { girl: CityGirlRuntime; distToGoal: number } {
+    if (!this._bikerRoot) return null;
+    let bestGirl: CityGirlRuntime | null = null;
+    let bestD = Infinity;
+    for (const g of this._girlsSystem.girls) {
+      if (g.state.goalReached) continue;
+      g.goal.getWorldPosition(this._tmpGoalPos);
+      const dx = this._bikerRoot.position.x - this._tmpGoalPos.x;
+      const dz = this._bikerRoot.position.z - this._tmpGoalPos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < bestD) {
+        bestD = d;
+        bestGirl = g;
+      }
+    }
+    if (!bestGirl || !Number.isFinite(bestD)) return null;
+    return { girl: bestGirl, distToGoal: bestD };
+  }
+
   // NOTE: Biker animation logic extracted to `src/projects/city/biker/BikerAnimationController.ts`,
   // а мир/дома/окклюзия/коллизии — в `src/projects/city/cityWorld/CityWorldController.ts`.
 
   private _onCrash(): void {
     if (this._mode === "crashed") return;
     this._mode = "crashed";
+    this._encounter = null;
+    this._speedMul = 1;
     this._girlsSystem.resetToHome("crash");
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
@@ -626,6 +836,8 @@ export class CityApp {
   private _resetToOverview(): void {
     if (!this._bikerRoot) return;
     this._mode = "overview";
+    this._encounter = null;
+    this._speedMul = 1;
     this._girlsSystem.resetToHome("resetToOverview");
     this._scroll.setEnabled(true);
     this._turn.setEnabled(false);
