@@ -2,15 +2,19 @@ import * as THREE from "three";
 import { CITY_ANIMATION, CITY_ASSETS, CITY_CAMERA, CITY_GAMEPLAY, CITY_TUNING, CITY_WORLD } from "./cityConfig";
 import { CHEL_DEFAULT_MANIFEST } from "./contracts";
 import { loadGltf, enableShadowsAndSrgb } from "./three/loadGltf";
-import { buildMeshBvh, disposeMeshBvh, installMeshBvhRaycast } from "./three/meshBvh";
+import { installMeshBvhRaycast } from "./three/meshBvh";
 import { ScrollInput } from "./input/ScrollInput";
 import { TurnInput } from "./input/TurnInput";
 import { StartButton } from "./ui/StartButton";
 import { CrashOverlay } from "./ui/CrashOverlay";
-import { BuildingsIndex } from "./world/BuildingsIndex";
 import { CITY_GIRLS } from "./girls/girlsConfig";
 import { GirlLoader } from "./girls/GirlLoader";
 import { GirlController } from "./girls/GirlController";
+import { GirlAnimationController } from "./girls/GirlAnimationController";
+import { BikerLoader } from "./biker/BikerLoader";
+import { BikerAnimationController } from "./biker/BikerAnimationController";
+import { CityWorldController } from "./cityWorld/CityWorldController";
+import { CityGameLogic } from "./gameLogic/CityGameLogic";
 
 type _Mode = "overview" | "focusStart" | "playing" | "crashed";
 
@@ -18,6 +22,7 @@ type _GirlRuntime = Readonly<{
   id: string;
   markerName: string;
   controller: GirlController;
+  anim: GirlAnimationController;
   goal: THREE.Mesh;
   axes?: THREE.AxesHelper;
   bounds?: THREE.BoxHelper;
@@ -28,7 +33,6 @@ type _GirlRuntime = Readonly<{
   };
   state: {
     mode: "stay" | "hello" | "love" | "love2";
-    helloCooldownSec: number;
     wasNear: boolean;
     goalReached: boolean;
   };
@@ -65,28 +69,18 @@ export class CityApp {
   private _cityRoot: THREE.Group | null = null;
   private _cityScene: THREE.Group | null = null;
   private _bikerRoot: THREE.Group | null = null;
-  private _bikerMixer: THREE.AnimationMixer | null = null;
-  private _pedalActions: THREE.AnimationAction[] = [];
+  private _bikerAnim: BikerAnimationController | null = null;
+  private _gameLogic: CityGameLogic | null = null;
   private _girlLoader: GirlLoader | null = null;
   private _girls: _GirlRuntime[] = [];
 
-  private _buildings = new BuildingsIndex();
-  private _activeBuildingMeshes: THREE.Mesh[] = [];
-  private _activeBuildings = new Set<THREE.Object3D>();
-  private _raycaster = new THREE.Raycaster();
-  private _prevTip = new THREE.Vector3();
-  private _tip = new THREE.Vector3();
+  private _world = new CityWorldController();
   private _tipLocal = new THREE.Vector3(
     CITY_GAMEPLAY.bikerMotion.collisionTipLocalOffset?.x ?? 0,
     CITY_GAMEPLAY.bikerMotion.collisionTipLocalOffset?.y ?? 0,
     CITY_GAMEPLAY.bikerMotion.collisionTipLocalOffset?.z ?? 0
   );
 
-  private _turnLeftActions: THREE.AnimationAction[] = [];
-  private _turnRightActions: THREE.AnimationAction[] = [];
-  private _turnPending: -1 | 1 | null = null;
-  private _turnActive: -1 | 1 = -1; // какой набор клипов сейчас “активен” по весу (по дефолту right)
-  private _turnPhase: "completed" | "forward" | "hold" | "reverse" = "completed";
   private _resetTimer: number | null = null;
 
   // World data
@@ -96,28 +90,14 @@ export class CityApp {
   private _spawnClearanceRadius = 6.5;
 
   // Gameplay state
-  private _gameT = 0;
   private _cruiseSpeed = CITY_GAMEPLAY.bikerMotion.speed.cruiseSpeed;
-  private _forward = new THREE.Vector3(0, 0, -1);
   private _gameplayBaseQuat = new THREE.Quaternion();
   private _tmpQ = new THREE.Quaternion();
   private _tmpQ2 = new THREE.Quaternion();
   private _tmpV3a = new THREE.Vector3();
   private _tmpV3b = new THREE.Vector3();
 
-  // Occlusion (дом загораживает персонажа)
-  private _allBuildingMeshes: THREE.Mesh[] = [];
-  private _meshToBuilding = new Map<string, { root: THREE.Object3D; meshes: THREE.Mesh[] }>();
-  private _occlusionStates = new Map<
-    THREE.Object3D,
-    {
-      meshes: THREE.Mesh[];
-      from: number;
-      current: number;
-      target: number;
-      t01: number;
-    }
-  >();
+  // NOTE: город/дома/окклюзия/коллизии — в `CityWorldController`.
 
   constructor(opts: { host: HTMLElement; canvas: HTMLCanvasElement; uiRoot: HTMLDivElement }) {
     this._host = opts.host;
@@ -174,10 +154,6 @@ export class CityApp {
     // Режимы input (обзор: scroll, игра: поворот).
     this._scroll.setEnabled(true);
     this._turn.setEnabled(false);
-
-    // BVH ускоритель использует это свойство (three-mesh-bvh).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this._raycaster as any).firstHitOnly = true;
   }
 
   async start(): Promise<void> {
@@ -215,10 +191,13 @@ export class CityApp {
     this._girls = [];
     this._girlLoader = null;
 
-    this._bikerMixer = null;
+    this._bikerAnim = null;
+    this._gameLogic = null;
     this._bikerRoot?.removeFromParent();
     this._cityRoot?.removeFromParent();
     this._cityScene = null;
+
+    this._world.dispose();
 
     this._renderer.dispose();
   }
@@ -275,24 +254,17 @@ export class CityApp {
     // “Пол главнее”: убираем z-fighting/конфликты при пересечениях со сплющенными домами.
     this._applyFloorPriority(this._cityRoot);
 
-    // Индекс домов (для видимости/коллизий).
-    this._buildings.buildFromCityScene(this._cityRoot);
-    this._indexBuildingMeshes();
+    // Индекс домов (для видимости/коллизий/окклюзии).
+    this._world.buildFromCityRoot(this._cityRoot);
     // Начинаем со скрытых домов — появятся при попадании в окно видимости.
-    for (const b of this._buildings.buildings) {
-      b.targetVisible = false;
-      b.appear01 = 0;
-      b.root.visible = false;
-      b.root.scale.set(b.baseScale.x, 0, b.baseScale.z);
-    }
+    this._world.setInitialBuildingsHidden();
 
     // Start/spawn: центр карты, но не внутри дома.
     this._startWorldPos.copy(this._pickSpawnPosition(this._mapCenter));
     this._startWorldPos.y = 0;
 
-    const biker = await loadGltf(CITY_ASSETS.bikerGltfUrl);
-    this._bikerRoot = biker.scene;
-    enableShadowsAndSrgb(this._bikerRoot);
+    const bikerRig = await new BikerLoader().load(CITY_ASSETS.bikerGltfUrl);
+    this._bikerRoot = bikerRig.root;
     this._bikerRoot.visible = false; // до старта игры
 
     // Масштаб/ориентация — подберём позже, сейчас просто “чтобы было видно”.
@@ -300,8 +272,6 @@ export class CityApp {
     this._bikerRoot.position.copy(this._startWorldPos);
     this._bikerRoot.position.y = 0;
     this._scene.add(this._bikerRoot);
-
-    this._bikerMixer = new THREE.AnimationMixer(this._bikerRoot);
 
     // Стартуем педали “в фоне” — потом поднимем скорость.
     // В `Chel.gltf` педалирование размазано по нескольким клипам: pedal/pedalL/pedalR + ноги legR/lelL.
@@ -313,40 +283,49 @@ export class CityApp {
       CHEL_DEFAULT_MANIFEST.clips.lelL
     ].filter(Boolean) as string[];
 
-    this._pedalActions = [];
-    for (const name of pedalNames) {
-      const clip = biker.animations.find((c) => c.name === name);
-      if (!clip) continue;
-      const a = this._bikerMixer.clipAction(clip);
-      a.enabled = true;
-      a.setLoop(THREE.LoopRepeat, Infinity);
-      a.play();
-      a.setEffectiveWeight(1);
-      a.setEffectiveTimeScale(0.0001);
-      this._pedalActions.push(a);
-    }
+    const manifest = CHEL_DEFAULT_MANIFEST.clips;
+    const turnLeftNames = [manifest.turnLeftBody, manifest.turnLeftArmR, manifest.turnLeftArmL].filter(Boolean) as string[];
+    const turnRightNames = [manifest.turnRightBody, manifest.turnRightArmR, manifest.turnRightArmL].filter(Boolean) as string[];
 
-    // Повороты: подготовим actions.
-    // IMPORTANT: в нашем вводе `turn=1` означает “влево”, `turn=-1` означает “вправо”.
-    this._turnLeftActions = this._createTurnActions(biker.animations, 1);
-    this._turnRightActions = this._createTurnActions(biker.animations, -1);
-    this._initTurnActions();
-
-    // Начальная точка tip (чтобы первый raycast не был мусором).
-    this._bikerRoot.updateMatrixWorld(true);
-    this._prevTip.copy(this._bikerRoot.localToWorld(this._tipLocal.clone()));
-  };
-
-  private _indexBuildingMeshes(): void {
-    this._allBuildingMeshes = [];
-    this._meshToBuilding.clear();
-    for (const b of this._buildings.buildings) {
-      for (const m of b.meshes) {
-        this._allBuildingMeshes.push(m);
-        this._meshToBuilding.set(m.uuid, { root: b.root, meshes: b.meshes });
+    this._bikerAnim = new BikerAnimationController({
+      root: this._bikerRoot,
+      clips: bikerRig.clips,
+      pedalClipNames: pedalNames,
+      turnLeftNames,
+      turnRightNames,
+      turn: {
+        fadeInSec: CITY_ANIMATION.biker.turn.fadeIn.durationSec,
+        returnToNeutralSec: CITY_ANIMATION.biker.turn.returnToNeutral.durationSec,
+        reverseSnapSec: CITY_ANIMATION.biker.turn.reverseSnap.durationSec
       }
-    }
-  }
+    });
+
+    // Настраиваем tip для коллизий и сбрасываем collision state.
+    this._world.setBikerTipLocalOffset({
+      x: this._tipLocal.x,
+      y: this._tipLocal.y,
+      z: this._tipLocal.z
+    });
+    this._world.resetCollisionState(this._bikerRoot);
+
+    // Оркестратор игровой логики (явное место, где описано "что и когда обновляется").
+    this._gameLogic = new CityGameLogic({
+      turn: this._turn,
+      scroll: this._scroll,
+      world: this._world,
+      bikerRoot: this._bikerRoot,
+      bikerAnim: this._bikerAnim,
+      girls: this._girls.map((g) => ({
+        controller: g.controller,
+        anim: g.anim,
+        goal: g.goal,
+        homePos: g.home.position,
+        homeQ: g.home.quaternion,
+        state: g.state,
+        setGoalVisible: (visible) => this._setGirlGoalVisible(g, visible),
+      }))
+    });
+  };
 
   private _applyFloorPriority(root: THREE.Object3D): void {
     const floorMeshes: THREE.Mesh[] = [];
@@ -414,13 +393,13 @@ export class CityApp {
       // wait (reset/reload будет добавлен позже)
     }
 
-    // Девочки: миксеры обновляем всегда, а игровую логику — только в режиме playing.
-    for (const g of this._girls) g.controller.update(dtSec);
-    if (this._mode === "playing") {
-      this._updateGirls(dtSec);
+    // Девочки: миксеры обновляем всегда, логика реакций — в `CityGameLogic` внутри `_updatePlaying`.
+    for (const g of this._girls) {
+      g.controller.update(dtSec);
+      g.bounds?.update();
     }
 
-    this._bikerMixer?.update(dtSec);
+    this._bikerAnim?.update(dtSec);
     this._renderer.render(this._scene, this._activeCamera);
   };
 
@@ -499,6 +478,7 @@ export class CityApp {
         id: `girl-${i + 1}`,
         markerName,
         controller,
+        anim: new GirlAnimationController(controller),
         goal,
         axes,
         bounds,
@@ -506,7 +486,6 @@ export class CityApp {
         home: { position: homePos, quaternion: homeQ },
         state: {
           mode: "stay",
-          helloCooldownSec: 0,
           wasNear: false,
           goalReached: false
         }
@@ -555,91 +534,6 @@ export class CityApp {
     });
 
     return candidates;
-  }
-
-  private _updateGirls(dtSec: number): void {
-    if (!this._bikerRoot) return;
-
-    const biker = this._bikerRoot.position;
-    const dt = Math.max(0, dtSec);
-
-    for (const g of this._girls) {
-      const st = g.state;
-
-      // Finished clips → transitions
-      const finished = g.controller.consumeFinished();
-      for (const clipName of finished) {
-        if (clipName === CITY_GIRLS.animations.hello) {
-          st.helloCooldownSec = CITY_GIRLS.hello.repeatDelaySec;
-          st.mode = "stay";
-          // Синхронизация: hello кончился → цилиндр прячем.
-          this._setGirlGoalVisible(g, false);
-          g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: CITY_GIRLS.hello.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity, restart: true });
-        } else if (clipName === CITY_GIRLS.animations.love) {
-          st.mode = "love2";
-          g.controller.play(CITY_GIRLS.animations.love2, { fadeSec: CITY_GIRLS.love.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity, restart: true });
-        }
-      }
-
-      st.helloCooldownSec = Math.max(0, st.helloCooldownSec - dt);
-
-      // Distances in XZ.
-      const girlPos = g.controller.instance.root.getWorldPosition(this._tmpV3a);
-      const dx = biker.x - girlPos.x;
-      const dz = biker.z - girlPos.z;
-      const distToGirl = Math.sqrt(dx * dx + dz * dz);
-
-      const goalPos = g.goal.getWorldPosition(this._tmpV3b);
-      const gx = biker.x - goalPos.x;
-      const gz = biker.z - goalPos.z;
-      const distToGoal = Math.sqrt(gx * gx + gz * gz);
-
-      const near = distToGirl <= CITY_GIRLS.hello.distance;
-
-      if (!st.goalReached && distToGoal <= CITY_GIRLS.goal.reachRadius) {
-        st.goalReached = true;
-        this._setGirlGoalVisible(g, false);
-        st.mode = "love";
-        // eslint-disable-next-line no-console
-        console.log("[CityGirl] goal reached", { id: g.id, markerName: g.markerName });
-        g.controller.play(CITY_GIRLS.animations.love, { fadeSec: CITY_GIRLS.love.fadeSec, loop: THREE.LoopOnce, repetitions: 1, clampWhenFinished: true, restart: true });
-      }
-
-      if (!st.goalReached) {
-        if (near) {
-          g.controller.faceToWorld(biker, CITY_GIRLS.hello.faceSlerp01);
-
-          if (st.helloCooldownSec <= 0 && !g.controller.isActive(CITY_GIRLS.animations.hello)) {
-            st.mode = "hello";
-            // Синхронизация: старт hello → показываем цилиндр.
-            this._setGirlGoalVisible(g, true);
-            g.controller.play(CITY_GIRLS.animations.hello, {
-              fadeSec: CITY_GIRLS.hello.fadeSec,
-              loop: THREE.LoopOnce,
-              repetitions: 1,
-              clampWhenFinished: true,
-              restart: true
-            });
-          }
-        } else {
-          // Вышли из радиуса: возвращаемся к исходной позиции/повороту.
-          this._setGirlGoalVisible(g, false);
-          g.controller.setWorldPosition(g.home.position);
-          g.controller.setWorldQuaternion(g.home.quaternion);
-          // Мягкий возврат (помогает, если девочка успела развернуться).
-          g.controller.instance.root.quaternion.slerp(g.home.quaternion, CITY_GIRLS.hello.returnSlerp01);
-
-          if (st.wasNear) {
-            st.mode = "stay";
-            st.helloCooldownSec = 0;
-            g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: CITY_GIRLS.hello.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity, restart: true });
-          }
-        }
-        st.wasNear = near;
-      }
-
-      if (g.bounds) g.bounds.update();
-    }
   }
 
   private _createGirlHelloRadiusRing(radius: number): THREE.Mesh {
@@ -698,7 +592,6 @@ export class CityApp {
     for (const g of this._girls) {
       // state
       g.state.mode = "stay";
-      g.state.helloCooldownSec = 0;
       g.state.wasNear = false;
       g.state.goalReached = false;
 
@@ -710,8 +603,7 @@ export class CityApp {
       this._setGirlGoalVisible(g, false);
 
       // animation
-      g.controller.consumeFinished();
-      g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: 0.01, loop: THREE.LoopRepeat, repetitions: Infinity, restart: true });
+      g.anim.resetToStay();
 
       if (g.bounds) g.bounds.update();
     }
@@ -769,8 +661,7 @@ export class CityApp {
     // Хотим “пару пикселей” отступа от края -> переводим px -> NDC.
     const edgePx = 3;
     const edgeInsetNdc = (2 * edgePx) / Math.max(1, h);
-    this._buildings.setVisibilityByVerticalBounds(cam, edgeInsetNdc);
-    this._buildings.updateAppear(_dtSec, 0.35);
+    this._world.updateOverviewVisibility(cam, edgeInsetNdc, _dtSec);
 
     // Start кнопка — в центре карты.
     const p = this._projectToScreen(this._startWorldPos, w, h, cam);
@@ -818,429 +709,51 @@ export class CityApp {
     this._mode = "playing";
     this._scroll.setEnabled(false);
     this._turn.setEnabled(true);
-    this._gameT = 0;
+    this._gameLogic?.reset();
     this._bikerRoot!.visible = true;
     this._crashOverlay.hide();
   }
 
   private _updatePlaying(dtSec: number): void {
     if (!this._bikerRoot) return;
-    this._gameT += dtSec;
+    // Движение героя + реакция девочек (чистая оркестрация — в отдельном файле).
+    this._gameLogic?.updatePlaying({
+      dtSec,
+      speedIdleSec: CITY_GAMEPLAY.bikerMotion.speed.idleSec,
+      speedRampSec: CITY_GAMEPLAY.bikerMotion.speed.rampSec,
+      cruiseSpeed: this._cruiseSpeed,
+      turnRadiusStart: CITY_GAMEPLAY.bikerMotion.turn.radiusStart,
+      turnRadiusMin: CITY_GAMEPLAY.bikerMotion.turn.radiusMin,
+      turnRadiusEaseSec: CITY_GAMEPLAY.bikerMotion.turn.radiusEaseSec,
+      pedalsMaxPlaybackSpeed: CITY_ANIMATION.biker.pedals.maxPlaybackSpeed,
+      collisionActivation: CITY_GAMEPLAY.collisions.activation
+    });
 
-    // Скорость: 2 сек стоим, затем 3 сек разгон до cruiseSpeed.
-    const idle = CITY_GAMEPLAY.bikerMotion.speed.idleSec;
-    const ramp = CITY_GAMEPLAY.bikerMotion.speed.rampSec;
-    const speed01 = this._gameT <= idle ? 0 : Math.min(1, (this._gameT - idle) / Math.max(0.001, ramp));
-    const speed = this._cruiseSpeed * speed01;
-
-    // Поворот (радиус плавно уменьшается при удержании).
-    const input = this._turn.snapshot();
-    this._updateTurnAnimation(input.turn);
-    const sign = input.turn;
-    const r0 = CITY_GAMEPLAY.bikerMotion.turn.radiusStart;
-    const rMin = CITY_GAMEPLAY.bikerMotion.turn.radiusMin;
-    const ease = CITY_GAMEPLAY.bikerMotion.turn.radiusEaseSec;
-    const e01 = ease <= 0 ? 1 : Math.min(1, input.holdSec / ease);
-    const radius = THREE.MathUtils.lerp(r0, rMin, e01);
-
-    // heading + forward
-    if (sign !== 0 && speed > 0.001) {
-      const omega = (speed / Math.max(0.001, radius)) * sign;
-      this._bikerRoot.rotation.y += omega * dtSec;
+    // Коллизии: после движения проверяем hit по tip.
+    if (this._world.checkCollision(this._bikerRoot)) {
+      this._onCrash();
+      return;
     }
-
-    this._forward.set(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this._bikerRoot.rotation.y);
-    this._bikerRoot.position.addScaledVector(this._forward, speed * dtSec);
-
-    // Коллизии по активным домам (активация по proximity + raycast по мешу).
-    this._updateCollisionActivation();
-    this._checkCollision();
 
     const cam = this._getGameplayCamera();
     this._applyGameplayCameraFixedView(cam, this._bikerRoot.position, CITY_CAMERA.gameplay.view.followLerp);
     this._activeCamera = cam;
 
     // Дом может загораживать персонажа — делаем его полупрозрачным.
-    this._updateBikerOcclusion(cam, dtSec);
+    this._world.updateBikerOcclusion({
+      camera: cam,
+      bikerPos: this._bikerRoot.position,
+      targetY: CITY_CAMERA.gameplay.view.targetY,
+      dtSec,
+      config: CITY_TUNING.occlusion
+    });
 
     // Дома: видимость строго по frustum камеры (в игре — тоже).
-    this._buildings.setVisibilityByCamera(cam, 0);
-    this._buildings.updateAppear(dtSec, 0.25);
-
-    // Педали: скорость клипа зависит от speed01.
-    for (const a of this._pedalActions) {
-      a.setEffectiveTimeScale(Math.max(0, speed01) * CITY_ANIMATION.biker.pedals.maxPlaybackSpeed);
-    }
+    this._world.updatePlayingVisibility(cam, dtSec);
   }
 
-  private _updateBikerOcclusion(camera: THREE.Camera, dtSec: number): void {
-    if (!this._bikerRoot) return;
-    if (this._allBuildingMeshes.length === 0) return;
-
-    // Целимся в “верх” персонажа, чтобы дом прозрачнел, когда реально перекрывает его.
-    const targetY = CITY_CAMERA.gameplay.view.targetY;
-    this._tmpV3a.set(this._bikerRoot.position.x, targetY, this._bikerRoot.position.z);
-
-    this._tmpV3b.subVectors(this._tmpV3a, camera.position);
-    const len = this._tmpV3b.length();
-    if (len <= 0.0001) return;
-    this._tmpV3b.multiplyScalar(1 / len);
-
-    this._raycaster.set(camera.position, this._tmpV3b);
-    this._raycaster.near = 0;
-    this._raycaster.far = len;
-
-    const candidates = this._activeBuildingMeshes.length > 0 ? this._activeBuildingMeshes : this._allBuildingMeshes;
-    const hits = this._raycaster.intersectObjects(candidates, false);
-
-    let nextRoot: THREE.Object3D | null = null;
-    let nextMeshes: THREE.Mesh[] | null = null;
-
-    for (const hit of hits) {
-      const m = hit.object as THREE.Mesh;
-      const entry = this._meshToBuilding.get(m.uuid);
-      if (!entry) continue;
-      if (!entry.root.visible) continue;
-      nextRoot = entry.root;
-      nextMeshes = entry.meshes;
-      break;
-    }
-
-    const occlOpacity = CITY_TUNING.occlusion.buildingOpacity;
-    const fadeSec = CITY_TUNING.occlusion.fadeSec;
-
-    // Обновляем target для всех активных transitions.
-    for (const [root, st] of this._occlusionStates) {
-      const desired = root === nextRoot ? occlOpacity : 1;
-      if (Math.abs(desired - st.target) > 1e-6) {
-        st.from = st.current;
-        st.target = desired;
-        st.t01 = 0;
-      }
-    }
-
-    // Если появился новый окклюдер — добавляем state.
-    if (nextRoot && nextMeshes && !this._occlusionStates.has(nextRoot)) {
-      this._occlusionStates.set(nextRoot, {
-        meshes: nextMeshes,
-        from: 1,
-        current: 1,
-        target: occlOpacity,
-        t01: 0
-      });
-      // Включаем “окклюзионные” материалы сразу (opacity будет анимироваться).
-      for (const mesh of nextMeshes) this._ensureMeshOcclusionMaterial(mesh, 1);
-    }
-
-    // Анимируем opacity (квадратичная).
-    const dt01 = fadeSec <= 0 ? 1 : Math.min(1, Math.max(0, dtSec) / fadeSec);
-    for (const [root, st] of this._occlusionStates) {
-      if (Math.abs(st.current - st.target) <= 1e-4) {
-        st.current = st.target;
-      } else {
-        st.t01 = Math.min(1, st.t01 + dt01);
-        const eased = _easeInOutQuad(st.t01);
-        st.current = st.from + (st.target - st.from) * eased;
-      }
-
-      for (const mesh of st.meshes) this._applyMeshOcclusionOpacity(mesh, st.current);
-
-      // Полностью восстановили — возвращаем материалы и убираем state.
-      if (st.target >= 0.999 && st.t01 >= 1) {
-        for (const mesh of st.meshes) this._restoreMeshOcclusion(mesh);
-        this._occlusionStates.delete(root);
-      }
-    }
-  }
-
-  private _ensureMeshOcclusionMaterial(mesh: THREE.Mesh, opacity: number): void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ud = mesh.userData as any;
-    if (!ud._cityOcclusionOrigMaterial) ud._cityOcclusionOrigMaterial = mesh.material;
-    if (!ud._cityOcclusionMaterial) ud._cityOcclusionMaterial = _cloneOcclusionMaterial(mesh.material, opacity);
-    mesh.material = ud._cityOcclusionMaterial;
-    _setMaterialOpacity(ud._cityOcclusionMaterial, opacity);
-  }
-
-  private _applyMeshOcclusionOpacity(mesh: THREE.Mesh, opacity: number): void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ud = mesh.userData as any;
-    if (!ud._cityOcclusionMaterial) {
-      this._ensureMeshOcclusionMaterial(mesh, opacity);
-      return;
-    }
-    mesh.material = ud._cityOcclusionMaterial;
-    _setMaterialOpacity(ud._cityOcclusionMaterial, opacity);
-  }
-
-  private _restoreMeshOcclusion(mesh: THREE.Mesh): void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ud = mesh.userData as any;
-    if (ud._cityOcclusionOrigMaterial) mesh.material = ud._cityOcclusionOrigMaterial;
-  }
-
-  private _createTurnActions(clips: THREE.AnimationClip[], dir: -1 | 1): THREE.AnimationAction[] {
-    if (!this._bikerMixer) return [];
-    const manifest = CHEL_DEFAULT_MANIFEST.clips;
-    const names =
-      dir === 1
-        ? [manifest.turnLeftBody, manifest.turnLeftArmR, manifest.turnLeftArmL]
-        : [manifest.turnRightBody, manifest.turnRightArmR, manifest.turnRightArmL];
-
-    const actions: THREE.AnimationAction[] = [];
-    for (const name of names) {
-      if (!name) continue;
-      const clip = clips.find((c) => c.name === name);
-      if (!clip) continue;
-      const a = this._bikerMixer.clipAction(clip);
-      a.enabled = true;
-      a.setLoop(THREE.LoopOnce, 1);
-      a.clampWhenFinished = true;
-      a.setEffectiveWeight(0);
-      a.play();
-      actions.push(a);
-    }
-    return actions;
-  }
-
-  /**
-   * Анимация поворота должна быть “включена” с самого начала, но стоять на первом ключевом кадре.
-   * По дефолту активен набор `right`.
-   */
-  private _initTurnActions(): void {
-    // Ставим оба набора на первый кадр и паузим.
-    for (const a of [...this._turnLeftActions, ...this._turnRightActions]) {
-      a.enabled = true;
-      a.clampWhenFinished = true;
-      a.setLoop(THREE.LoopOnce, 1);
-      a.play(); // чтобы action был “живой” в миксере
-      a.paused = true;
-      a.time = 0;
-      a.setEffectiveWeight(0);
-      a.setEffectiveTimeScale(1);
-    }
-
-    // По умолчанию “включены right”, но всё равно на первом ключе.
-    this._turnActive = -1;
-    this._turnPhase = "completed";
-    this._turnPending = null;
-    this._setTurnWeights(-1);
-  }
-
-  /**
-   * Анимация руля:
-   * - при начале поворота: клип проигрывается до конца и залипает на последнем кадре
-   * - при отпускании: клип проигрывается назад до нуля (по той же траектории), затем вес уходит в 0
-   * - при смене направления: быстро возвращаемся в нейтраль, затем запускаем второе направление
-   */
-  private _updateTurnAnimation(requested: -1 | 0 | 1): void {
-    // requested: 1=left, -1=right, 0=none
-    const want: -1 | 1 | null = requested === 0 ? null : requested;
-
-    // 1) Стадия reverse: ждём пока вернёмся на 0, и только потом можем переключать сторону.
-    if (this._turnPhase === "reverse") {
-      const actions = this._getTurnActions(this._turnActive);
-      if (this._areActionsAtStart(actions)) {
-        for (const a of actions) {
-          a.paused = true;
-          a.time = 0;
-        }
-        this._turnPhase = "completed";
-
-        const pending = this._turnPending;
-        this._turnPending = null;
-        if (pending !== null) {
-          this._turnActive = pending;
-          this._setTurnWeights(pending);
-          this._startTurnForward(pending, CITY_ANIMATION.biker.turn.fadeIn.durationSec);
-          this._turnPhase = "forward";
-        }
-      }
-
-      // Исключение: если во время reverse нажали ту же сторону — разворачиваемся обратно и докручиваем до конца.
-      if (want !== null && want === this._turnActive) {
-        this._turnPending = null;
-        this._startTurnForward(this._turnActive, CITY_ANIMATION.biker.turn.reverseSnap.durationSec);
-        this._turnPhase = "forward";
-      } else if (want !== null && want !== this._turnActive) {
-        // Противоположная сторона — просто ждём конца reverse и держим в pending.
-        this._turnPending = want;
-      }
-      return;
-    }
-
-    // 2) completed: стоим на первом ключе, анимация “завершена”.
-    if (this._turnPhase === "completed") {
-      if (want === null) return;
-      if (this._turnActive !== want) {
-        this._turnActive = want;
-        this._setTurnWeights(want);
-        this._snapTurnToStart(want);
-      }
-      this._startTurnForward(want, CITY_ANIMATION.biker.turn.fadeIn.durationSec);
-      this._turnPhase = "forward";
-      return;
-    }
-
-    // 3) forward/hold: анимация “незавершена” (либо идём вперёд, либо залипли в конце).
-    if (this._turnPhase === "forward") {
-      const actions = this._getTurnActions(this._turnActive);
-      if (this._areActionsAtEnd(actions)) {
-        for (const a of actions) {
-          a.paused = true;
-          a.time = a.getClip().duration;
-        }
-        this._turnPhase = "hold";
-      }
-    }
-
-    if (this._turnPhase === "hold") {
-      // держим последний кадр
-    }
-
-    // Отпустили — reverse назад до 0.
-    if (want === null) {
-      this._startTurnReturn(this._turnActive, CITY_ANIMATION.biker.turn.returnToNeutral.durationSec);
-      this._turnPhase = "reverse";
-      return;
-    }
-
-    // Нажали другую сторону, пока “незавершено”: сначала reverse до 0, потом новое.
-    if (want !== this._turnActive) {
-      this._turnPending = want;
-      this._startTurnReturn(this._turnActive, CITY_ANIMATION.biker.turn.reverseSnap.durationSec);
-      this._turnPhase = "reverse";
-      return;
-    }
-
-    // Нажали ту же сторону:
-    // - если мы были в hold — ничего не делаем (уже на последнем кадре)
-    // - если мы были в forward — продолжаем вперёд
-  }
-
-  private _startTurnForward(dir: -1 | 1, travelSec: number): void {
-    const actions = this._getTurnActions(dir);
-    for (const a of actions) {
-      const d = a.getClip().duration;
-      a.enabled = true;
-      a.clampWhenFinished = true;
-      a.setLoop(THREE.LoopOnce, 1);
-      a.paused = false;
-      a.timeScale = _timeScaleFor(d, travelSec);
-      a.play();
-    }
-  }
-
-  private _startTurnReturn(dir: -1 | 1, travelSec: number): void {
-    const actions = this._getTurnActions(dir);
-    for (const a of actions) {
-      const d = a.getClip().duration;
-      a.enabled = true;
-      a.clampWhenFinished = true;
-      a.setLoop(THREE.LoopOnce, 1);
-      a.paused = false;
-      a.play();
-      // начинаем “с текущего положения”: если мы в hold — это d, если в forward — это уже накопленное время
-      if (a.time > d) a.time = d;
-      a.timeScale = -_timeScaleFor(d, travelSec);
-    }
-  }
-
-  private _fadeOutActions(actions: THREE.AnimationAction[], sec: number): void {
-    for (const a of actions) {
-      a.fadeOut(Math.max(0.001, sec));
-    }
-  }
-
-  private _areActionsAtStart(actions: readonly THREE.AnimationAction[]): boolean {
-    for (const a of actions) {
-      if (a.time > 0.001) return false;
-    }
-    return true;
-  }
-
-  private _areActionsAtEnd(actions: readonly THREE.AnimationAction[]): boolean {
-    for (const a of actions) {
-      const d = a.getClip().duration;
-      if (a.time < d - 0.001) return false;
-    }
-    return true;
-  }
-
-  private _getTurnActions(dir: -1 | 1): THREE.AnimationAction[] {
-    // dir: 1=left, -1=right
-    return dir === 1 ? this._turnLeftActions : this._turnRightActions;
-  }
-
-  private _setTurnWeights(dir: -1 | 1): void {
-    const leftW = dir === 1 ? 1 : 0;
-    const rightW = dir === -1 ? 1 : 0;
-    for (const a of this._turnLeftActions) a.setEffectiveWeight(leftW);
-    for (const a of this._turnRightActions) a.setEffectiveWeight(rightW);
-  }
-
-  private _snapTurnToStart(dir: -1 | 1): void {
-    const actions = this._getTurnActions(dir);
-    for (const a of actions) {
-      a.paused = true;
-      a.time = 0;
-    }
-  }
-
-  private _updateCollisionActivation(): void {
-    if (!this._bikerRoot) return;
-    const enableR = CITY_GAMEPLAY.collisions.activation.enableRadius;
-    const disableR = CITY_GAMEPLAY.collisions.activation.disableRadius;
-    const pos = this._bikerRoot.position;
-
-    for (const b of this._buildings.buildings) {
-      const dx = b.center.x - pos.x;
-      const dz = b.center.z - pos.z;
-      const d = Math.hypot(dx, dz);
-      const isActive = this._activeBuildings.has(b.root);
-      if (!isActive && d <= enableR) {
-        this._activeBuildings.add(b.root);
-        for (const m of b.meshes) {
-          buildMeshBvh(m);
-          this._activeBuildingMeshes.push(m);
-        }
-      } else if (isActive && d >= disableR) {
-        this._activeBuildings.delete(b.root);
-        for (const m of b.meshes) {
-          disposeMeshBvh(m);
-        }
-        // rebuild active list (редко, но просто)
-        this._activeBuildingMeshes = this._activeBuildingMeshes.filter((m) => b.meshes.indexOf(m) < 0);
-      }
-    }
-  }
-
-  private _checkCollision(): void {
-    if (!this._bikerRoot) return;
-    if (this._activeBuildingMeshes.length === 0) return;
-
-    this._bikerRoot.updateMatrixWorld(true);
-    this._tip.copy(this._tipLocal);
-    this._bikerRoot.localToWorld(this._tip);
-
-    const delta = new THREE.Vector3().subVectors(this._tip, this._prevTip);
-    const len = delta.length();
-    if (len <= 0.0001) {
-      this._prevTip.copy(this._tip);
-      return;
-    }
-    delta.multiplyScalar(1 / len);
-    this._raycaster.set(this._prevTip, delta);
-    this._raycaster.near = 0;
-    this._raycaster.far = len;
-
-    const hits = this._raycaster.intersectObjects(this._activeBuildingMeshes, false);
-    if (hits.length > 0) {
-      this._onCrash();
-    }
-
-    this._prevTip.copy(this._tip);
-  }
+  // NOTE: Biker animation logic extracted to `src/projects/city/biker/BikerAnimationController.ts`,
+  // а мир/дома/окклюзия/коллизии — в `src/projects/city/cityWorld/CityWorldController.ts`.
 
   private _onCrash(): void {
     if (this._mode === "crashed") return;
@@ -1263,26 +776,13 @@ export class CityApp {
     this._crashOverlay.hide();
     this._startBtn.setVisible(true);
 
-    this._gameT = 0;
     this._bikerRoot.visible = false;
     this._bikerRoot.position.copy(this._startWorldPos);
     this._bikerRoot.rotation.set(0, 0, 0);
-    this._turnPending = null;
-    this._turnActive = -1;
-    this._turnPhase = "completed";
-    this._setTurnWeights(-1);
-    this._snapTurnToStart(-1);
-    this._fadeOutActions(this._turnLeftActions, 0.05);
-    this._fadeOutActions(this._turnRightActions, 0.05);
-    for (const a of this._pedalActions) a.setEffectiveTimeScale(0.0001);
+    this._bikerAnim?.reset();
 
     // Сбрасываем активные коллайдеры.
-    for (const m of this._activeBuildingMeshes) disposeMeshBvh(m);
-    this._activeBuildingMeshes = [];
-    this._activeBuildings.clear();
-
-    this._bikerRoot.updateMatrixWorld(true);
-    this._prevTip.copy(this._bikerRoot.localToWorld(this._tipLocal.clone()));
+    this._world.resetCollisionState(this._bikerRoot);
   }
 
   private _computeGameplayCameraPos(targetPos: THREE.Vector3): THREE.Vector3 {
@@ -1364,7 +864,7 @@ export class CityApp {
    */
   private _pickSpawnPosition(preferred: THREE.Vector3): THREE.Vector3 {
     const isFree = (p: THREE.Vector3) => {
-      for (const b of this._buildings.buildings) {
+      for (const b of this._world.buildingsIndex.buildings) {
         // Быстро: проверяем попадание в box здания (в XZ) + clearance.
         const box = b.box;
         if (
@@ -1411,39 +911,4 @@ export class CityApp {
   }
 }
 
-function _timeScaleFor(clipDurationSec: number, travelSec: number): number {
-  return clipDurationSec / Math.max(0.001, travelSec);
-}
-
-function _cloneOcclusionMaterial(
-  material: THREE.Material | THREE.Material[],
-  opacity: number
-): THREE.Material | THREE.Material[] {
-  if (Array.isArray(material)) return material.map((m) => _cloneOcclusionMaterial(m, opacity) as THREE.Material);
-  const m = material.clone();
-  m.transparent = true;
-  m.opacity = opacity;
-  // Ключевой момент для “без внутренностей”: пишем depth, чтобы задние/внутренние полигоны не просвечивали.
-  m.depthWrite = true;
-  m.depthTest = true;
-  m.side = THREE.FrontSide;
-  m.needsUpdate = true;
-  return m;
-}
-
-function _setMaterialOpacity(material: THREE.Material | THREE.Material[], opacity: number): void {
-  if (Array.isArray(material)) {
-    for (const m of material) _setMaterialOpacity(m, opacity);
-    return;
-  }
-  material.transparent = true;
-  material.opacity = opacity;
-  material.depthWrite = true;
-  material.side = THREE.FrontSide;
-  material.needsUpdate = true;
-}
-
-function _easeInOutQuad(x: number): number {
-  const t = Math.max(0, Math.min(1, x));
-  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) * 0.5;
-}
+// NOTE: `_timeScaleFor` moved to `BikerAnimationController`.
