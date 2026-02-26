@@ -9,6 +9,7 @@ import { TurnInput } from "./input/TurnInput";
 import { StartButton } from "./ui/StartButton";
 import { CrashOverlay } from "./ui/CrashOverlay";
 import { CityGirlsSystem } from "./girls/CityGirlsSystem";
+import { CITY_GIRLS } from "./girls/girlsConfig";
 import { BikerLoader } from "./biker/BikerLoader";
 import { BikerAnimationController } from "./biker/BikerAnimationController";
 import { CityWorldController } from "./cityWorld/CityWorldController";
@@ -440,6 +441,10 @@ export class CityApp {
   private _tmpDir = new THREE.Vector3();
   private _tmpFocusPos = new THREE.Vector3();
 
+  // Proximity zoom (камера приближается при подъезде к девочкам)
+  private _proximityDistanceMul = 1;
+  private _tmpGirlPos = new THREE.Vector3();
+
   private _beginFocusToStart(): void {
     if (!this._cityRoot) return;
     this._girlsSystem.resetToHome("focusStart");
@@ -472,7 +477,7 @@ export class CityApp {
   private _updateFocus(dtSec: number): void {
     this._focusT += dtSec;
     const t01 = Math.min(1, this._focusT / Math.max(0.001, CITY_CAMERA.focusStart.travelSec));
-    const k = t01 * t01 * (3 - 2 * t01); // smoothstep
+    const k = (CITY_CAMERA.focusStart as any).ease?.curve === "linear" ? t01 : t01 * t01 * (3 - 2 * t01); // smoothstep
     this._tmpFocusPos.lerpVectors(this._focusFrom, this._focusTo, k);
 
     // Плавно интерполируем pos + quat + fov на transition-камере.
@@ -550,8 +555,44 @@ export class CityApp {
       return;
     }
 
+    // Proximity zoom: камера приближается при подъезде к девочкам.
+    const proxCfg = (CITY_CAMERA.gameplay as any).proximityZoom ?? null;
+    if (proxCfg?.enabled) {
+      const reactionR = CITY_GIRLS.hello.distance;
+      const activationR = reactionR * Math.max(1, proxCfg.activationRadiusMultiplier ?? 2);
+      const minMul = Math.max(0.05, Math.min(1, proxCfg.minDistanceMultiplier ?? 0.5));
+
+      let nearest = Infinity;
+      for (const g of this._girlsSystem.girls) {
+        g.controller.instance.root.getWorldPosition(this._tmpGirlPos);
+        const dx = this._bikerRoot.position.x - this._tmpGirlPos.x;
+        const dz = this._bikerRoot.position.z - this._tmpGirlPos.z;
+        const d = Math.hypot(dx, dz);
+        if (d < nearest) nearest = d;
+      }
+
+      let targetMul = 1;
+      if (Number.isFinite(nearest)) {
+        if (nearest <= reactionR) {
+          targetMul = minMul;
+        } else if (nearest < activationR) {
+          const t = 1 - (nearest - reactionR) / Math.max(1e-6, activationR - reactionR); // 0..1
+          const t01 = Math.max(0, Math.min(1, t));
+          const eased = proxCfg.curve === "linear" ? t01 : t01 * t01 * (3 - 2 * t01); // smoothstep
+          targetMul = THREE.MathUtils.lerp(1, minMul, eased);
+        }
+      }
+
+      const isApproaching = targetMul < this._proximityDistanceMul;
+      const easeSec = Math.max(0.001, isApproaching ? proxCfg.approachEaseSec ?? 0.35 : proxCfg.releaseEaseSec ?? 0.55);
+      const alpha = 1 - Math.exp(-Math.max(0, dtSec) / easeSec);
+      this._proximityDistanceMul = THREE.MathUtils.lerp(this._proximityDistanceMul, targetMul, alpha);
+    } else {
+      this._proximityDistanceMul = 1;
+    }
+
     const cam = this._getGameplayCamera();
-    this._gameplayCamera.applyFixedView(cam, this._bikerRoot.position, CITY_CAMERA.gameplay.view.followLerp);
+    this._gameplayCamera.applyFixedView(cam, this._bikerRoot.position, CITY_CAMERA.gameplay.view.followLerp, this._proximityDistanceMul);
     this._activeCamera = cam;
 
     // Дом может загораживать персонажа — делаем его полупрозрачным.

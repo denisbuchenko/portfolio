@@ -43,7 +43,7 @@ export class CityGameplayCamera {
     camera.quaternion.copy(this._composeGameplayQuaternionInto(this._tmpQ));
   }
 
-  applyFixedView(camera: THREE.Camera, targetPos: THREE.Vector3, followLerp: number): void {
+  applyFixedView(camera: THREE.Camera, targetPos: THREE.Vector3, followLerp: number, distanceMultiplier = 1): void {
     const view = CITY_CAMERA.gameplay.view;
     const yaw = (view.yawDeg * Math.PI) / 180;
     const pitch = (view.pitchDeg * Math.PI) / 180;
@@ -55,7 +55,8 @@ export class CityGameplayCamera {
 
     // Позиция: держим персонажа на оси взгляда, камера ездит только по плоскости.
     const forward = this._tmpV3a.set(0, 0, -1).applyQuaternion(camera.quaternion);
-    const desired = this._tmpV3b.set(targetPos.x, view.targetY, targetPos.z).addScaledVector(forward, -view.distance);
+    const dist = view.distance * Math.max(0.05, distanceMultiplier);
+    const desired = this._tmpV3b.set(targetPos.x, view.targetY, targetPos.z).addScaledVector(forward, -dist);
 
     // Доп. локальный сдвиг.
     const off = CITY_CAMERA.gameplay.extraTransform.positionOffset;

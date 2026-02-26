@@ -50,6 +50,10 @@ export type OverviewCameraConfig = Readonly<{
 export type FocusStartConfig = Readonly<{
   /** Сколько секунд летим/приближаемся к старт-точке. */
   travelSec: number;
+  /** Кривая/плавность перехода (опционально). */
+  ease?: Readonly<{
+    curve?: "linear" | "smoothstep";
+  }>;
   /** Переход к игровому виду (диагональ как в Diablo). */
   gameplayPitchDeg: number;
   gameplayDistance: number;

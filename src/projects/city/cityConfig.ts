@@ -127,6 +127,32 @@ export const CITY_CAMERA = {
       targetY: 0.8,
       followLerp: 0.12
     },
+    /**
+     * Приближение камеры при подъезде к девочке:
+     * - есть радиус реакции девочки (см. CITY_GIRLS.hello.distance)
+     * - есть больший радиус активации камеры
+     * - внутри активации камера плавно приближается, но не ближе minDistanceMultiplier
+     * - при отъезде — плавно возвращается назад
+     */
+    proximityZoom: {
+      enabled: true,
+      /**
+       * Радиус активации камеры относительно радиуса реакции девочки.
+       * Например 2 => активация в 2 раза дальше, чем начало реакции.
+       */
+      activationRadiusMultiplier: 2.0,
+      /**
+       * Насколько близко можно приблизить камеру.
+       * 0.5 => в 2 раза ближе (distance * 0.5).
+       */
+      minDistanceMultiplier: 0.5,
+      /** Плавность приближения (сек). */
+      approachEaseSec: 0.35,
+      /** Плавность отдаления (сек). */
+      releaseEaseSec: 0.55,
+      /** Кривая 0..1 → 0..1 внутри зоны активации. */
+      curve: "smoothstep" as "linear" | "smoothstep"
+    },
     extraTransform: {
       positionOffset: { x: 0, y: 0, z: 0 },
       rotationOffsetDeg: { x: 0, y: 0, z: 0 }
@@ -135,6 +161,9 @@ export const CITY_CAMERA = {
 
   focusStart: {
     travelSec: 1.1,
+    ease: {
+      curve: "smoothstep" as "linear" | "smoothstep"
+    },
     gameplayPitchDeg: 52,
     gameplayDistance: 18
   } satisfies FocusStartConfig
