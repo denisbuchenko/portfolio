@@ -39,7 +39,7 @@ export const CITY_GIRLS = {
    * Доп. yaw (градусы), который добавляется при lookAt/повороте к велосипедисту,
    * если "forward" у модели не совпадает с -Z.
    */
-  faceYawOffsetDeg: 0,
+  faceYawOffsetDeg: 180,
 
   animations: {
     stay: "stay",
@@ -55,6 +55,8 @@ export const CITY_GIRLS = {
     repeatDelaySec: 2.0,
     /** Скорость поворота к велосипедисту (0..1 на тик). */
     faceSlerp01: 0.14,
+    /** Скорость возврата к исходному повороту (0..1 на тик). */
+    returnSlerp01: 0.16,
     /** Плавность переключения анимаций. */
     fadeSec: 0.15
   },
@@ -83,7 +85,15 @@ export const CITY_GIRLS = {
     /** Показать оси в точке NPC (помогает понять: NPC заспавнился или нет). */
     showAxes: true,
     /** Показать bounds-box helper вокруг модели (если материалы не видны). */
-    showBounds: true
+    showBounds: true,
+    /** Рисовать синее кольцо вокруг NPC, обозначающее `hello.distance`. */
+    showHelloRadiusRing: true,
+    helloRadiusRing: {
+      thickness: 0.18,
+      y: 0.04,
+      color: 0x1f6fff,
+      opacity: 0.55
+    }
   }
 } as const;
 

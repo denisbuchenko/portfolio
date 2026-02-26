@@ -21,6 +21,11 @@ type _GirlRuntime = Readonly<{
   goal: THREE.Mesh;
   axes?: THREE.AxesHelper;
   bounds?: THREE.BoxHelper;
+  helloRing?: THREE.Mesh;
+  home: {
+    position: THREE.Vector3;
+    quaternion: THREE.Quaternion;
+  };
   state: {
     mode: "stay" | "hello" | "love" | "love2";
     helloCooldownSec: number;
@@ -459,9 +464,13 @@ export class CityApp {
         instance.root.rotation.y += (CITY_GIRLS.spawnExtraYawDeg * Math.PI) / 180;
       }
 
+      const homePos = instance.root.position.clone();
+      const homeQ = instance.root.quaternion.clone();
+
       // Debug helpers.
       let axes: THREE.AxesHelper | undefined;
       let bounds: THREE.BoxHelper | undefined;
+      let helloRing: THREE.Mesh | undefined;
       if (CITY_GIRLS.debug.showAxes) {
         axes = new THREE.AxesHelper(2.2);
         axes.name = "GirlNpcAxes";
@@ -473,11 +482,18 @@ export class CityApp {
         bounds.update();
         this._scene.add(bounds);
       }
+      if (CITY_GIRLS.debug.showHelloRadiusRing) {
+        helloRing = this._createGirlHelloRadiusRing(CITY_GIRLS.hello.distance);
+        helloRing.position.set(homePos.x, homePos.y + CITY_GIRLS.debug.helloRadiusRing.y, homePos.z);
+        this._scene.add(helloRing);
+      }
 
       const controller = new GirlController({ id: `girl-${i + 1}`, instance });
 
       const goal = this._createGirlGoalCylinder(instance.root);
       this._scene.add(goal);
+      // Появляется только при приближении.
+      goal.visible = false;
 
       this._girls.push({
         id: `girl-${i + 1}`,
@@ -486,6 +502,8 @@ export class CityApp {
         goal,
         axes,
         bounds,
+        helloRing,
+        home: { position: homePos, quaternion: homeQ },
         state: {
           mode: "stay",
           helloCooldownSec: 0,
@@ -554,10 +572,10 @@ export class CityApp {
         if (clipName === CITY_GIRLS.animations.hello) {
           st.helloCooldownSec = CITY_GIRLS.hello.repeatDelaySec;
           st.mode = "stay";
-          g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: CITY_GIRLS.hello.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity });
+          g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: CITY_GIRLS.hello.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity, restart: true });
         } else if (clipName === CITY_GIRLS.animations.love) {
           st.mode = "love2";
-          g.controller.play(CITY_GIRLS.animations.love2, { fadeSec: CITY_GIRLS.love.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity });
+          g.controller.play(CITY_GIRLS.animations.love2, { fadeSec: CITY_GIRLS.love.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity, restart: true });
         }
       }
 
@@ -575,6 +593,9 @@ export class CityApp {
       const distToGoal = Math.sqrt(gx * gx + gz * gz);
 
       const near = distToGirl <= CITY_GIRLS.hello.distance;
+
+      // Цилиндр-цель появляется только при приближении (и пока цель не достигнута).
+      g.goal.visible = CITY_GIRLS.debug.showGoalCylinders && near && !st.goalReached;
 
       if (!st.goalReached && distToGoal <= CITY_GIRLS.goal.reachRadius) {
         st.goalReached = true;
@@ -599,16 +620,43 @@ export class CityApp {
               restart: true
             });
           }
-        } else if (st.wasNear) {
-          st.mode = "stay";
-          st.helloCooldownSec = 0;
-          g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: CITY_GIRLS.hello.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity });
+        } else {
+          // Вышли из радиуса: возвращаемся к исходной позиции/повороту.
+          g.controller.setWorldPosition(g.home.position);
+          g.controller.setWorldQuaternion(g.home.quaternion);
+          // Мягкий возврат (помогает, если девочка успела развернуться).
+          g.controller.instance.root.quaternion.slerp(g.home.quaternion, CITY_GIRLS.hello.returnSlerp01);
+
+          if (st.wasNear) {
+            st.mode = "stay";
+            st.helloCooldownSec = 0;
+            g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: CITY_GIRLS.hello.fadeSec, loop: THREE.LoopRepeat, repetitions: Infinity, restart: true });
+          }
         }
         st.wasNear = near;
       }
 
       if (g.bounds) g.bounds.update();
     }
+  }
+
+  private _createGirlHelloRadiusRing(radius: number): THREE.Mesh {
+    const t = Math.max(0.01, CITY_GIRLS.debug.helloRadiusRing.thickness);
+    const inner = Math.max(0.001, radius - t);
+    const outer = Math.max(inner + 0.001, radius);
+    const geo = new THREE.RingGeometry(inner, outer, 48, 1);
+    const mat = new THREE.MeshBasicMaterial({
+      color: CITY_GIRLS.debug.helloRadiusRing.color,
+      transparent: true,
+      opacity: CITY_GIRLS.debug.helloRadiusRing.opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = "GirlHelloRadiusRing";
+    mesh.rotation.x = -Math.PI / 2; // XY -> XZ
+    mesh.renderOrder = 10;
+    return mesh;
   }
 
   private _createGirlGoalCylinder(girlRoot: THREE.Object3D): THREE.Mesh {
@@ -634,6 +682,33 @@ export class CityApp {
 
     mesh.visible = CITY_GIRLS.debug.showGoalCylinders;
     return mesh;
+  }
+
+  private _resetGirlsToHome(reason: string): void {
+    if (this._girls.length === 0) return;
+    // eslint-disable-next-line no-console
+    console.log("[CityGirl] reset", { reason });
+
+    for (const g of this._girls) {
+      // state
+      g.state.mode = "stay";
+      g.state.helloCooldownSec = 0;
+      g.state.wasNear = false;
+      g.state.goalReached = false;
+
+      // transform
+      g.controller.setWorldPosition(g.home.position);
+      g.controller.setWorldQuaternion(g.home.quaternion);
+
+      // visuals
+      g.goal.visible = false;
+
+      // animation
+      g.controller.consumeFinished();
+      g.controller.play(CITY_GIRLS.animations.stay, { fadeSec: 0.01, loop: THREE.LoopRepeat, repetitions: Infinity, restart: true });
+
+      if (g.bounds) g.bounds.update();
+    }
   }
 
   private _updateOverview(_dtSec: number): void {
@@ -702,6 +777,7 @@ export class CityApp {
 
   private _beginFocusToStart(): void {
     if (!this._cityRoot) return;
+    this._resetGirlsToHome("focusStart");
     this._mode = "focusStart";
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
@@ -1158,6 +1234,7 @@ export class CityApp {
   private _onCrash(): void {
     if (this._mode === "crashed") return;
     this._mode = "crashed";
+    this._resetGirlsToHome("crash");
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
     this._crashOverlay.show();
@@ -1169,6 +1246,7 @@ export class CityApp {
   private _resetToOverview(): void {
     if (!this._bikerRoot) return;
     this._mode = "overview";
+    this._resetGirlsToHome("resetToOverview");
     this._scroll.setEnabled(true);
     this._turn.setEnabled(false);
     this._crashOverlay.hide();
