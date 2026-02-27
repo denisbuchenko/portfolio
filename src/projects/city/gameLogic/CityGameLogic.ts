@@ -137,7 +137,7 @@ export class CityGameLogic {
       if (!g.state.goalReached && distToGoal <= CITY_GIRLS.goal.reachRadius) {
         g.state.goalReached = true;
         g.setGoalVisible(false);
-        g.anim.playLove({ restart: true });
+        g.anim.beginLoveSequence();
       }
 
       if (!g.state.goalReached) {

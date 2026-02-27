@@ -8,6 +8,7 @@ import { ScrollInput } from "./input/ScrollInput";
 import { TurnInput } from "./input/TurnInput";
 import { StartButton } from "./ui/StartButton";
 import { CrashOverlay } from "./ui/CrashOverlay";
+import { CityDebugPanel, type DebugFocusGirlTuning } from "./ui/CityDebugPanel";
 import { CityGirlsSystem, type CityGirlRuntime } from "./girls/CityGirlsSystem";
 import { CITY_GIRLS } from "./girls/girlsConfig";
 import { BikerLoader } from "./biker/BikerLoader";
@@ -43,6 +44,7 @@ export class CityApp {
 
   private _startBtn: StartButton;
   private _crashOverlay: CrashOverlay;
+  private _debugPanel: CityDebugPanel;
 
   private _raf = 0;
   private _lastT = performance.now();
@@ -131,6 +133,14 @@ export class CityApp {
     this._startBtn = new StartButton(this._uiRoot);
     this._startBtn.onClick(() => this._beginFocusToStart());
     this._crashOverlay = new CrashOverlay(this._uiRoot);
+    this._debugPanel = new CityDebugPanel(this._uiRoot);
+    this._debugPanel.onFocusFirstGirl(() => this._beginDebugFocusFirstGirl());
+    this._debugFocusGirlTuning = this._cloneDebugFocusGirlTuning();
+    this._debugPanel.setDebugFocusGirlTuning(this._debugFocusGirlTuning);
+    this._debugPanel.onDebugFocusGirlTuningChange((next) => {
+      this._debugFocusGirlTuning = next;
+      this._applyDebugFocusGirlTuningLive();
+    });
 
     this._unsubScroll = this._scroll.bind(this._host);
     this._unsubTurn = this._turn.bind(this._host);
@@ -164,6 +174,7 @@ export class CityApp {
 
     this._startBtn.dispose();
     this._crashOverlay.dispose();
+    this._debugPanel.dispose();
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
 
     this._girlsSystem.dispose();
@@ -227,6 +238,7 @@ export class CityApp {
 
     // NPC girls (явная инициализация).
     await this._girlsSystem.init({ cityRoot: this._cityRoot });
+    this._debugPanel.setGirls(this._girlsSystem.girls);
 
     // “Пол главнее”: убираем z-fighting/конфликты при пересечениях со сплющенными домами.
     this._applyFloorPriority(this._cityRoot);
@@ -376,6 +388,15 @@ export class CityApp {
     const h = this._host.clientHeight || window.innerHeight;
     const aspect = w / Math.max(1, h);
 
+    // Debug panel visible only in overview.
+    this._debugPanel.setVisible(true);
+
+    // Если активен debug focus — подменяем обзорный апдейт на плавный наезд к девочке.
+    if (this._debugFocus) {
+      this._updateDebugFocus(_dtSec);
+      return;
+    }
+
     const usePerspective = CITY_CAMERA.overview.usePerspective ?? false;
     const cam = usePerspective ? this._overviewPerspectiveCamera : this._overviewCamera;
 
@@ -443,6 +464,25 @@ export class CityApp {
   private _proximityDistanceMul = 1;
   private _tmpGirlPos = new THREE.Vector3();
 
+  // Debug camera focus (overview)
+  private _debugFocus:
+    | null
+    | {
+        t: number;
+        travelSec: number;
+        fromPos: THREE.Vector3;
+        toPos: THREE.Vector3;
+        fromQuat: THREE.Quaternion;
+        toQuat: THREE.Quaternion;
+        fromFov: number;
+        toFov: number;
+      } = null;
+  private _tmpBox = new THREE.Box3();
+  private _tmpSize = new THREE.Vector3();
+  private _tmpLook = new THREE.Object3D();
+  private _debugFocusGirlId: string | null = null;
+  private _debugFocusGirlTuning: DebugFocusGirlTuning;
+
   // Speed scaling (замедление/остановка)
   private _speedMul = 1;
 
@@ -488,6 +528,7 @@ export class CityApp {
     this._focusCamera.fov = this._focusFromFov;
     this._focusCamera.updateProjectionMatrix();
     this._activeCamera = this._focusCamera;
+    this._debugPanel.setVisible(false);
   }
 
   private _updateFocus(dtSec: number): void {
@@ -513,6 +554,160 @@ export class CityApp {
       this._gameCamera.updateProjectionMatrix();
       this._beginPlaying();
     }
+  }
+
+  private _beginDebugFocusFirstGirl(): void {
+    if (this._girlsSystem.girls.length === 0) return;
+    const g = this._girlsSystem.girls[0]!;
+    this._beginDebugFocusGirl(g);
+  }
+
+  private _beginDebugFocusGirl(g: CityGirlRuntime): NonNullable<CityApp["_debugFocus"]> {
+    const cfg = this._debugFocusGirlTuning;
+    this._debugFocusGirlId = g.id;
+
+    // Стартовая камера — текущая обзорная.
+    const overviewCam = (CITY_CAMERA.overview.usePerspective ?? false) ? this._overviewPerspectiveCamera : this._overviewCamera;
+    const fromPos = overviewCam.position.clone();
+    const fromQuat = overviewCam.quaternion.clone();
+    const fromFov = this._getFovForCamera(overviewCam);
+
+    // Цель — девочка в полный рост.
+    g.controller.instance.root.updateMatrixWorld(true);
+    this._tmpBox.setFromObject(g.controller.instance.root);
+    this._tmpBox.getSize(this._tmpSize);
+
+    // Центр бокса (в мировых координатах) — самая надёжная точка наведения, т.к. pivot модели может быть где угодно.
+    this._tmpBox.getCenter(this._tmpGirlPos);
+
+    const w = this._host.clientWidth || window.innerWidth;
+    const h = this._host.clientHeight || window.innerHeight;
+    const aspect = w / Math.max(1, h);
+
+    const fov = THREE.MathUtils.clamp(cfg.fov, 10, 120);
+    let toPos: THREE.Vector3;
+    let toQuat: THREE.Quaternion;
+
+    if (cfg.mode === "fixed") {
+      const lookAtLocal = cfg.fixed.lookAtLocalOffset;
+      const lookAt = this._tmpGirlPos.clone().add(new THREE.Vector3(lookAtLocal.x, lookAtLocal.y, lookAtLocal.z));
+
+      // Базовый lookAt (без доп. трансформаций).
+      this._tmpLook.position.copy(this._tmpGirlPos);
+      this._tmpLook.lookAt(lookAt);
+      const baseQ = this._tmpLook.quaternion.clone();
+
+      const off = cfg.fixed.cameraLocalOffset;
+      const local = new THREE.Vector3(off.x, off.y, off.z).applyQuaternion(baseQ);
+      toPos = lookAt.clone().add(local);
+
+      this._tmpLook.position.copy(toPos);
+      this._tmpLook.lookAt(lookAt);
+      toQuat = this._tmpLook.quaternion.clone();
+    } else {
+      const padding = Math.max(1.0, cfg.padding);
+      // Фит по высоте, с учётом aspect (чтобы на узком экране не "резало" по ширине).
+      const fitSize = Math.max(this._tmpSize.y, this._tmpSize.x / Math.max(0.25, aspect), 0.2);
+      const dist = (fitSize * 0.5 * padding) / Math.tan((fov * Math.PI) / 180 / 2);
+
+      // Ставим камеру под диагональный угол, но всегда смотрим строго на центр.
+      const yaw = (cfg.yawDeg * Math.PI) / 180;
+      const pitch = (cfg.pitchDeg * Math.PI) / 180;
+      const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(pitch, yaw, 0, "YXZ")).normalize();
+
+      toPos = this._tmpGirlPos.clone().addScaledVector(dir, -dist);
+
+      this._tmpLook.position.copy(toPos);
+      this._tmpLook.lookAt(this._tmpGirlPos);
+      toQuat = this._tmpLook.quaternion.clone();
+    }
+
+    // Доп. ручная подстройка (понятные локальные оффсеты).
+    if (cfg.extraTransform) {
+      const r = cfg.extraTransform.rotationOffsetDeg;
+      const qOff = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler((r.x * Math.PI) / 180, (r.y * Math.PI) / 180, (r.z * Math.PI) / 180, "XYZ")
+      );
+      toQuat.multiply(qOff);
+
+      const p = cfg.extraTransform.positionOffset;
+      const local = new THREE.Vector3(p.x, p.y, p.z).applyQuaternion(toQuat);
+      toPos.add(local);
+    }
+
+    const st: NonNullable<CityApp["_debugFocus"]> = {
+      t: 0,
+      travelSec: Math.max(0.001, cfg.travelSec),
+      fromPos,
+      toPos,
+      fromQuat,
+      toQuat,
+      fromFov,
+      toFov: fov
+    };
+    this._debugFocus = st;
+
+    // используем focusCamera как transition-камеру
+    this._focusCamera.position.copy(fromPos);
+    this._focusCamera.quaternion.copy(fromQuat);
+    this._focusCamera.fov = fromFov;
+    this._focusCamera.updateProjectionMatrix();
+    this._activeCamera = this._focusCamera;
+    return st;
+  }
+
+  private _updateDebugFocus(dtSec: number): void {
+    const st = this._debugFocus;
+    if (!st) return;
+    st.t += Math.max(0, dtSec);
+    const t01 = Math.min(1, st.t / Math.max(0.001, st.travelSec));
+    const k = t01 * t01 * (3 - 2 * t01);
+
+    this._tmpFocusPos.lerpVectors(st.fromPos, st.toPos, k);
+    this._focusCamera.position.copy(this._tmpFocusPos);
+    this._focusCamera.quaternion.slerpQuaternions(st.fromQuat, st.toQuat, k);
+    this._focusCamera.fov = THREE.MathUtils.lerp(st.fromFov, st.toFov, k);
+    this._focusCamera.updateProjectionMatrix();
+    this._activeCamera = this._focusCamera;
+
+    if (t01 >= 1) {
+      // остаёмся стоять в этом положении (debug)
+    }
+  }
+
+  private _cloneDebugFocusGirlTuning(): DebugFocusGirlTuning {
+    const c = CITY_CAMERA.debugFocusGirl;
+    return {
+      mode: c.mode,
+      travelSec: c.travelSec,
+      fov: c.fov,
+      padding: c.padding,
+      yawDeg: c.yawDeg,
+      pitchDeg: c.pitchDeg,
+      fixed: {
+        cameraLocalOffset: { ...c.fixed.cameraLocalOffset },
+        lookAtLocalOffset: { ...c.fixed.lookAtLocalOffset }
+      },
+      extraTransform: {
+        positionOffset: { ...c.extraTransform.positionOffset },
+        rotationOffsetDeg: { ...c.extraTransform.rotationOffsetDeg }
+      }
+    };
+  }
+
+  private _applyDebugFocusGirlTuningLive(): void {
+    if (this._mode !== "overview") return;
+    if (!this._debugFocusGirlId) return;
+    const g = this._girlsSystem.girls.find((x) => x.id === this._debugFocusGirlId) ?? null;
+    if (!g) return;
+
+    // Пересчитать и сразу применить (без ожидания travelSec).
+    const st = this._beginDebugFocusGirl(g);
+    this._focusCamera.position.copy(st.toPos);
+    this._focusCamera.quaternion.copy(st.toQuat);
+    this._focusCamera.fov = st.toFov;
+    this._focusCamera.updateProjectionMatrix();
+    this._activeCamera = this._focusCamera;
   }
 
   private _getFovForCamera(camera: THREE.Camera): number {
@@ -548,6 +743,7 @@ export class CityApp {
     this._gameLogic?.reset();
     this._bikerRoot!.visible = true;
     this._crashOverlay.hide();
+    this._debugPanel.setVisible(false);
     this._speedMul = 1;
     this._encounter = null;
   }
@@ -723,7 +919,7 @@ export class CityApp {
       if (!this._encounter.loveStarted) {
         girl.state.goalReached = true;
         this._girlsSystem.setGoalVisible(girl, false);
-        girl.anim.playLove({ restart: true });
+        girl.anim.beginLoveSequence();
         this._encounter.loveStarted = true;
       }
       const res = girl.anim.tick(dtSec);
@@ -828,6 +1024,7 @@ export class CityApp {
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
     this._crashOverlay.show();
+    this._debugPanel.setVisible(false);
 
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
     this._resetTimer = window.setTimeout(() => this._resetToOverview(), CITY_GAMEPLAY.crash.resetDelaySec * 1000);
@@ -843,6 +1040,9 @@ export class CityApp {
     this._turn.setEnabled(false);
     this._crashOverlay.hide();
     this._startBtn.setVisible(true);
+    this._debugPanel.setVisible(true);
+    this._debugFocus = null;
+    this._debugFocusGirlId = null;
 
     this._bikerRoot.visible = false;
     this._bikerRoot.position.copy(this._startWorldPos);

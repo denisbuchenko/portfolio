@@ -18,8 +18,19 @@ export class ScrollInput {
   }
 
   bind(el: HTMLElement): () => void {
+    const isUiEvent = (e: Event): boolean => {
+      const t = e.target;
+      if (!(t instanceof Element)) return false;
+      // Любой UI внутри uiRoot помечен data-city-ui="1"
+      if (t.closest('[data-city-ui="1"]')) return true;
+      // Фоллбек: любая кнопка.
+      if (t.closest("button")) return true;
+      return false;
+    };
+
     const onWheel = (e: WheelEvent) => {
       if (!this._enabled) return;
+      if (isUiEvent(e)) return;
       // Вниз — увеличиваем прогресс.
       const delta = Math.sign(e.deltaY) * Math.min(0.08, Math.abs(e.deltaY) / 1500);
       this._progress01 = _clamp01(this._progress01 + delta);
@@ -27,6 +38,7 @@ export class ScrollInput {
 
     const onDown = (e: PointerEvent) => {
       if (!this._enabled) return;
+      if (isUiEvent(e)) return;
       // Перетаскивание одним пальцем/мышью.
       this._dragging = true;
       this._lastPointerId = e.pointerId;

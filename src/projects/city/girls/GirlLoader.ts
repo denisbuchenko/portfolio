@@ -6,7 +6,6 @@ import { CITY_GIRLS } from "./girlsConfig";
 export type GirlInstance = Readonly<{
   root: THREE.Group;
   model: THREE.Object3D;
-  mixer: THREE.AnimationMixer;
   clips: THREE.AnimationClip[];
 }>;
 
@@ -85,8 +84,6 @@ export class GirlLoader {
       mesh.frustumCulled = false;
     });
 
-    const mixer = new THREE.AnimationMixer(cloned);
-
     // eslint-disable-next-line no-console
     console.log("[CityGirl] instance created", {
       name: root.name,
@@ -94,7 +91,7 @@ export class GirlLoader {
       scale: this._scale
     });
 
-    return { root, model: cloned, mixer, clips: this._rig.animations };
+    return { root, model: cloned, clips: this._rig.animations };
   }
 
   private _alignByBounds(target: THREE.Object3D, opts: Readonly<{ centerXZ: boolean; groundToY0: boolean }>): void {

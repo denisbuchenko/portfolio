@@ -26,8 +26,17 @@ export class TurnInput {
   }
 
   bind(el: HTMLElement): () => void {
+    const isUiEvent = (e: Event): boolean => {
+      const t = e.target;
+      if (!(t instanceof Element)) return false;
+      if (t.closest('[data-city-ui="1"]')) return true;
+      if (t.closest("button")) return true;
+      return false;
+    };
+
     const onDown = (e: PointerEvent) => {
       if (!this._enabled) return;
+      if (isUiEvent(e)) return;
       this._isHolding = true;
       this._lastPointerId = e.pointerId;
       const rect = el.getBoundingClientRect();
@@ -45,6 +54,7 @@ export class TurnInput {
 
     const onUp = (e: PointerEvent) => {
       if (!this._enabled) return;
+      if (isUiEvent(e)) return;
       if (this._lastPointerId !== null && e.pointerId !== this._lastPointerId) return;
       this._isHolding = false;
       this._lastPointerId = null;
@@ -54,6 +64,7 @@ export class TurnInput {
 
     const onMove = (e: PointerEvent) => {
       if (!this._enabled) return;
+      if (isUiEvent(e)) return;
       if (!this._isHolding) return;
       if (this._lastPointerId !== null && e.pointerId !== this._lastPointerId) return;
       const rect = el.getBoundingClientRect();

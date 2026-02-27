@@ -42,6 +42,8 @@ export const CITY_GIRLS = {
   faceYawOffsetDeg: 180,
 
   animations: {
+    /** Дефолтная поза для каждой арматуры (базовый слой). */
+    non: "non",
     stay: "stay",
     hello: "hello",
     love: "love",

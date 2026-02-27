@@ -12,6 +12,8 @@ import type { GirlController } from "./GirlController";
 export class GirlAnimationController {
   private _girl: GirlController;
   private _helloCooldownSec = 0;
+  private _helloTimeLeft: number | null = null;
+  private _loveTimeLeft: number | null = null;
 
   constructor(girl: GirlController) {
     this._girl = girl;
@@ -33,13 +35,20 @@ export class GirlAnimationController {
     let helloFinished = false;
     let loveFinished = false;
 
-    const finished = this._girl.consumeFinished();
-    for (const clipName of finished) {
-      if (clipName === CITY_GIRLS.animations.hello) {
+    if (this._helloTimeLeft !== null) {
+      this._helloTimeLeft = Math.max(0, this._helloTimeLeft - dt);
+      if (this._helloTimeLeft <= 0) {
+        this._helloTimeLeft = null;
         helloFinished = true;
         this._helloCooldownSec = CITY_GIRLS.hello.repeatDelaySec;
         this.playStay({ fadeSec: CITY_GIRLS.hello.fadeSec, restart: true });
-      } else if (clipName === CITY_GIRLS.animations.love) {
+      }
+    }
+
+    if (this._loveTimeLeft !== null) {
+      this._loveTimeLeft = Math.max(0, this._loveTimeLeft - dt);
+      if (this._loveTimeLeft <= 0) {
+        this._loveTimeLeft = null;
         loveFinished = true;
         this.playLove2({ fadeSec: CITY_GIRLS.love.fadeSec, restart: true });
       }
@@ -54,6 +63,8 @@ export class GirlAnimationController {
 
   playStay(opts?: Readonly<{ fadeSec?: number; restart?: boolean }>): void {
     this._girl.setFlVisible(false);
+    this._helloTimeLeft = null;
+    this._loveTimeLeft = null;
     this._girl.play(CITY_GIRLS.animations.stay, {
       fadeSec: opts?.fadeSec ?? 0.15,
       loop: THREE.LoopRepeat,
@@ -65,6 +76,7 @@ export class GirlAnimationController {
 
   playHello(opts?: Readonly<{ fadeSec?: number; restart?: boolean }>): void {
     this._girl.setFlVisible(false);
+    this._loveTimeLeft = null;
     this._girl.play(CITY_GIRLS.animations.hello, {
       fadeSec: opts?.fadeSec ?? CITY_GIRLS.hello.fadeSec,
       loop: THREE.LoopOnce,
@@ -72,9 +84,14 @@ export class GirlAnimationController {
       restart: opts?.restart ?? true,
       clampWhenFinished: true
     });
+    // Таймер конца клипа (надёжнее, чем finished events при нескольких armature mixers).
+    const dur = this._girl.instance.clips.find((c) => c.name === CITY_GIRLS.animations.hello)?.duration ?? 0;
+    this._helloTimeLeft = Math.max(0.001, dur);
   }
 
   playLove(opts?: Readonly<{ fadeSec?: number; restart?: boolean }>): void {
+    // Базовый запуск love (one-shot). Переход в love2 произойдёт в tick по событию finished.
+    this._helloTimeLeft = null;
     this._girl.setFlVisible(true);
     this._girl.play(CITY_GIRLS.animations.love, {
       fadeSec: opts?.fadeSec ?? CITY_GIRLS.love.fadeSec,
@@ -83,10 +100,14 @@ export class GirlAnimationController {
       restart: opts?.restart ?? true,
       clampWhenFinished: true
     });
+    const dur = this._girl.instance.clips.find((c) => c.name === CITY_GIRLS.animations.love)?.duration ?? 0;
+    this._loveTimeLeft = Math.max(0.001, dur);
   }
 
   playLove2(opts?: Readonly<{ fadeSec?: number; restart?: boolean }>): void {
     this._girl.setFlVisible(true);
+    this._helloTimeLeft = null;
+    this._loveTimeLeft = null;
     this._girl.play(CITY_GIRLS.animations.love2, {
       fadeSec: opts?.fadeSec ?? CITY_GIRLS.love.fadeSec,
       loop: THREE.LoopRepeat,
@@ -96,9 +117,21 @@ export class GirlAnimationController {
     });
   }
 
+  /**
+   * Явный метод, который делает "love → (после конца) love2 (loop)" и гарантирует,
+   * что поза не развалится из-за отсутствующих треков в love2.
+   */
+  beginLoveSequence(): void {
+    // Стабилизируем базовую позу (stay first keyframe уже применён в GirlController),
+    // и гарантированно выключаем старый overlay.
+    this._girl.setFlVisible(true);
+    this.playLove({ fadeSec: CITY_GIRLS.love.fadeSec, restart: true });
+  }
+
   resetToStay(): void {
     this._helloCooldownSec = 0;
-    this._girl.consumeFinished();
+    this._helloTimeLeft = null;
+    this._loveTimeLeft = null;
     this.playStay({ fadeSec: 0.01, restart: true });
   }
 }

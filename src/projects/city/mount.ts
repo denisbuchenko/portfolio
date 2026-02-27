@@ -17,6 +17,7 @@ export function mountCityProject(host: HTMLElement): void {
   uiRoot.style.inset = "0";
   uiRoot.style.pointerEvents = "none";
   uiRoot.style.zIndex = "30";
+  uiRoot.dataset.cityUi = "1";
   wrapper.appendChild(uiRoot);
 
   const canvas = document.createElement("canvas");
