@@ -1,5 +1,5 @@
 import { GNOMES_CONFIG } from "./config";
-import { GnomeFactory } from "./GnomeFactory";
+import { GnomeFactory, type GnomePalette } from "./GnomeFactory";
 import { SceneComposer } from "./SceneComposer";
 import { ScrollCameraRig } from "./ScrollCameraRig";
 import type { GnomeInstance } from "./GnomeInstance";
@@ -56,8 +56,8 @@ export class GnomesApp {
     // Создаём 3 гнома: ветку передаём в фабрику как конкретный объект из glTF (template).
     this._gnomes = this._gnomeDefs.map((d) => {
       const sit = this._factory.getSitObjectByName(d.sitName);
-      console.log('>>>>>>>>>>>>> gnome sit', sit)
-      return this._factory.createInstance({ characterKey: d.key, sitObject: sit });
+      const palette = this._paletteFor(d.id);
+      return this._factory.createInstance({ characterKey: d.key, sitObject: sit, palette });
     });
     for (let i = 0; i < this._gnomes.length; i++) {
       const g = this._gnomes[i];
@@ -86,6 +86,15 @@ export class GnomesApp {
     this._lastTs = performance.now();
     this._raf = requestAnimationFrame((t) => this._frame(t));
     this._setStatus("Готово • Скролль вниз, чтобы перейти к следующему гному");
+  }
+
+  private _paletteFor(characterId: string): GnomePalette {
+    const fromCfg = (GNOMES_CONFIG.gnomes.palette.byId as Record<string, { clothColor: number; hatColor?: number } | undefined>)[
+      characterId
+    ];
+    const hatColor = fromCfg?.hatColor ?? GNOMES_CONFIG.gnomes.palette.defaultHatColor;
+    const clothColor = fromCfg?.clothColor ?? 0xffffff;
+    return { hatColor, clothColor };
   }
 
   dispose(): void {

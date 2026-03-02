@@ -7,6 +7,11 @@ import { GnomeInstance } from "./GnomeInstance";
 
 type FactoryRig = Awaited<ReturnType<typeof loadSkinnedCharacterFromGlb>>;
 
+export type GnomePalette = {
+  hatColor: number;
+  clothColor: number;
+};
+
 export class GnomeFactory {
   private _rig: FactoryRig | null = null;
   private _scale = 1;
@@ -64,7 +69,11 @@ export class GnomeFactory {
    * Ветка (sit) передаётся как объект-шаблон из исходной сцены (см. getSitObjectByName),
    * а внутрь инстанса добавляется она как есть (поэтому getSitObjectByName возвращает клон).
    */
-  createInstance(opts?: { characterKey?: GnomeCharacterKey; sitObject?: THREE.Object3D | null }): GnomeInstance {
+  createInstance(opts?: {
+    characterKey?: GnomeCharacterKey;
+    sitObject?: THREE.Object3D | null;
+    palette?: GnomePalette;
+  }): GnomeInstance {
     if (!this._rig) {
       throw new Error("GnomeFactory: сначала вызови load()");
     }
@@ -74,6 +83,7 @@ export class GnomeFactory {
     const character = cloneSkeleton(this._rig.characterRoot) as THREE.Object3D;
     const characterKey = opts?.characterKey ?? this._defaultCharacterKey;
     const sitTemplate = opts?.sitObject ?? null;
+    const palette = opts?.palette ?? null;
 
     // Заворачиваем в контейнер — на него будем вешать позицию/вращение/скейл.
     const root = new THREE.Group();
@@ -92,6 +102,9 @@ export class GnomeFactory {
     }
 
     content.add(character);
+    if (palette) {
+      this._applyCharacterPalette(character, palette);
+    }
     if (sitTemplate) {
       content.add(sitTemplate);
       this._applySitStyle(sitTemplate);
@@ -209,6 +222,59 @@ export class GnomeFactory {
       .toLowerCase()
       .replace(/[_-]+/g, " ")
       .replace(/\s+/g, " ");
+  }
+
+  private _applyCharacterPalette(characterRoot: THREE.Object3D, palette: GnomePalette): void {
+    const hatNames = new Set(["лоу шапка"]);
+    const clothNames = new Set(["лоу рука л", "лоу рука п", "лоу тело"]);
+
+    characterRoot.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+
+      const n = this._normalizeName(mesh.name);
+      let tint: number | null = null;
+      if (hatNames.has(n)) tint = palette.hatColor;
+      else if (clothNames.has(n)) tint = palette.clothColor;
+      else return;
+
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const newMats = mats.map((m) => this._cloneAndTintMaterial(m, tint!));
+      mesh.material = Array.isArray(mesh.material) ? newMats : newMats[0];
+    });
+  }
+
+  private _cloneAndTintMaterial(base: THREE.Material, tintHex: number): THREE.Material {
+    const mat = base.clone() as THREE.Material & { onBeforeCompile?: unknown; customProgramCacheKey?: () => string };
+    // Для tint нам важно, чтобы материал был "литой" и имел diffuseColor в шейдере.
+    const asAny = mat as unknown as {
+      onBeforeCompile?: (shader: any) => void;
+      customProgramCacheKey?: () => string;
+      needsUpdate?: boolean;
+    };
+
+    const tintColor = new THREE.Color(tintHex);
+    asAny.onBeforeCompile = (shader: any) => {
+      (shader.uniforms as Record<string, unknown>).gnomeTintColor = { value: tintColor };
+
+      shader.fragmentShader =
+        `uniform vec3 gnomeTintColor;\n` +
+        shader.fragmentShader;
+
+      // Твоя логика: берём текстуру как градации серого (вес w) и получаем цвет
+      // как линейную интерполяцию от чёрного к tint: color = tint * w.
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+float _gnomeW = dot( diffuseColor.rgb, vec3( 0.299, 0.587, 0.114 ) );
+diffuseColor.rgb = gnomeTintColor * clamp( _gnomeW, 0.0, 1.0 );`,
+      );
+    };
+
+    // Чтобы three не переиспользовал шейдеры странно между материалами.
+    asAny.customProgramCacheKey = () => "gnome-cloth-tint-v1";
+    asAny.needsUpdate = true;
+    return mat;
   }
 
   /**

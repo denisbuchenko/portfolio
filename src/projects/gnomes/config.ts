@@ -11,6 +11,18 @@ export const GNOMES_CONFIG = {
     basePosition: { x: 0, y: -0.10, z: 0 },
     /** Множитель разнесения по страницам (1 = ровно высота видимой области камеры). */
     pageSpacingMultiplier: 1.0,
+
+    /** Палитры расцветки: шапка + белая ткань (руки/тело). */
+    palette: {
+      /** Цвет шапки по умолчанию для всех гномов. */
+      defaultHatColor: 0xff1a1a,
+      /** Индивидуальные цвета ткани и (опционально) шапки. */
+      byId: {
+        shoragran: { clothColor: 0xff1a1a, hatColor: 0xff1a1a },
+        fyfchik: { clothColor: 0x27d863, hatColor: 0xff1a1a },
+        pipiser: { clothColor: 0xffd21a, hatColor: 0xff1a1a },
+      },
+    },
   },
 
   camera: {
