@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { GNOMES_CONFIG } from "./config";
 import { loadSkinnedCharacterFromGlb } from "./gltf/loadSkinnedCharacterFromGlb";
-import { GnomeController } from "./GnomeController";
+import { GnomeController, type GnomeCharacterKey } from "./GnomeController";
 import { GnomeInstance } from "./GnomeInstance";
 
 type FactoryRig = Awaited<ReturnType<typeof loadSkinnedCharacterFromGlb>>;
@@ -12,6 +12,7 @@ export class GnomeFactory {
   private _scale = 1;
   private _focusOffsetY = 0.8;
   private _normalizedHeight = 1;
+  private _defaultCharacterKey: GnomeCharacterKey = "hor";
 
   async load(): Promise<void> {
     if (this._rig) return;
@@ -36,13 +37,15 @@ export class GnomeFactory {
     return this._normalizedHeight;
   }
 
-  createInstance(opts?: { animationIndex?: number }): GnomeInstance {
+  createInstance(opts?: { characterKey?: GnomeCharacterKey }): GnomeInstance {
     if (!this._rig) {
       throw new Error("GnomeFactory: сначала вызови load()");
     }
 
     // Важно: для skinned моделей обычный clone(true) ломает скелет — используем SkeletonUtils.
-    const cloned = cloneSkeleton(this._rig.characterRoot) as THREE.Object3D;
+    // Клонируем всю сцену, потому что в ней есть отдельные объекты (ветки sit), которые не входят в characterRoot.
+    const cloned = cloneSkeleton(this._rig.scene) as THREE.Object3D;
+    const characterKey = opts?.characterKey ?? this._defaultCharacterKey;
 
     // Заворачиваем в контейнер — на него будем вешать позицию/вращение/скейл.
     const root = new THREE.Group();
@@ -61,6 +64,9 @@ export class GnomeFactory {
     pickCollider.name = "GnomePickCollider";
     root.add(pickCollider);
 
+    // Ветки \"sit\": показываем ровно одну, нужную для персонажа, и красим в коричневый.
+    this._setupSitObjects(cloned, characterKey);
+
     // Тени.
     root.traverse((o) => {
       const mesh = o as THREE.Mesh;
@@ -75,9 +81,8 @@ export class GnomeFactory {
     const mixer = new THREE.AnimationMixer(cloned);
     const controller = new GnomeController({ root, mixer, clips: this._rig.animations });
 
-    // Выбираем стартовую анимацию.
-    const animIndex = opts?.animationIndex ?? 0;
-    controller.playByIndex(animIndex, { fadeSec: 0.01 });
+    controller.setCharacterKey(characterKey);
+    controller.playPose({ fadeSec: 0.01 });
 
     return new GnomeInstance({ root, controller });
   }
@@ -121,6 +126,35 @@ export class GnomeFactory {
 
     // На пол: minY -> 0.
     target.position.y -= box.min.y;
+  }
+
+  private _setupSitObjects(target: THREE.Object3D, characterKey: GnomeCharacterKey): void {
+    const wantName = `${characterKey} sit`;
+    const sitNames = new Set(["hor sit", "fi sit", "pi sit"]);
+    const brown = new THREE.Color(0x6b4b2a);
+
+    target.traverse((o) => {
+      if (!sitNames.has(o.name)) return;
+
+      o.visible = o.name === wantName;
+
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const clonedMaterials = materials.map((m) => {
+        // Чтобы изменения цвета не протекали между инстансами.
+        const mat = (m as THREE.Material).clone() as THREE.Material & Record<string, unknown>;
+        const anyMat = mat as unknown as { color?: THREE.Color; map?: THREE.Texture | null; needsUpdate?: boolean };
+
+        if (anyMat.color) anyMat.color.copy(brown);
+        if ("map" in anyMat) anyMat.map = null;
+        if ("needsUpdate" in anyMat) anyMat.needsUpdate = true;
+        return mat;
+      });
+
+      mesh.material = Array.isArray(mesh.material) ? clonedMaterials : clonedMaterials[0];
+    });
   }
 }
 

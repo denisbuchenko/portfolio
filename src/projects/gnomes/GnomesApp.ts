@@ -5,6 +5,7 @@ import { ScrollCameraRig } from "./ScrollCameraRig";
 import type { GnomeInstance } from "./GnomeInstance";
 import * as THREE from "three";
 import { DialogueSystem } from "./dialogue/DialogueSystem";
+import type { GnomeCharacterKey } from "./GnomeController";
 
 export class GnomesApp {
   private _canvas: HTMLCanvasElement;
@@ -15,7 +16,11 @@ export class GnomesApp {
   private _cameraRig: ScrollCameraRig;
   private _factory: GnomeFactory;
   private _gnomes: GnomeInstance[] = [];
-  private _gnomeIds: string[] = ["shoragran", "fyfchik", "pipiser"];
+  private _gnomeDefs: Array<{ id: string; key: GnomeCharacterKey }> = [
+    { id: "shoragran", key: "hor" },
+    { id: "fyfchik", key: "fi" },
+    { id: "pipiser", key: "pi" },
+  ];
   private _raycaster = new THREE.Raycaster();
   private _ndc = new THREE.Vector2();
   private _clickTargets: THREE.Object3D[] = [];
@@ -48,12 +53,11 @@ export class GnomesApp {
     this._cameraRig.setFocusOffsetY(this._factory.focusOffsetY);
     this._pickOffsetY = this._factory.focusOffsetY;
 
-    // Создаём 3 гнома с чередующимися анимациями: 1-2-1.
-    const animIndices = [0, 1, 0];
-    this._gnomes = animIndices.map((animationIndex) => this._factory.createInstance({ animationIndex }));
+    // Создаём 3 гнома: shoragran/hor, fyfchik/fi, pipiser/pi.
+    this._gnomes = this._gnomeDefs.map((d) => this._factory.createInstance({ characterKey: d.key }));
     for (let i = 0; i < this._gnomes.length; i++) {
       const g = this._gnomes[i];
-      const id = this._gnomeIds[i] ?? `gnome-${i}`;
+      const id = this._gnomeDefs[i]?.id ?? `gnome-${i}`;
       g.root.userData.characterId = id;
       this._composer.scene.add(g.root);
     }
@@ -169,6 +173,11 @@ export class GnomesApp {
 
     const id = this._pickCharacterIdAt(e.clientX, e.clientY);
     if (!id) return;
+
+    // При входе в диалог — проигрываем hello один раз.
+    const gnome = this._gnomes.find((g) => g.root.userData.characterId === id);
+    gnome?.controller.playHelloOnce();
+
     this._dialogue.open(id);
   }
 
