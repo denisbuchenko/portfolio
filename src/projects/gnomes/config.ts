@@ -18,7 +18,7 @@ export const GNOMES_CONFIG = {
       defaultHatColor: 0xff1a1a,
       /** Индивидуальные цвета ткани и (опционально) шапки. */
       byId: {
-        shoragran: { clothColor: 0xff1a1a, hatColor: 0xff1a1a },
+        horogran: { clothColor: 0xff1a1a, hatColor: 0xff1a1a },
         fyfchik: { clothColor: 0x27d863, hatColor: 0xff1a1a },
         pipiser: { clothColor: 0xffd21a, hatColor: 0xff1a1a },
       },

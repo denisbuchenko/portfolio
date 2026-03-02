@@ -1,4 +1,4 @@
-export type DialogueCharacterId = "shoragran" | "fyfchik" | "pipiser" | (string & {});
+export type DialogueCharacterId = "horogran" | "fyfchik" | "pipiser" | (string & {});
 
 export type DialogueData = {
   characterId: DialogueCharacterId;

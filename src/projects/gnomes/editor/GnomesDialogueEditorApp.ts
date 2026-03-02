@@ -83,7 +83,7 @@ export class GnomesDialogueEditorApp {
     if (e.button === 1) e.preventDefault();
   };
   private _all: DialogueData[] = [];
-  private _activeId: string = "shoragran";
+  private _activeId: string = "horogran";
   private _actFilterValue: "all" | "1" | "2" | "3" = "all";
 
   private _selected: Selected = { kind: "none" };

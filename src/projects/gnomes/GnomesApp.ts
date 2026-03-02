@@ -17,7 +17,7 @@ export class GnomesApp {
   private _factory: GnomeFactory;
   private _gnomes: GnomeInstance[] = [];
   private _gnomeDefs: Array<{ id: string; key: GnomeCharacterKey; sitName: string }> = [
-    { id: "shoragran", key: "hor", sitName: "hor sit" },
+    { id: "horogran", key: "hor", sitName: "hor sit" },
     { id: "fyfchik", key: "fi", sitName: "fi sit" },
     { id: "pipiser", key: "pi", sitName: "pi sit" },
   ];
