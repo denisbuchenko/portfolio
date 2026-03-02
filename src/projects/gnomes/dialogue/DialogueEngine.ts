@@ -1,6 +1,7 @@
 import type { DialoguePlayerOption, DialogueReply } from "./types";
 import { DialogueDatabase } from "./DialogueDatabase";
 import { PlayerKnowledgeStore } from "./PlayerKnowledgeStore";
+import { DialogueProgressStore } from "./DialogueProgressStore";
 
 export type DialogueViewOption = {
   text: string;
@@ -25,6 +26,7 @@ export type DialogueViewState = {
 export class DialogueEngine {
   private _db: DialogueDatabase;
   private _knowledge: PlayerKnowledgeStore;
+  private _progress: DialogueProgressStore;
 
   private _active: {
     characterId: string;
@@ -32,9 +34,10 @@ export class DialogueEngine {
     replyId: string;
   } | null = null;
 
-  constructor(opts: { db: DialogueDatabase; knowledge: PlayerKnowledgeStore }) {
+  constructor(opts: { db: DialogueDatabase; knowledge: PlayerKnowledgeStore; progress: DialogueProgressStore }) {
     this._db = opts.db;
     this._knowledge = opts.knowledge;
+    this._progress = opts.progress;
   }
 
   get isActive(): boolean {
@@ -53,7 +56,8 @@ export class DialogueEngine {
     const entry = actData.nodes.find((n) => n.nodeType === "entry") ?? actData.nodes[0];
     if (!entry || entry.replies.length === 0) return { lockedReason: `Пустой entry у ${characterId}` };
 
-    const firstReply = entry.replies[0];
+    const resumeReplyId = this._progress.getReplyId(characterId);
+    const firstReply = (resumeReplyId ? idx.replyById.get(resumeReplyId) : null) ?? entry.replies[0];
 
     // Ключи за вход в реплику (если они заданы на реплике).
     if (firstReply.grantsKnowledge && firstReply.grantsKnowledge.length > 0) {
@@ -68,6 +72,7 @@ export class DialogueEngine {
     }
 
     this._active = { characterId, act, replyId: firstReply.id };
+    this._progress.setReplyId(characterId, firstReply.id);
     return { state: view };
   }
 
@@ -95,6 +100,7 @@ export class DialogueEngine {
 
     // nextReplyId === null => конец диалога
     if (option.nextReplyId === null) {
+      this._progress.setReplyId(this._active.characterId, this._active.replyId);
       this._active = null;
       return { ended: true };
     }
@@ -107,6 +113,7 @@ export class DialogueEngine {
 
     // Переходим на следующую реплику.
     this._active.replyId = next.id;
+    this._progress.setReplyId(this._active.characterId, next.id);
 
     // Ключи за вход в реплику (если они заданы на реплике).
     if (next.grantsKnowledge && next.grantsKnowledge.length > 0) {

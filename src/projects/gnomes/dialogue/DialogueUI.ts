@@ -5,12 +5,13 @@ export class DialogueUI {
   private _panel: HTMLDivElement;
   private _portrait: HTMLImageElement;
   private _title: HTMLDivElement;
-  private _text: HTMLDivElement;
+  private _log: HTMLDivElement;
   private _options: HTMLDivElement;
   private _closeBtn: HTMLButtonElement;
 
   private _onChoose: ((o: DialogueViewOption) => void) | null = null;
   private _onClose: (() => void) | null = null;
+  private _lastReplyId: string | null = null;
 
   constructor(opts: { root: HTMLElement; portraitUrl: string }) {
     this._root = opts.root;
@@ -71,13 +72,14 @@ export class DialogueUI {
     this._closeBtn.addEventListener("click", () => this._onClose?.());
     head.appendChild(this._closeBtn);
 
-    this._text = document.createElement("div");
-    this._text.style.marginTop = "6px";
-    this._text.style.fontSize = "15px";
-    this._text.style.lineHeight = "1.5";
-    this._text.style.color = "var(--text)";
-    this._text.style.whiteSpace = "pre-wrap";
-    content.appendChild(this._text);
+    this._log = document.createElement("div");
+    this._log.style.marginTop = "8px";
+    this._log.style.display = "grid";
+    this._log.style.gap = "8px";
+    this._log.style.maxHeight = "38vh";
+    this._log.style.overflowY = "auto";
+    this._log.style.paddingRight = "6px";
+    content.appendChild(this._log);
 
     this._options = document.createElement("div");
     this._options.style.marginTop = "10px";
@@ -95,8 +97,15 @@ export class DialogueUI {
 
   show(state: DialogueViewState): void {
     this._panel.style.display = "block";
-    this._title.textContent = `${state.characterName} • Акт ${state.act}`;
-    this._text.textContent = state.isSilent ? "" : state.text;
+    this._title.textContent = state.characterName;
+
+    // Добавляем новую реплику гнома в лог, если это реально новая реплика.
+    if (this._lastReplyId !== state.replyId) {
+      this._lastReplyId = state.replyId;
+      if (!state.isSilent && state.text.trim().length > 0) {
+        this._appendBubble({ who: state.characterName, text: state.text, side: "left" });
+      }
+    }
 
     this._options.innerHTML = "";
     const visible = state.options.filter((o) => o.isVisible);
@@ -139,7 +148,13 @@ export class DialogueUI {
         btn.appendChild(hint);
       }
 
-      if (opt.isEnabled) btn.addEventListener("click", () => this._onChoose?.(opt));
+      if (opt.isEnabled) {
+        btn.addEventListener("click", () => {
+          // В стиле ММО: добавляем в лог реплику игрока, затем просим движок выдать следующую реплику гнома.
+          this._appendBubble({ who: "Ты", text: opt.text, side: "right" });
+          this._onChoose?.(opt);
+        });
+      }
       this._options.appendChild(btn);
     }
   }
@@ -147,6 +162,40 @@ export class DialogueUI {
   hide(): void {
     this._panel.style.display = "none";
     this._options.innerHTML = "";
+    this._log.innerHTML = "";
+    this._lastReplyId = null;
+  }
+
+  private _appendBubble(opts: { who: string; text: string; side: "left" | "right" }): void {
+    const wrap = document.createElement("div");
+    wrap.style.display = "flex";
+    wrap.style.justifyContent = opts.side === "left" ? "flex-start" : "flex-end";
+
+    const bubble = document.createElement("div");
+    bubble.style.maxWidth = "92%";
+    bubble.style.padding = "10px 12px";
+    bubble.style.borderRadius = "12px";
+    bubble.style.border = "1px solid var(--panel-border)";
+    bubble.style.background = opts.side === "left" ? "rgba(255,255,255,0.06)" : "rgba(53, 157, 255, 0.18)";
+    bubble.style.color = "var(--text)";
+
+    const name = document.createElement("div");
+    name.textContent = opts.who;
+    name.style.fontSize = "12px";
+    name.style.marginBottom = "4px";
+    name.style.opacity = "0.75";
+    bubble.appendChild(name);
+
+    const txt = document.createElement("div");
+    txt.textContent = opts.text;
+    txt.style.whiteSpace = "pre-wrap";
+    txt.style.fontSize = "15px";
+    txt.style.lineHeight = "1.45";
+    bubble.appendChild(txt);
+
+    wrap.appendChild(bubble);
+    this._log.appendChild(wrap);
+    this._log.scrollTop = this._log.scrollHeight;
   }
 }
 

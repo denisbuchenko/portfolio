@@ -3,6 +3,7 @@ import { DialogueEngine } from "./DialogueEngine";
 import { PlayerKnowledgeStore } from "./PlayerKnowledgeStore";
 import { loadAllDialogues } from "./loadDialogues";
 import { DialogueUI } from "./DialogueUI";
+import { DialogueProgressStore } from "./DialogueProgressStore";
 
 export class DialogueSystem {
   private _ui: DialogueUI;
@@ -11,7 +12,8 @@ export class DialogueSystem {
   constructor(opts: { uiRoot: HTMLElement; portraitUrl: string }) {
     const db = new DialogueDatabase(loadAllDialogues());
     const knowledge = new PlayerKnowledgeStore();
-    this._engine = new DialogueEngine({ db, knowledge });
+    const progress = new DialogueProgressStore();
+    this._engine = new DialogueEngine({ db, knowledge, progress });
     this._ui = new DialogueUI({ root: opts.uiRoot, portraitUrl: opts.portraitUrl });
 
     this._ui.setHandlers({
