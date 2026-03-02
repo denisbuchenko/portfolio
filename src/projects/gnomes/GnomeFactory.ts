@@ -13,6 +13,8 @@ export class GnomeFactory {
   private _focusOffsetY = 0.8;
   private _normalizedHeight = 1;
   private _defaultCharacterKey: GnomeCharacterKey = "hor";
+  private _sitByName = new Map<string, THREE.Object3D>();
+  private _sitTemplates: { hor: THREE.Object3D; fi: THREE.Object3D; pi: THREE.Object3D } | null = null;
 
   async load(): Promise<void> {
     if (this._rig) return;
@@ -27,6 +29,26 @@ export class GnomeFactory {
     // Фокус камеры обычно лучше смотреть чуть выше середины (голова/туловище).
     // Чтобы гном не упирался макушкой в верх экрана, целимся чуть выше центра.
     this._focusOffsetY = GNOMES_CONFIG.gnomes.targetHeight * 0.72;
+
+    this._sitByName.clear();
+    this._sitTemplates = null;
+
+    // 1) Пытаемся найти по именам (если GLB содержит "hor sit"/"fi sit"/"pi sit").
+    rig.scene.traverse((o) => {
+      const n = this._normalizeName(o.name);
+      if (n === "hor sit" || n === "fi sit" || n === "pi sit") this._sitByName.set(n, o);
+    });
+
+    // 2) Если имён нет (как у тебя сейчас) — извлекаем "железобетонно" по геометрии/позиции.
+    if (this._sitByName.size < 3) {
+      const extracted = this._extractSitTemplatesByHeuristic(rig.characterRoot) ?? this._extractSitTemplatesByHeuristic(rig.scene);
+      if (extracted) {
+        this._sitTemplates = extracted;
+        this._sitByName.set("hor sit", extracted.hor);
+        this._sitByName.set("fi sit", extracted.fi);
+        this._sitByName.set("pi sit", extracted.pi);
+      }
+    }
   }
 
   get focusOffsetY(): number {
@@ -37,40 +59,56 @@ export class GnomeFactory {
     return this._normalizedHeight;
   }
 
-  createInstance(opts?: { characterKey?: GnomeCharacterKey }): GnomeInstance {
+  /**
+   * Создаёт инстанс гнома.
+   * Ветка (sit) передаётся как объект-шаблон из исходной сцены (см. getSitObjectByName),
+   * а внутрь инстанса добавляется она как есть (поэтому getSitObjectByName возвращает клон).
+   */
+  createInstance(opts?: { characterKey?: GnomeCharacterKey; sitObject?: THREE.Object3D | null }): GnomeInstance {
     if (!this._rig) {
       throw new Error("GnomeFactory: сначала вызови load()");
     }
 
     // Важно: для skinned моделей обычный clone(true) ломает скелет — используем SkeletonUtils.
-    // Клонируем всю сцену, потому что в ней есть отдельные объекты (ветки sit), которые не входят в characterRoot.
-    const cloned = cloneSkeleton(this._rig.scene) as THREE.Object3D;
+    // Клонируем только персонажа (characterRoot), иначе в каждый инстанс попадут все 3 ветки sit.
+    const character = cloneSkeleton(this._rig.characterRoot) as THREE.Object3D;
     const characterKey = opts?.characterKey ?? this._defaultCharacterKey;
+    const sitTemplate = opts?.sitObject ?? null;
 
     // Заворачиваем в контейнер — на него будем вешать позицию/вращение/скейл.
     const root = new THREE.Group();
     root.name = "Gnome";
-    root.add(cloned);
+
+    // Контент (персонаж + ветка) живёт в одном контейнере, чтобы центрирование/grounding
+    // сдвигало их вместе и ветка оставалась \"под\" гномом.
+    const content = new THREE.Group();
+    content.name = "GnomeContent";
+    root.add(content);
+
+    // На некоторых экспортерах ветки могут оказаться внутри characterRoot.
+    // Удаляем их из клона, чтобы гарантировать "в инстансе только 1 ветка".
+    if (this._sitTemplates) {
+      this._stripTopStaticMeshes(character, 3);
+    }
+
+    content.add(character);
+    if (sitTemplate) {
+      content.add(sitTemplate);
+      this._applySitStyle(sitTemplate);
+    }
 
     // Масштабирование.
-    cloned.scale.multiplyScalar(this._scale);
+    content.scale.multiplyScalar(this._scale);
 
-    // Важно: выравнивание нужно считать по персонажу (skinned root),
-    // иначе ветки sit (которые лежат в сцене рядом) будут ломать bounds и поднимать гнома.
-    const characterRoot = this._findCharacterRoot(cloned);
-
-    // Выравнивание: центр по XZ и \"ступни\" на y=0. Смещение применяем ко всей сцене,
-    // чтобы ветка sit оставалась правильно привязанной к гному.
-    this._centerAndGroundBy(characterRoot, cloned);
+    // Выравнивание считаем по персонажу, а двигаем контейнер content.
+    this._centerAndGroundBy(character, content);
 
     // Невидимый коллайдер для \"уверенного\" клика по гному (а не по отдельным мешам).
     // Это особенно полезно, когда модель состоит из многих частей и по тонким элементам трудно попасть raycast'ом.
-    const pickCollider = this._createPickCollider(characterRoot);
+    content.updateMatrixWorld(true);
+    const pickCollider = this._createPickCollider(character);
     pickCollider.name = "GnomePickCollider";
     root.add(pickCollider);
-
-    // Ветки \"sit\": показываем ровно одну, нужную для персонажа, и красим в коричневый.
-    this._setupSitObjects(cloned, characterKey);
 
     // Тени.
     root.traverse((o) => {
@@ -83,7 +121,7 @@ export class GnomeFactory {
       mesh.frustumCulled = false;
     });
 
-    const mixer = new THREE.AnimationMixer(cloned);
+    const mixer = new THREE.AnimationMixer(character);
     const controller = new GnomeController({ root, mixer, clips: this._rig.animations });
 
     controller.setCharacterKey(characterKey);
@@ -134,23 +172,17 @@ export class GnomeFactory {
     targetToMove.position.y -= box.min.y;
   }
 
-  private _setupSitObjects(target: THREE.Object3D, characterKey: GnomeCharacterKey): void {
-    const wantName = `${characterKey} sit`;
-    const sitNames = new Set(["hor sit", "fi sit", "pi sit"]);
+  getSitObjectByName(name: string): THREE.Object3D | null {
+    const key = this._normalizeName(name);
+    const template = this._sitByName.get(key) ?? null;
+    // Важно: возвращаем клон, чтобы у каждого гнома был свой объект с уникальным uuid,
+    // и чтобы один и тот же template не пытался иметь нескольких родителей.
+    return template ? template.clone(true) : null;
+  }
+
+  private _applySitStyle(sitRoot: THREE.Object3D): void {
     const brown = new THREE.Color(0x6b4b2a);
-
-    // 1) Скрываем все ветки, кроме нужной. Делаем это по \"предку\" с именем sit,
-    // потому что внутри glTF ветка может быть Group, а меши внутри имеют другие имена.
-    target.traverse((o) => {
-      const sitAncestor = this._findAncestorByNameSet(o, sitNames);
-      if (!sitAncestor) return;
-      o.visible = sitAncestor.name === wantName;
-    });
-
-    // 2) Перекрашиваем ТОЛЬКО нужную ветку (все меши внутри неё).
-    const wantRoot = this._findFirstByName(target, wantName);
-    if (!wantRoot) return;
-    wantRoot.traverse((o) => {
+    sitRoot.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
 
@@ -171,60 +203,80 @@ export class GnomeFactory {
     });
   }
 
-  private _findFirstByName(root: THREE.Object3D, name: string): THREE.Object3D | null {
-    let found: THREE.Object3D | null = null;
+  private _normalizeName(name: string): string {
+    return (name ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ");
+  }
+
+  /**
+   * Простое решение, которое не зависит от имён внутри GLB:
+   * - берём 3 самых "крупных" меша, которые НЕ skinned
+   * - маппим их в fi/hor/pi по world position (как в export.gltf: fi далеко по Z, pi имеет +X)
+   */
+  private _extractSitTemplatesByHeuristic(
+    root: THREE.Object3D,
+  ): { hor: THREE.Object3D; fi: THREE.Object3D; pi: THREE.Object3D } | null {
+    root.updateMatrixWorld(true);
+
+    const candidates: Array<{ mesh: THREE.Mesh; score: number; worldPos: THREE.Vector3 }> = [];
     root.traverse((o) => {
-      if (found) return;
-      if (o.name === name) found = o;
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if ((mesh as unknown as THREE.SkinnedMesh).isSkinnedMesh) return;
+
+      // score по world bbox — так учитываем scale/rotation/translation.
+      const box = new THREE.Box3().setFromObject(mesh);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const score = Math.max(0, size.x) * Math.max(0, size.y) * Math.max(0, size.z);
+      if (!Number.isFinite(score) || score <= 0) return;
+
+      const worldPos = new THREE.Vector3();
+      mesh.getWorldPosition(worldPos);
+      candidates.push({ mesh, score, worldPos });
     });
-    return found;
+
+    candidates.sort((a, b) => b.score - a.score);
+    const top = candidates.slice(0, 3);
+    if (top.length < 3) return null;
+
+    // fi sit — самая дальняя по Z.
+    top.sort((a, b) => b.worldPos.z - a.worldPos.z);
+    const fi = top[0].mesh;
+
+    const rest = [top[1], top[2]];
+    // pi sit — с большим X (обычно положительным), hor — оставшаяся.
+    rest.sort((a, b) => b.worldPos.x - a.worldPos.x);
+    const pi = rest[0].mesh;
+    const hor = rest[1].mesh;
+
+    return { hor, fi, pi };
   }
 
-  private _findAncestorByNameSet(o: THREE.Object3D, names: Set<string>): THREE.Object3D | null {
-    let cur: THREE.Object3D | null = o;
-    while (cur) {
-      if (names.has(cur.name)) return cur;
-      cur = cur.parent;
-    }
-    return null;
-  }
+  private _stripTopStaticMeshes(root: THREE.Object3D, count: number): void {
+    root.updateMatrixWorld(true);
 
-  private _findCharacterRoot(sceneRoot: THREE.Object3D): THREE.Object3D {
-    const skinnedMeshes: THREE.SkinnedMesh[] = [];
-    sceneRoot.traverse((o) => {
-      const sk = o as THREE.SkinnedMesh;
-      if (sk.isSkinnedMesh) skinnedMeshes.push(sk);
+    const items: Array<{ mesh: THREE.Mesh; score: number }> = [];
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if ((mesh as unknown as THREE.SkinnedMesh).isSkinnedMesh) return;
+
+      const box = new THREE.Box3().setFromObject(mesh);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const score = Math.max(0, size.x) * Math.max(0, size.y) * Math.max(0, size.z);
+      if (!Number.isFinite(score) || score <= 0) return;
+      items.push({ mesh, score });
     });
-    if (skinnedMeshes.length === 0) return sceneRoot;
 
-    const first = skinnedMeshes[0];
-    const firstChain = this._ancestorChain(first, sceneRoot);
-    const common = new Set(firstChain);
-
-    for (let i = 1; i < skinnedMeshes.length; i++) {
-      const chain = this._ancestorChain(skinnedMeshes[i], sceneRoot);
-      const chainSet = new Set(chain);
-      for (const node of Array.from(common)) {
-        if (!chainSet.has(node)) common.delete(node);
-      }
-    }
-
-    for (const node of firstChain) {
-      if (common.has(node)) return node;
-    }
-
-    return sceneRoot;
+    items.sort((a, b) => b.score - a.score);
+    const toRemove = items.slice(0, Math.max(0, count)).map((x) => x.mesh);
+    for (const m of toRemove) m.parent?.remove(m);
   }
 
-  private _ancestorChain(o: THREE.Object3D, stopAt: THREE.Object3D): THREE.Object3D[] {
-    const chain: THREE.Object3D[] = [];
-    let cur: THREE.Object3D | null = o;
-    while (cur) {
-      chain.push(cur);
-      if (cur === stopAt) break;
-      cur = cur.parent;
-    }
-    return chain;
-  }
 }
 

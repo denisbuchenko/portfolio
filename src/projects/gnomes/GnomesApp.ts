@@ -16,10 +16,10 @@ export class GnomesApp {
   private _cameraRig: ScrollCameraRig;
   private _factory: GnomeFactory;
   private _gnomes: GnomeInstance[] = [];
-  private _gnomeDefs: Array<{ id: string; key: GnomeCharacterKey }> = [
-    { id: "shoragran", key: "hor" },
-    { id: "fyfchik", key: "fi" },
-    { id: "pipiser", key: "pi" },
+  private _gnomeDefs: Array<{ id: string; key: GnomeCharacterKey; sitName: string }> = [
+    { id: "shoragran", key: "hor", sitName: "hor sit" },
+    { id: "fyfchik", key: "fi", sitName: "fi sit" },
+    { id: "pipiser", key: "pi", sitName: "pi sit" },
   ];
   private _raycaster = new THREE.Raycaster();
   private _ndc = new THREE.Vector2();
@@ -53,8 +53,12 @@ export class GnomesApp {
     this._cameraRig.setFocusOffsetY(this._factory.focusOffsetY);
     this._pickOffsetY = this._factory.focusOffsetY;
 
-    // Создаём 3 гнома: shoragran/hor, fyfchik/fi, pipiser/pi.
-    this._gnomes = this._gnomeDefs.map((d) => this._factory.createInstance({ characterKey: d.key }));
+    // Создаём 3 гнома: ветку передаём в фабрику как конкретный объект из glTF (template).
+    this._gnomes = this._gnomeDefs.map((d) => {
+      const sit = this._factory.getSitObjectByName(d.sitName);
+      console.log('>>>>>>>>>>>>> gnome sit', sit)
+      return this._factory.createInstance({ characterKey: d.key, sitObject: sit });
+    });
     for (let i = 0; i < this._gnomes.length; i++) {
       const g = this._gnomes[i];
       const id = this._gnomeDefs[i]?.id ?? `gnome-${i}`;
