@@ -21,12 +21,12 @@ export class GnomeFactory {
 
     // Рассчитываем масштаб так, чтобы высота персонажа была примерно targetHeight.
     const srcHeight = Math.max(1e-6, rig.bounds.size.y);
-    this._scale = GNOMES_CONFIG.targetHeight / srcHeight;
-    this._normalizedHeight = GNOMES_CONFIG.targetHeight;
+    this._scale = (GNOMES_CONFIG.gnomes.targetHeight / srcHeight) * GNOMES_CONFIG.gnomes.scaleMultiplier;
+    this._normalizedHeight = GNOMES_CONFIG.gnomes.targetHeight;
 
     // Фокус камеры обычно лучше смотреть чуть выше середины (голова/туловище).
     // Чтобы гном не упирался макушкой в верх экрана, целимся чуть выше центра.
-    this._focusOffsetY = GNOMES_CONFIG.targetHeight * 0.72;
+    this._focusOffsetY = GNOMES_CONFIG.gnomes.targetHeight * 0.72;
   }
 
   get focusOffsetY(): number {
@@ -55,12 +55,17 @@ export class GnomeFactory {
     // Масштабирование.
     cloned.scale.multiplyScalar(this._scale);
 
-    // Выравнивание: центр по XZ и \"ступни\" на y=0.
-    this._centerAndGround(cloned);
+    // Важно: выравнивание нужно считать по персонажу (skinned root),
+    // иначе ветки sit (которые лежат в сцене рядом) будут ломать bounds и поднимать гнома.
+    const characterRoot = this._findCharacterRoot(cloned);
+
+    // Выравнивание: центр по XZ и \"ступни\" на y=0. Смещение применяем ко всей сцене,
+    // чтобы ветка sit оставалась правильно привязанной к гному.
+    this._centerAndGroundBy(characterRoot, cloned);
 
     // Невидимый коллайдер для \"уверенного\" клика по гному (а не по отдельным мешам).
     // Это особенно полезно, когда модель состоит из многих частей и по тонким элементам трудно попасть raycast'ом.
-    const pickCollider = this._createPickCollider(cloned);
+    const pickCollider = this._createPickCollider(characterRoot);
     pickCollider.name = "GnomePickCollider";
     root.add(pickCollider);
 
@@ -113,19 +118,20 @@ export class GnomeFactory {
     return mesh;
   }
 
-  private _centerAndGround(target: THREE.Object3D): void {
-    target.updateMatrixWorld(true);
+  private _centerAndGroundBy(boundsSource: THREE.Object3D, targetToMove: THREE.Object3D): void {
+    boundsSource.updateMatrixWorld(true);
+    targetToMove.updateMatrixWorld(true);
 
-    const box = new THREE.Box3().setFromObject(target);
+    const box = new THREE.Box3().setFromObject(boundsSource);
     const center = new THREE.Vector3();
     box.getCenter(center);
 
     // Центрируем XZ.
-    target.position.x -= center.x;
-    target.position.z -= center.z;
+    targetToMove.position.x -= center.x;
+    targetToMove.position.z -= center.z;
 
     // На пол: minY -> 0.
-    target.position.y -= box.min.y;
+    targetToMove.position.y -= box.min.y;
   }
 
   private _setupSitObjects(target: THREE.Object3D, characterKey: GnomeCharacterKey): void {
@@ -133,21 +139,29 @@ export class GnomeFactory {
     const sitNames = new Set(["hor sit", "fi sit", "pi sit"]);
     const brown = new THREE.Color(0x6b4b2a);
 
+    // 1) Скрываем все ветки, кроме нужной. Делаем это по \"предку\" с именем sit,
+    // потому что внутри glTF ветка может быть Group, а меши внутри имеют другие имена.
     target.traverse((o) => {
-      if (!sitNames.has(o.name)) return;
+      const sitAncestor = this._findAncestorByNameSet(o, sitNames);
+      if (!sitAncestor) return;
+      o.visible = sitAncestor.name === wantName;
+    });
 
-      o.visible = o.name === wantName;
-
+    // 2) Перекрашиваем ТОЛЬКО нужную ветку (все меши внутри неё).
+    const wantRoot = this._findFirstByName(target, wantName);
+    if (!wantRoot) return;
+    wantRoot.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
 
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       const clonedMaterials = materials.map((m) => {
-        // Чтобы изменения цвета не протекали между инстансами.
         const mat = (m as THREE.Material).clone() as THREE.Material & Record<string, unknown>;
         const anyMat = mat as unknown as { color?: THREE.Color; map?: THREE.Texture | null; needsUpdate?: boolean };
 
         if (anyMat.color) anyMat.color.copy(brown);
+        // У веток в export.gltf часто нет заданного материала → GLTFLoader даёт дефолтный белый.
+        // Убираем текстуры на всякий случай, чтобы цвет был чисто коричневый.
         if ("map" in anyMat) anyMat.map = null;
         if ("needsUpdate" in anyMat) anyMat.needsUpdate = true;
         return mat;
@@ -155,6 +169,62 @@ export class GnomeFactory {
 
       mesh.material = Array.isArray(mesh.material) ? clonedMaterials : clonedMaterials[0];
     });
+  }
+
+  private _findFirstByName(root: THREE.Object3D, name: string): THREE.Object3D | null {
+    let found: THREE.Object3D | null = null;
+    root.traverse((o) => {
+      if (found) return;
+      if (o.name === name) found = o;
+    });
+    return found;
+  }
+
+  private _findAncestorByNameSet(o: THREE.Object3D, names: Set<string>): THREE.Object3D | null {
+    let cur: THREE.Object3D | null = o;
+    while (cur) {
+      if (names.has(cur.name)) return cur;
+      cur = cur.parent;
+    }
+    return null;
+  }
+
+  private _findCharacterRoot(sceneRoot: THREE.Object3D): THREE.Object3D {
+    const skinnedMeshes: THREE.SkinnedMesh[] = [];
+    sceneRoot.traverse((o) => {
+      const sk = o as THREE.SkinnedMesh;
+      if (sk.isSkinnedMesh) skinnedMeshes.push(sk);
+    });
+    if (skinnedMeshes.length === 0) return sceneRoot;
+
+    const first = skinnedMeshes[0];
+    const firstChain = this._ancestorChain(first, sceneRoot);
+    const common = new Set(firstChain);
+
+    for (let i = 1; i < skinnedMeshes.length; i++) {
+      const chain = this._ancestorChain(skinnedMeshes[i], sceneRoot);
+      const chainSet = new Set(chain);
+      for (const node of Array.from(common)) {
+        if (!chainSet.has(node)) common.delete(node);
+      }
+    }
+
+    for (const node of firstChain) {
+      if (common.has(node)) return node;
+    }
+
+    return sceneRoot;
+  }
+
+  private _ancestorChain(o: THREE.Object3D, stopAt: THREE.Object3D): THREE.Object3D[] {
+    const chain: THREE.Object3D[] = [];
+    let cur: THREE.Object3D | null = o;
+    while (cur) {
+      chain.push(cur);
+      if (cur === stopAt) break;
+      cur = cur.parent;
+    }
+    return chain;
   }
 }
 

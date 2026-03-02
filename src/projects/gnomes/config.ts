@@ -2,8 +2,16 @@ export const GNOMES_CONFIG = {
   glbUrl: "/gnomes/export.glb",
   pages: 3,
 
-  /** Целевая высота гнома в world units (масштабируем модель по bounds). */
-  targetHeight: 0.62,
+  gnomes: {
+    /** Целевая высота гнома в world units (масштабируем модель по bounds). */
+    targetHeight: 0.62,
+    /** Дополнительный множитель к масштабу (для быстрого тюнинга без пересчёта targetHeight). */
+    scaleMultiplier: 0.5,
+    /** Базовое положение каждого гнома (до разнесения по страницам). */
+    basePosition: { x: 0, y: -0.10, z: 0 },
+    /** Множитель разнесения по страницам (1 = ровно высота видимой области камеры). */
+    pageSpacingMultiplier: 1.0,
+  },
 
   camera: {
     fov: 35,

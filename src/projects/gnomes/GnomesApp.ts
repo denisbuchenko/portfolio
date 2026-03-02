@@ -126,9 +126,10 @@ export class GnomesApp {
   private _layoutPages(): void {
     if (this._gnomes.length === 0) return;
 
-    const spacing = this._cameraRig.pageWorldHeight;
+    const spacing = this._cameraRig.pageWorldHeight * GNOMES_CONFIG.gnomes.pageSpacingMultiplier;
     for (let i = 0; i < this._gnomes.length; i++) {
-      this._gnomes[i].controller.setPosition(0, -i * spacing, 0);
+      const base = GNOMES_CONFIG.gnomes.basePosition;
+      this._gnomes[i].controller.setPosition(base.x, base.y - i * spacing, base.z);
     }
   }
 
