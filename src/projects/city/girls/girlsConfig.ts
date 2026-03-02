@@ -42,10 +42,12 @@ export const CITY_GIRLS = {
   faceYawOffsetDeg: 180,
 
   animations: {
-    /** Дефолтная поза для каждой арматуры (базовый слой). */
-    non: "non",
+    /**
+     * В обновлённом ассете `non` удалён.
+     * Дефолтную позу берём из первого кадра `stay` (см. GirlRigController).
+     */
     stay: "stay",
-    hello: "hello",
+    hello: "Hello",
     love: "love",
     love2: "love2"
   },
