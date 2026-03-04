@@ -33,9 +33,10 @@ export class DialogueSystem {
     const res = this._engine.start(characterId);
     if ("lockedReason" in res) {
       // Просто покажем причину в UI как текст без вариантов.
+      const displayName = this._engine.getCharacterName(characterId);
       this._ui.show({
         characterId,
-        characterName: characterId,
+        characterName: displayName,
         act: 0,
         replyId: "locked",
         text: res.lockedReason,

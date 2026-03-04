@@ -4,7 +4,7 @@ export class DialogueProgressStore {
   private _storageKey: string;
 
   constructor(opts?: { storageKey?: string }) {
-    this._storageKey = opts?.storageKey ?? "gnomes_dialogue_progress_v1";
+    this._storageKey = opts?.storageKey ?? "gnomes_dialogue_progress_v2";
   }
 
   getReplyId(characterId: string): string | null {

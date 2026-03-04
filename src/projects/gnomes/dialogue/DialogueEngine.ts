@@ -44,6 +44,12 @@ export class DialogueEngine {
     return this._active !== null;
   }
 
+  /** Получить отображаемое имя персонажа по его ID. */
+  getCharacterName(characterId: string): string {
+    const idx = this._db.getCharacter(characterId);
+    return idx?.data.characterInfo.name ?? characterId;
+  }
+
   /** Начать диалог с персонажем. Возвращает состояние для UI или null если диалог недоступен. */
   start(characterId: string): { state: DialogueViewState } | { lockedReason: string } {
     const idx = this._db.getCharacter(characterId);
@@ -64,12 +70,7 @@ export class DialogueEngine {
       this._knowledge.addMany(firstReply.grantsKnowledge);
     }
 
-    // Проверка доступности (в духе ТЗ): если нет ни одного видимого варианта ответа — считаем акт закрытым.
     const view = this._buildViewState(idx, characterId, act, firstReply);
-    const hasAnyEnabled = view.options.some((o) => o.isVisible && o.isEnabled);
-    if (!hasAnyEnabled) {
-      return { lockedReason: "Этот акт пока недоступен. Вернись позже, когда соберёшь нужные знания." };
-    }
 
     this._active = { characterId, act, replyId: firstReply.id };
     this._progress.setReplyId(characterId, firstReply.id);

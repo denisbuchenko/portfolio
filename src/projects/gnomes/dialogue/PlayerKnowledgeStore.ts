@@ -5,7 +5,7 @@ export class PlayerKnowledgeStore {
   constructor(opts?: { storageKey?: string }) {
     // v3: полностью новый набор контента/ID персонажей и отказ от "актов" как концепции контента.
     // Бамп версии нужен, чтобы старые ключи не уводили игрока в неожиданные состояния.
-    this._storageKey = opts?.storageKey ?? "gnomes_knowledge_v3";
+    this._storageKey = opts?.storageKey ?? "gnomes_knowledge_v4";
     this._set = this._load();
   }
 
