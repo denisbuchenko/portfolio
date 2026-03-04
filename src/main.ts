@@ -7,6 +7,7 @@ import { mountFruitsProject } from "./projects/fruits";
 import { mountGnomesProject } from "./projects/gnomes";
 import { mountGnomesDialogueEditor } from "./projects/gnomes/editor";
 import { mountCityProject } from "./projects/city";
+import { mountOsminogProject } from "./projects/osminog";
 
 const overlay = createOverlay();
 
@@ -23,6 +24,7 @@ function showPicker(): void {
         <button id="btn-project-fruits" class="btn" type="button">Фрукты</button>
         <button id="btn-project-gnomes" class="btn" type="button">Гномы</button>
         <button id="btn-project-city" class="btn" type="button">Город</button>
+        <button id="btn-project-osminog" class="btn" type="button">Осьминог</button>
         <button id="btn-project-gnomes-editor" class="btn" type="button">Редактор диалогов (Гномы)</button>
       </div>
       <p class="launcher__hint">Выбери проект, который нужно открыть.</p>
@@ -34,14 +36,16 @@ function showPicker(): void {
   const btnFruits = document.getElementById("btn-project-fruits") as HTMLButtonElement | null;
   const btnGnomes = document.getElementById("btn-project-gnomes") as HTMLButtonElement | null;
   const btnCity = document.getElementById("btn-project-city") as HTMLButtonElement | null;
+  const btnOsminog = document.getElementById("btn-project-osminog") as HTMLButtonElement | null;
   const btnGnomesEditor = document.getElementById("btn-project-gnomes-editor") as HTMLButtonElement | null;
-  if (!btnParticles || !btnPuzzle || !btnFruits || !btnGnomes || !btnCity || !btnGnomesEditor) return;
+  if (!btnParticles || !btnPuzzle || !btnFruits || !btnGnomes || !btnCity || !btnOsminog || !btnGnomesEditor) return;
 
   btnParticles.addEventListener("click", () => startParticles());
   btnPuzzle.addEventListener("click", () => startPuzzle());
   btnFruits.addEventListener("click", () => void startFruits());
   btnGnomes.addEventListener("click", () => startGnomes());
   btnCity.addEventListener("click", () => startCity());
+  btnOsminog.addEventListener("click", () => startOsminog());
   btnGnomesEditor.addEventListener("click", () => startGnomesDialogueEditor());
 }
 
@@ -130,6 +134,15 @@ function startCity(): void {
   if (!el) return;
   el.style.display = "grid";
   mountCityProject(el);
+}
+
+function startOsminog(): void {
+  hidePicker();
+  overlay.hide();
+  const el = document.getElementById("project-picker");
+  if (!el) return;
+  el.style.display = "grid";
+  mountOsminogProject(el);
 }
 
 showPicker();

@@ -519,4 +519,80 @@ canvas {
   line-height: 1.5;
 }
 
+.osminog {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(1200px 900px at 50% 35%, #0b1230 0%, var(--bg) 55%);
+}
+
+.osminog__stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.osminog__anim {
+  width: min(92vw, 720px);
+  height: min(62vh, 520px);
+  border-radius: 18px;
+  border: 1px solid var(--panel-border);
+  background: rgba(10, 12, 18, 0.35);
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.osminog__loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.osminog__ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 30;
+}
+
+.osminog__menu {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  pointer-events: auto;
+}
+
+.osminog__controls {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: rgba(10, 12, 18, 0.55);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.osminog__seg-btn {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 14px;
+  line-height: 42px;
+  text-align: center;
+  touch-action: manipulation;
+}
+
 
