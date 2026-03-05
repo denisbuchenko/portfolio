@@ -31,6 +31,7 @@ export class ParticleApp {
   private _pointer = new PointerTracker();
   private _hud = new HudController();
 
+  private _disposed = false;
   private _mode: Mode = -1;
   private _texSize = 0;
   private _viewBounds = new THREE.Vector2(4, 4);
@@ -348,7 +349,13 @@ export class ParticleApp {
     this._hud.setStatus(base + extra);
   }
 
+  dispose(): void {
+    this._disposed = true;
+    this._renderer.dispose();
+  }
+
   private _animate = (): void => {
+    if (this._disposed) return;
     const dt = Math.max(0, this._clock.getDelta());
     this._time += dt;
     this._gas.uniforms.uTime.value = this._time;

@@ -153,6 +153,14 @@ export class PuzzleProject {
     );
   }
 
+  dispose(): void {
+    if (this._rafId) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = 0;
+    }
+    this._ui.destroy();
+  }
+
   private _frame(): void {
     this._rafId = window.requestAnimationFrame(() => this._frame());
     const dpr = getDpr();

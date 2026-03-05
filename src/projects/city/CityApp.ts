@@ -1053,6 +1053,16 @@ export class CityApp {
     this._world.resetCollisionState(this._bikerRoot);
   }
 
+  /** Showcase: установить прогресс обзорного скролла извне (0..1). */
+  setOverviewProgress(progress01: number): void {
+    this._scroll.setProgress01(Math.max(0, Math.min(1, progress01)));
+  }
+
+  /** Showcase: включить/выключить внутренний scroll input. */
+  setScrollInputEnabled(enabled: boolean): void {
+    this._scroll.setEnabled(enabled);
+  }
+
   private _getGameplayCamera(): THREE.Camera {
     return CITY_CAMERA.gameplay.usePerspective ? this._gameCamera : this._gameOrthoCamera;
   }

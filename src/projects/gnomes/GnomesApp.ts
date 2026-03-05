@@ -31,14 +31,17 @@ export class GnomesApp {
   private _raf = 0;
   private _lastTs = 0;
 
+  private _getScrollY: () => number;
+
   private _onResize = () => this._handleResize();
   private _onScroll = () => this._handleScroll();
   private _onPointerDown = (e: PointerEvent) => this._handlePointerDown(e);
   private _onPointerUp = (e: PointerEvent) => this._handlePointerUp(e);
 
-  constructor(opts: { canvas: HTMLCanvasElement; statusEl?: HTMLElement | null; uiRoot: HTMLElement }) {
+  constructor(opts: { canvas: HTMLCanvasElement; statusEl?: HTMLElement | null; uiRoot: HTMLElement; getScrollY?: () => number }) {
     this._canvas = opts.canvas;
     this._statusEl = opts.statusEl ?? null;
+    this._getScrollY = opts.getScrollY ?? (() => window.scrollY);
 
     this._composer = new SceneComposer({ canvas: this._canvas });
     this._cameraRig = new ScrollCameraRig({ pages: GNOMES_CONFIG.pages });
@@ -114,7 +117,7 @@ export class GnomesApp {
     this._lastTs = ts;
 
     // Подтягиваем scrollY на каждом кадре — если браузер не триггерит scroll event (иногда на iOS).
-    this._cameraRig.setScrollY(window.scrollY);
+    this._cameraRig.setScrollY(this._getScrollY());
     this._cameraRig.update(deltaSec);
 
     for (const g of this._gnomes) g.controller.update(deltaSec);
@@ -133,7 +136,7 @@ export class GnomesApp {
   }
 
   private _handleScroll(): void {
-    this._cameraRig.setScrollY(window.scrollY);
+    this._cameraRig.setScrollY(this._getScrollY());
   }
 
   private _layoutPages(): void {

@@ -595,4 +595,245 @@ canvas {
   touch-action: manipulation;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Showcase / Витрина
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#app.showcase-active {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  overscroll-behavior-y: none;
+}
+
+.showcase {
+  width: 100%;
+  position: relative;
+}
+
+/* ── section ── */
+
+.showcase__section {
+  position: relative;
+  width: 100%;
+}
+
+.showcase__sticky {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.showcase__project-container {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── section header ── */
+
+.showcase__section-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 55;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(7, 10, 16, 0.75) 0%, transparent 100%);
+}
+
+.showcase__section-num {
+  font-size: 11px;
+  color: var(--primary);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+.showcase__section-title-text {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* ── loader ── */
+
+.showcase__loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--bg);
+}
+
+/* ── error ── */
+
+.showcase__error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 24px;
+  text-align: center;
+}
+
+/* ── interaction gate (blocker + interact button) ── */
+
+.showcase__event-blocker {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  /* transparent, captures events to prevent project interaction */
+}
+
+.showcase__interact-btn {
+  position: absolute;
+  bottom: 28px;
+  right: 28px;
+  z-index: 60;
+  pointer-events: auto;
+  border-color: rgba(110, 231, 255, 0.35);
+  background: rgba(110, 231, 255, 0.08);
+  backdrop-filter: blur(12px);
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    opacity 200ms ease;
+}
+
+.showcase__interact-btn:hover {
+  border-color: rgba(110, 231, 255, 0.6);
+  background: rgba(110, 231, 255, 0.14);
+}
+
+/* ── back to picker ── */
+
+.showcase__back-btn {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 160;
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+}
+
+.showcase__back-btn--hidden {
+  display: none;
+}
+
+/* ── exit interaction ── */
+
+.showcase__exit-btn {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 200;
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+  border-color: rgba(255, 168, 70, 0.4);
+  background: rgba(255, 168, 70, 0.1);
+}
+
+.showcase__exit-btn:hover {
+  border-color: rgba(255, 168, 70, 0.6);
+  background: rgba(255, 168, 70, 0.18);
+}
+
+.showcase__exit-btn--hidden {
+  display: none;
+}
+
+/* ── navigation dots ── */
+
+.showcase__nav {
+  position: fixed;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+
+.showcase__nav--hidden {
+  display: none;
+}
+
+.showcase__nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.showcase__nav-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.showcase__nav-item:hover .showcase__nav-label {
+  opacity: 1;
+}
+
+.showcase__nav-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: all 250ms ease;
+  flex-shrink: 0;
+}
+
+.showcase__nav-item--active .showcase__nav-dot {
+  width: 10px;
+  height: 10px;
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 10px rgba(110, 231, 255, 0.4);
+}
+
+.showcase__nav-item:hover .showcase__nav-dot {
+  background: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.showcase__nav-item--active:hover .showcase__nav-dot {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+/* ── showcase-specific: picker button ── */
+
+.btn--showcase {
+  border-color: rgba(110, 231, 255, 0.35);
+  background: rgba(110, 231, 255, 0.06);
+  width: 100%;
+  text-align: center;
+}
+
+.btn--showcase:hover {
+  border-color: rgba(110, 231, 255, 0.55);
+  background: rgba(110, 231, 255, 0.12);
+}
+
 

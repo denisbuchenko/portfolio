@@ -8,8 +8,10 @@ import { mountGnomesProject } from "./projects/gnomes";
 import { mountGnomesDialogueEditor } from "./projects/gnomes/editor";
 import { mountCityProject } from "./projects/city";
 import { mountOsminogProject } from "./projects/osminog";
+import { ShowcaseMode } from "./showcase/ShowcaseMode";
 
 const overlay = createOverlay();
+let showcaseInstance: ShowcaseMode | null = null;
 
 function showPicker(): void {
   const el = document.getElementById("project-picker");
@@ -19,6 +21,7 @@ function showPicker(): void {
     <div class="launcher__card">
       <h2 class="launcher__title">Выбор проекта</h2>
       <div class="launcher__grid">
+        <button id="btn-project-showcase" class="btn btn--showcase" type="button">Витрина всех проектов</button>
         <button id="btn-project-particles" class="btn" type="button">Частицы</button>
         <button id="btn-project-puzzle" class="btn" type="button">Пазл</button>
         <button id="btn-project-fruits" class="btn" type="button">Фрукты</button>
@@ -31,6 +34,7 @@ function showPicker(): void {
     </div>
   `;
 
+  const btnShowcase = document.getElementById("btn-project-showcase") as HTMLButtonElement | null;
   const btnParticles = document.getElementById("btn-project-particles") as HTMLButtonElement | null;
   const btnPuzzle = document.getElementById("btn-project-puzzle") as HTMLButtonElement | null;
   const btnFruits = document.getElementById("btn-project-fruits") as HTMLButtonElement | null;
@@ -38,8 +42,9 @@ function showPicker(): void {
   const btnCity = document.getElementById("btn-project-city") as HTMLButtonElement | null;
   const btnOsminog = document.getElementById("btn-project-osminog") as HTMLButtonElement | null;
   const btnGnomesEditor = document.getElementById("btn-project-gnomes-editor") as HTMLButtonElement | null;
-  if (!btnParticles || !btnPuzzle || !btnFruits || !btnGnomes || !btnCity || !btnOsminog || !btnGnomesEditor) return;
+  if (!btnShowcase || !btnParticles || !btnPuzzle || !btnFruits || !btnGnomes || !btnCity || !btnOsminog || !btnGnomesEditor) return;
 
+  btnShowcase.addEventListener("click", () => startShowcase());
   btnParticles.addEventListener("click", () => startParticles());
   btnPuzzle.addEventListener("click", () => startPuzzle());
   btnFruits.addEventListener("click", () => void startFruits());
@@ -143,6 +148,23 @@ function startOsminog(): void {
   if (!el) return;
   el.style.display = "grid";
   mountOsminogProject(el);
+}
+
+function startShowcase(): void {
+  hidePicker();
+  overlay.hide();
+
+  const host = document.getElementById("app");
+  if (!host) return;
+
+  showcaseInstance = new ShowcaseMode({
+    host,
+    onBack: () => {
+      showcaseInstance?.dispose();
+      showcaseInstance = null;
+      showPicker();
+    },
+  });
 }
 
 showPicker();
