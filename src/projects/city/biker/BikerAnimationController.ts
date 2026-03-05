@@ -135,6 +135,13 @@ export class BikerAnimationController {
   reset(): void {
     // Педали — в ноль.
     for (const a of this._pedalActions) {
+      a.stop();
+      a.enabled = true;
+      a.setLoop(THREE.LoopRepeat, Infinity);
+      a.clampWhenFinished = false;
+      a.time = 0;
+      a.paused = false;
+      a.play();
       a.setEffectiveWeight(0);
       a.setEffectiveTimeScale(0.0001);
     }
@@ -143,10 +150,29 @@ export class BikerAnimationController {
     this._turnPending = null;
     this._turnActive = -1;
     this._turnPhase = "completed";
-    this._setTurnWeights(-1);
-    this._snapTurnToStart(-1);
-    this._fadeOutActions(this._turnLeftActions, 0.05);
-    this._fadeOutActions(this._turnRightActions, 0.05);
+    for (const a of this._turnLeftActions) {
+      a.stop();
+      a.enabled = true;
+      a.setLoop(THREE.LoopOnce, 1);
+      a.clampWhenFinished = true;
+      a.time = 0;
+      a.paused = true;
+      a.play();
+      a.setEffectiveWeight(0);
+      a.setEffectiveTimeScale(1);
+    }
+    for (const a of this._turnRightActions) {
+      a.stop();
+      a.enabled = true;
+      a.setLoop(THREE.LoopOnce, 1);
+      a.clampWhenFinished = true;
+      a.time = 0;
+      a.paused = true;
+      a.play();
+      a.setEffectiveWeight(1);
+      a.setEffectiveTimeScale(1);
+    }
+    this._mixer.update(1e-6);
   }
 
   private _applyPoseSnapshot(): void {
@@ -243,10 +269,6 @@ export class BikerAnimationController {
       if (a.time > d) a.time = d;
       a.timeScale = -this._timeScaleFor(d, travelSec);
     }
-  }
-
-  private _fadeOutActions(actions: THREE.AnimationAction[], sec: number): void {
-    for (const a of actions) a.fadeOut(Math.max(0.001, sec));
   }
 
   private _areActionsAtStart(actions: readonly THREE.AnimationAction[]): boolean {

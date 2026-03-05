@@ -6,6 +6,7 @@ type _PlayOpts = Readonly<{
   repetitions?: number;
   clampWhenFinished?: boolean;
   restart?: boolean;
+  stopOthers?: boolean;
 }>;
 
 type _Snapshot = Map<
@@ -78,6 +79,7 @@ export class GirlRigController {
     const loop = opts?.loop ?? THREE.LoopRepeat;
     const repetitions = opts?.repetitions ?? Infinity;
     const clamp = opts?.clampWhenFinished ?? false;
+    const stopOthers = opts?.stopOthers ?? false;
 
     for (const p of this._parts) {
       const has = p.hasBindingsByName.get(name) ?? false;
@@ -91,7 +93,7 @@ export class GirlRigController {
       // Важно: перед запуском клипа нормализуем позу в base, чтобы отсутствующие треки
       // оставались в правильном дефолте, а не в A-pose/rest.
       this._applyBasePose(p);
-      this._playPart(p, name, { fadeSec, restart, loop, repetitions, clampWhenFinished: clamp });
+      this._playPart(p, name, { fadeSec, restart, loop, repetitions, clampWhenFinished: clamp, stopOthers });
     }
   }
 
@@ -252,6 +254,11 @@ export class GirlRigController {
 
     const prev = p.actionsByName.get(p.mutable.activeName) ?? null;
 
+    if (opts.stopOthers) {
+      this._stopOtherActions(p, clipName);
+      next.stop();
+    }
+
     next.enabled = true;
     next.setLoop(opts.loop, opts.repetitions);
     next.clampWhenFinished = opts.clampWhenFinished;
@@ -262,7 +269,9 @@ export class GirlRigController {
     next.play();
 
     const fade = Math.max(0.001, opts.fadeSec ?? 0.2);
-    if (prev && prev !== next) {
+    if (opts.stopOthers) {
+      next.setEffectiveWeight(1);
+    } else if (prev && prev !== next) {
       prev.fadeOut(fade);
       next.fadeIn(fade);
     } else {
@@ -270,6 +279,17 @@ export class GirlRigController {
     }
 
     p.mutable.activeName = clipName;
+  }
+
+  private _stopOtherActions(p: _RigPart, keepClipName: string): void {
+    for (const [name, action] of p.actionsByName) {
+      if (name === keepClipName) continue;
+      action.stop();
+      action.enabled = false;
+      action.paused = true;
+      action.time = 0;
+      action.setEffectiveWeight(0);
+    }
   }
 }
 

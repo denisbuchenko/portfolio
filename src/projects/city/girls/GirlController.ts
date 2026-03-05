@@ -9,6 +9,7 @@ type _PlayOpts = Readonly<{
   repetitions?: number;
   clampWhenFinished?: boolean;
   restart?: boolean;
+  stopOthers?: boolean;
 }>;
 
 export class GirlController {

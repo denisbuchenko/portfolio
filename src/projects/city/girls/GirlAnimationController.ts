@@ -61,7 +61,7 @@ export class GirlAnimationController {
     return this._helloCooldownSec <= 0 && !this._girl.isActive(CITY_GIRLS.animations.hello);
   }
 
-  playStay(opts?: Readonly<{ fadeSec?: number; restart?: boolean }>): void {
+  playStay(opts?: Readonly<{ fadeSec?: number; restart?: boolean; stopOthers?: boolean }>): void {
     this._girl.setFlVisible(false);
     this._helloTimeLeft = null;
     this._loveTimeLeft = null;
@@ -70,7 +70,8 @@ export class GirlAnimationController {
       loop: THREE.LoopRepeat,
       repetitions: Infinity,
       restart: opts?.restart ?? false,
-      clampWhenFinished: false
+      clampWhenFinished: false,
+      stopOthers: opts?.stopOthers ?? false
     });
   }
 
@@ -82,7 +83,8 @@ export class GirlAnimationController {
       loop: THREE.LoopOnce,
       repetitions: 1,
       restart: opts?.restart ?? true,
-      clampWhenFinished: true
+      clampWhenFinished: true,
+      stopOthers: true
     });
     // Таймер конца клипа (надёжнее, чем finished events при нескольких armature mixers).
     const dur = this._girl.instance.clips.find((c) => c.name === CITY_GIRLS.animations.hello)?.duration ?? 0;
@@ -98,7 +100,8 @@ export class GirlAnimationController {
       loop: THREE.LoopOnce,
       repetitions: 1,
       restart: opts?.restart ?? true,
-      clampWhenFinished: true
+      clampWhenFinished: true,
+      stopOthers: true
     });
     const dur = this._girl.instance.clips.find((c) => c.name === CITY_GIRLS.animations.love)?.duration ?? 0;
     this._loveTimeLeft = Math.max(0.001, dur);
@@ -113,7 +116,8 @@ export class GirlAnimationController {
       loop: THREE.LoopRepeat,
       repetitions: Infinity,
       restart: opts?.restart ?? false,
-      clampWhenFinished: false
+      clampWhenFinished: false,
+      stopOthers: true
     });
   }
 
@@ -132,7 +136,7 @@ export class GirlAnimationController {
     this._helloCooldownSec = 0;
     this._helloTimeLeft = null;
     this._loveTimeLeft = null;
-    this.playStay({ fadeSec: 0.01, restart: true });
+    this.playStay({ fadeSec: 0.01, restart: true, stopOthers: true });
   }
 }
 
