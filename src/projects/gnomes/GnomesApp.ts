@@ -126,7 +126,7 @@ export class GnomesApp {
   }
 
   private _handleResize(): void {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(GNOMES_CONFIG.visuals.renderer.maxPixelRatio, window.devicePixelRatio || 1);
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
 

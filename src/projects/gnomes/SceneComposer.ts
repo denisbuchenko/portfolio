@@ -20,13 +20,17 @@ export class SceneComposer {
 
     this._renderer.outputColorSpace = THREE.SRGBColorSpace;
     this._renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this._renderer.toneMappingExposure = 1.05;
+    this._renderer.toneMappingExposure = GNOMES_CONFIG.visuals.renderer.toneMappingExposure;
     this._renderer.shadowMap.enabled = true;
     this._renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this._scene = new THREE.Scene();
-    this._scene.background = new THREE.Color(0x05070c);
-    this._scene.fog = new THREE.Fog(0x05070c, 8.5, 21);
+    this._scene.background = new THREE.Color(GNOMES_CONFIG.visuals.environment.backgroundColor);
+    this._scene.fog = new THREE.Fog(
+      GNOMES_CONFIG.visuals.environment.fogColor,
+      GNOMES_CONFIG.visuals.environment.fogNear,
+      GNOMES_CONFIG.visuals.environment.fogFar,
+    );
 
     this._ground = this._createGround();
     this._scene.add(this._ground);
@@ -54,43 +58,50 @@ export class SceneComposer {
   }
 
   private _createGround(): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial> {
-    const geo = new THREE.PlaneGeometry(22, 300, 1, 1);
+    const groundCfg = GNOMES_CONFIG.visuals.ground;
+    const geo = new THREE.PlaneGeometry(groundCfg.width, groundCfg.length, 1, 1);
     const mat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(0x070a12),
-      roughness: 1.0,
-      metalness: 0.0,
+      color: new THREE.Color(groundCfg.color),
+      roughness: groundCfg.roughness,
+      metalness: groundCfg.metalness,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.x = -Math.PI * 0.5;
-    mesh.position.y = -0.001;
+    mesh.position.y = groundCfg.y;
     mesh.receiveShadow = true;
     return mesh;
   }
 
   private _setupLights(): void {
-    const hemi = new THREE.HemisphereLight(0xbfd2ff, 0x101018, GNOMES_CONFIG.lighting.hemisphereIntensity);
+    const lightsCfg = GNOMES_CONFIG.visuals.lights;
+
+    const hemi = new THREE.HemisphereLight(
+      lightsCfg.hemisphere.skyColor,
+      lightsCfg.hemisphere.groundColor,
+      lightsCfg.hemisphere.intensity,
+    );
     this._scene.add(hemi);
 
-    const key = new THREE.DirectionalLight(0xffffff, GNOMES_CONFIG.lighting.keyIntensity);
-    key.position.set(3.5, 6.0, 4.0);
-    key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.camera.near = 0.5;
-    key.shadow.camera.far = 24;
-    key.shadow.camera.left = -6;
-    key.shadow.camera.right = 6;
-    key.shadow.camera.top = 8;
-    key.shadow.camera.bottom = -8;
-    key.shadow.bias = -0.00005;
-    key.shadow.normalBias = 0.02;
+    const key = new THREE.DirectionalLight(lightsCfg.key.color, lightsCfg.key.intensity);
+    key.position.set(lightsCfg.key.position.x, lightsCfg.key.position.y, lightsCfg.key.position.z);
+    key.castShadow = lightsCfg.key.castShadow;
+    key.shadow.mapSize.set(lightsCfg.key.shadowMapSize, lightsCfg.key.shadowMapSize);
+    key.shadow.camera.near = lightsCfg.key.shadowCamera.near;
+    key.shadow.camera.far = lightsCfg.key.shadowCamera.far;
+    key.shadow.camera.left = lightsCfg.key.shadowCamera.left;
+    key.shadow.camera.right = lightsCfg.key.shadowCamera.right;
+    key.shadow.camera.top = lightsCfg.key.shadowCamera.top;
+    key.shadow.camera.bottom = lightsCfg.key.shadowCamera.bottom;
+    key.shadow.bias = lightsCfg.key.shadowBias;
+    key.shadow.normalBias = lightsCfg.key.shadowNormalBias;
     this._scene.add(key);
 
-    const fill = new THREE.PointLight(0x9ad5ff, GNOMES_CONFIG.lighting.fillIntensity, 30);
-    fill.position.set(-2.2, 2.2, 2.4);
+    const fill = new THREE.PointLight(lightsCfg.fill.color, lightsCfg.fill.intensity, lightsCfg.fill.distance);
+    fill.position.set(lightsCfg.fill.position.x, lightsCfg.fill.position.y, lightsCfg.fill.position.z);
     this._scene.add(fill);
 
-    const rim = new THREE.DirectionalLight(0xaac7ff, 0.3);
-    rim.position.set(-3.0, 2.8, -2.5);
+    const rim = new THREE.DirectionalLight(lightsCfg.rim.color, lightsCfg.rim.intensity);
+    rim.position.set(lightsCfg.rim.position.x, lightsCfg.rim.position.y, lightsCfg.rim.position.z);
     this._scene.add(rim);
   }
 }

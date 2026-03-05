@@ -194,7 +194,8 @@ export class GnomeFactory {
   }
 
   private _applySitStyle(sitRoot: THREE.Object3D): void {
-    const brown = new THREE.Color(0x6b4b2a);
+    const sitCfg = GNOMES_CONFIG.visuals.materials.sit;
+    const brown = new THREE.Color(sitCfg.color);
     sitRoot.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -254,11 +255,16 @@ export class GnomeFactory {
     };
 
     const tintColor = new THREE.Color(tintHex);
+    const tintCfg = GNOMES_CONFIG.visuals.materials.tint;
     asAny.onBeforeCompile = (shader: any) => {
       (shader.uniforms as Record<string, unknown>).gnomeTintColor = { value: tintColor };
+      (shader.uniforms as Record<string, unknown>).gnomeTintStrength = { value: tintCfg.strength };
+      (shader.uniforms as Record<string, unknown>).gnomeTintGamma = { value: tintCfg.gamma };
+      (shader.uniforms as Record<string, unknown>).gnomeTintMinLightness = { value: tintCfg.minLightness };
+      (shader.uniforms as Record<string, unknown>).gnomeTintMaxLightness = { value: tintCfg.maxLightness };
 
       shader.fragmentShader =
-        `uniform vec3 gnomeTintColor;\n` +
+        `uniform vec3 gnomeTintColor;\nuniform float gnomeTintStrength;\nuniform float gnomeTintGamma;\nuniform float gnomeTintMinLightness;\nuniform float gnomeTintMaxLightness;\n` +
         shader.fragmentShader;
 
       // Твоя логика: берём текстуру как градации серого (вес w) и получаем цвет
@@ -267,7 +273,10 @@ export class GnomeFactory {
         "#include <map_fragment>",
         `#include <map_fragment>
 float _gnomeW = dot( diffuseColor.rgb, vec3( 0.299, 0.587, 0.114 ) );
-diffuseColor.rgb = gnomeTintColor * clamp( _gnomeW, 0.0, 1.0 );`,
+_gnomeW = pow( clamp( _gnomeW, 0.0, 1.0 ), max( 0.0001, gnomeTintGamma ) );
+_gnomeW = mix( gnomeTintMinLightness, gnomeTintMaxLightness, _gnomeW );
+vec3 _gnomeTinted = gnomeTintColor * clamp( _gnomeW, 0.0, 1.0 );
+diffuseColor.rgb = mix( diffuseColor.rgb, _gnomeTinted, clamp( gnomeTintStrength, 0.0, 1.0 ) );`,
       );
     };
 
