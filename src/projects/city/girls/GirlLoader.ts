@@ -80,7 +80,7 @@ export class GirlLoader {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      mesh.receiveShadow = false;
       mesh.frustumCulled = false;
     });
 

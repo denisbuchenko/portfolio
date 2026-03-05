@@ -93,14 +93,13 @@ export class CityApp {
       canvas: this._canvas,
       antialias: true,
       alpha: false,
-      powerPreference: "high-performance",
-      logarithmicDepthBuffer: true
+      powerPreference: "high-performance"
     });
     this._renderer.outputColorSpace = THREE.SRGBColorSpace;
     this._renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this._renderer.toneMappingExposure = 1.05;
     this._renderer.shadowMap.enabled = true;
-    this._renderer.shadowMap.type = THREE.VSMShadowMap;
+    this._renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this._scene = new THREE.Scene();
     this._scene.background = new THREE.Color(0x070a10);
@@ -203,16 +202,16 @@ export class CityApp {
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.copy(this._sunOffset);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(1536, 1536);
     key.shadow.camera.near = 30;
     key.shadow.camera.far = 700;
     key.shadow.camera.left = -180;
     key.shadow.camera.right = 180;
     key.shadow.camera.top = 180;
     key.shadow.camera.bottom = -180;
-    key.shadow.bias = 0;
-    key.shadow.normalBias = 0.08;
-    key.shadow.blurSamples = 8;
+    key.shadow.bias = -0.00012;
+    key.shadow.normalBias = 0.02;
+    key.shadow.radius = 2;
     key.target = this._sunTarget;
     this._scene.add(key);
     this._sunLight = key;
@@ -379,7 +378,7 @@ export class CityApp {
       }
 
       mesh.castShadow = false;
-      mesh.receiveShadow = true;
+      mesh.receiveShadow = false;
     });
   }
 

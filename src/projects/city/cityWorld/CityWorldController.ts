@@ -20,6 +20,7 @@ export class CityWorldController {
   private _activeBuildingMeshes: THREE.Mesh[] = [];
   private _boundaryWallRoot: THREE.Group | null = null;
   private _boundaryWallMeshes: THREE.Mesh[] = [];
+  private _boundaryWallBoxes: THREE.Box3[] = [];
   private _activeBuildings = new Set<THREE.Object3D>();
   private _meshToBuilding = new Map<string, { root: THREE.Object3D; meshes: THREE.Mesh[] }>();
 
@@ -35,6 +36,7 @@ export class CityWorldController {
   >();
 
   private _raycaster = new THREE.Raycaster();
+  private _segmentRay = new THREE.Ray();
   private _tmpV3a = new THREE.Vector3();
   private _tmpV3b = new THREE.Vector3();
 
@@ -54,8 +56,8 @@ export class CityWorldController {
     for (const m of this._activeBuildingMeshes) disposeMeshBvh(m);
     this._activeBuildingMeshes = [];
     this._activeBuildings.clear();
-    for (const m of this._boundaryWallMeshes) disposeMeshBvh(m);
     this._boundaryWallMeshes = [];
+    this._boundaryWallBoxes = [];
     this._boundaryWallRoot?.removeFromParent();
     this._boundaryWallRoot = null;
 
@@ -93,8 +95,8 @@ export class CityWorldController {
       color: number;
     };
   }>): void {
-    for (const m of this._boundaryWallMeshes) disposeMeshBvh(m);
     this._boundaryWallMeshes = [];
+    this._boundaryWallBoxes = [];
     this._boundaryWallRoot?.removeFromParent();
     this._boundaryWallRoot = null;
 
@@ -166,10 +168,11 @@ export class CityWorldController {
 
     for (const wall of walls) {
       root.add(wall);
-      buildMeshBvh(wall);
       this._boundaryWallMeshes.push(wall);
     }
 
+    root.updateMatrixWorld(true);
+    this._boundaryWallBoxes = this._boundaryWallMeshes.map((wall) => new THREE.Box3().setFromObject(wall));
     params.scene.add(root);
     this._boundaryWallRoot = root;
   }
@@ -227,8 +230,7 @@ export class CityWorldController {
    * Возвращает true, если есть hit.
    */
   checkCollision(bikerRoot: THREE.Object3D): boolean {
-    const collisionMeshes = this._getCollisionMeshes();
-    if (collisionMeshes.length === 0) return false;
+    if (this._activeBuildingMeshes.length === 0 && this._boundaryWallBoxes.length === 0) return false;
 
     bikerRoot.updateMatrixWorld(true);
     this._tip.copy(this._tipLocal);
@@ -241,11 +243,22 @@ export class CityWorldController {
       return false;
     }
     delta.multiplyScalar(1 / len);
+
+    if (this._segmentHitsBoundaryWalls(this._prevTip, delta, len)) {
+      this._prevTip.copy(this._tip);
+      return true;
+    }
+
+    if (this._activeBuildingMeshes.length === 0) {
+      this._prevTip.copy(this._tip);
+      return false;
+    }
+
     this._raycaster.set(this._prevTip, delta);
     this._raycaster.near = 0;
     this._raycaster.far = len;
 
-    const hits = this._raycaster.intersectObjects(collisionMeshes, false);
+    const hits = this._raycaster.intersectObjects(this._activeBuildingMeshes, false);
     this._prevTip.copy(this._tip);
     return hits.length > 0;
   }
@@ -342,12 +355,6 @@ export class CityWorldController {
     }
   }
 
-  private _getCollisionMeshes(): THREE.Mesh[] {
-    if (this._boundaryWallMeshes.length === 0) return this._activeBuildingMeshes;
-    if (this._activeBuildingMeshes.length === 0) return this._boundaryWallMeshes;
-    return [...this._activeBuildingMeshes, ...this._boundaryWallMeshes];
-  }
-
   private _createBoundaryWall(params: Readonly<{
     width: number;
     height: number;
@@ -364,10 +371,22 @@ export class CityWorldController {
     );
     mesh.name = params.name;
     mesh.position.set(params.x, params.y, params.z);
-    mesh.castShadow = true;
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
     mesh.updateMatrixWorld(true);
     return mesh;
+  }
+
+  private _segmentHitsBoundaryWalls(origin: THREE.Vector3, dir: THREE.Vector3, len: number): boolean {
+    if (this._boundaryWallBoxes.length === 0) return false;
+    this._segmentRay.set(origin, dir);
+    const maxDistSq = len * len;
+    for (const box of this._boundaryWallBoxes) {
+      const hit = this._segmentRay.intersectBox(box, this._tmpV3a);
+      if (!hit) continue;
+      if (hit.distanceToSquared(origin) <= maxDistSq) return true;
+    }
+    return false;
   }
 
   private _ensureMeshOcclusionMaterial(mesh: THREE.Mesh, opacity: number): void {
