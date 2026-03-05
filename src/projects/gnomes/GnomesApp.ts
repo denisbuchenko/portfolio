@@ -6,6 +6,7 @@ import type { GnomeInstance } from "./GnomeInstance";
 import * as THREE from "three";
 import { DialogueSystem } from "./dialogue/DialogueSystem";
 import type { GnomeCharacterKey } from "./GnomeController";
+import type { GnomeAnimationProfile } from "./GnomeController";
 
 export class GnomesApp {
   private _canvas: HTMLCanvasElement;
@@ -60,7 +61,11 @@ export class GnomesApp {
     this._gnomes = this._gnomeDefs.map((d) => {
       const sit = this._factory.getSitObjectByName(d.sitName);
       const palette = this._paletteFor(d.id);
-      return this._factory.createInstance({ characterKey: d.key, sitObject: sit, palette });
+      const animationProfile = this._animationProfileFor(d.id);
+      const gnome = this._factory.createInstance({ characterKey: d.key, sitObject: sit, palette });
+      gnome.controller.setAnimationProfile(animationProfile);
+      gnome.controller.playPose({ fadeSec: animationProfile.pose.fadeInSec });
+      return gnome;
     });
     for (let i = 0; i < this._gnomes.length; i++) {
       const g = this._gnomes[i];
@@ -98,6 +103,11 @@ export class GnomesApp {
     const hatColor = fromCfg?.hatColor ?? GNOMES_CONFIG.gnomes.palette.defaultHatColor;
     const clothColor = fromCfg?.clothColor ?? 0xffffff;
     return { hatColor, clothColor };
+  }
+
+  private _animationProfileFor(characterId: string): GnomeAnimationProfile {
+    const byId = GNOMES_CONFIG.gnomes.animations.byId as Record<string, GnomeAnimationProfile | undefined>;
+    return byId[characterId] ?? GNOMES_CONFIG.gnomes.animations.defaultProfile;
   }
 
   dispose(): void {

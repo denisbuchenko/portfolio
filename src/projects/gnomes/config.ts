@@ -1,3 +1,39 @@
+import type { GnomeAnimationProfile } from "./GnomeController";
+
+const DEFAULT_GNOME_ANIMATION_PROFILE: GnomeAnimationProfile = {
+  pose: {
+    fadeInSec: 0.08,
+    fadeOutSec: 0.08,
+    weight: 1,
+    timeScale: 1,
+    repetitions: 1,
+    clampWhenFinished: true,
+  },
+  hello: {
+    fadeInSec: 0.12,
+    fadeOutSec: 0.16,
+    weight: 1,
+    timeScale: 1,
+    repetitions: 1,
+    clampWhenFinished: true,
+  },
+  def: {
+    enabled: true,
+    intervalSec: 4.2,
+    intervalJitterSec: 0.8,
+    /** Сколько раз подряд в среднем проигрывать def за один запуск. */
+    cycleRepetitions: 1,
+    /** Дополнительное случайное число повторов: итог будет от cycleRepetitions до cycleRepetitions + variation. */
+    variation: 0,
+    fadeInSec: 0.18,
+    fadeOutSec: 0.22,
+    weight: 1,
+    timeScale: 1,
+    repetitions: 1,
+    clampWhenFinished: true,
+  },
+};
+
 export const GNOMES_CONFIG = {
   glbUrl: "/gnomes/export.glb",
   pages: 3,
@@ -22,6 +58,53 @@ export const GNOMES_CONFIG = {
         fyfchik: { clothColor: 0x27d863, hatColor: 0xff1a1a },
         pipiser: { clothColor: 0xffd21a, hatColor: 0xff1a1a },
       },
+    },
+    animations: {
+      defaultProfile: DEFAULT_GNOME_ANIMATION_PROFILE,
+      byId: {
+        horogran: {
+          ...DEFAULT_GNOME_ANIMATION_PROFILE,
+          def: {
+            ...DEFAULT_GNOME_ANIMATION_PROFILE.def,
+            fadeInSec: 0.24,
+            fadeOutSec: 0.28,
+            intervalSec: 1.9,
+            intervalJitterSec: 1.1,
+            cycleRepetitions: 6,
+            variation: 3,
+          },
+        },
+        fyfchik: {
+          ...DEFAULT_GNOME_ANIMATION_PROFILE,
+          def: {
+            ...DEFAULT_GNOME_ANIMATION_PROFILE.def,
+            fadeInSec: 0.05,
+            fadeOutSec: 0.06,
+            intervalSec: 3.8,
+            intervalJitterSec: 0.35,
+            cycleRepetitions: 1,
+            variation: 0,
+          },
+        },
+        pipiser: {
+          ...DEFAULT_GNOME_ANIMATION_PROFILE,
+          hello: {
+            ...DEFAULT_GNOME_ANIMATION_PROFILE.hello,
+            fadeInSec: 0.14,
+            fadeOutSec: 0.18,
+          },
+          def: {
+            ...DEFAULT_GNOME_ANIMATION_PROFILE.def,
+            fadeInSec: 0.2,
+            fadeOutSec: 0.24,
+            intervalSec: 5.4,
+            intervalJitterSec: 1.2,
+            cycleRepetitions: 5,
+            variation: 3,
+            timeScale: 0.96,
+          },
+        },
+      } as Record<string, GnomeAnimationProfile>,
     },
   },
 
