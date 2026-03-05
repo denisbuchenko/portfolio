@@ -245,6 +245,11 @@ export class CityApp {
 
     // Индекс домов (для видимости/коллизий/окклюзии).
     this._world.buildFromCityRoot(this._cityRoot);
+    this._world.initBoundaryWalls({
+      scene: this._scene,
+      worldBox: this._mapBox.clone(),
+      config: CITY_WORLD.boundaryWalls
+    });
     // Начинаем со скрытых домов — появятся при попадании в окно видимости.
     this._world.setInitialBuildingsHidden();
 

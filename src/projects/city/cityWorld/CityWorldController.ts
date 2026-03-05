@@ -18,6 +18,8 @@ export class CityWorldController {
 
   private _allBuildingMeshes: THREE.Mesh[] = [];
   private _activeBuildingMeshes: THREE.Mesh[] = [];
+  private _boundaryWallRoot: THREE.Group | null = null;
+  private _boundaryWallMeshes: THREE.Mesh[] = [];
   private _activeBuildings = new Set<THREE.Object3D>();
   private _meshToBuilding = new Map<string, { root: THREE.Object3D; meshes: THREE.Mesh[] }>();
 
@@ -52,6 +54,10 @@ export class CityWorldController {
     for (const m of this._activeBuildingMeshes) disposeMeshBvh(m);
     this._activeBuildingMeshes = [];
     this._activeBuildings.clear();
+    for (const m of this._boundaryWallMeshes) disposeMeshBvh(m);
+    this._boundaryWallMeshes = [];
+    this._boundaryWallRoot?.removeFromParent();
+    this._boundaryWallRoot = null;
 
     // Восстанавливаем материалы, если какие-то были в состоянии окклюзии.
     for (const [, st] of this._occlusionStates) {
@@ -74,6 +80,98 @@ export class CityWorldController {
   buildFromCityRoot(cityRoot: THREE.Object3D): void {
     this._buildings.buildFromCityScene(cityRoot);
     this._indexBuildingMeshes();
+  }
+
+  initBoundaryWalls(params: Readonly<{
+    scene: THREE.Object3D;
+    worldBox: THREE.Box3;
+    config: {
+      enabled: boolean;
+      height: number;
+      thickness: number;
+      inset: number;
+      color: number;
+    };
+  }>): void {
+    for (const m of this._boundaryWallMeshes) disposeMeshBvh(m);
+    this._boundaryWallMeshes = [];
+    this._boundaryWallRoot?.removeFromParent();
+    this._boundaryWallRoot = null;
+
+    if (!params.config.enabled) return;
+
+    const height = Math.max(0.2, params.config.height);
+    const thickness = Math.max(0.1, params.config.thickness);
+    const inset = Math.max(0, params.config.inset);
+
+    const minX = params.worldBox.min.x - inset;
+    const maxX = params.worldBox.max.x + inset;
+    const minZ = params.worldBox.min.z - inset;
+    const maxZ = params.worldBox.max.z + inset;
+    const spanX = Math.max(0.1, maxX - minX);
+    const spanZ = Math.max(0.1, maxZ - minZ);
+    const y = height * 0.5;
+
+    const root = new THREE.Group();
+    root.name = "CityBoundaryWalls";
+
+    const material = new THREE.MeshStandardMaterial({
+      color: params.config.color,
+      roughness: 0.95,
+      metalness: 0.02
+    });
+
+    const walls = [
+      this._createBoundaryWall({
+        width: spanX + thickness * 2,
+        height,
+        depth: thickness,
+        x: (minX + maxX) * 0.5,
+        y,
+        z: minZ - thickness * 0.5,
+        material,
+        name: "CityBoundaryWallNorth"
+      }),
+      this._createBoundaryWall({
+        width: spanX + thickness * 2,
+        height,
+        depth: thickness,
+        x: (minX + maxX) * 0.5,
+        y,
+        z: maxZ + thickness * 0.5,
+        material,
+        name: "CityBoundaryWallSouth"
+      }),
+      this._createBoundaryWall({
+        width: thickness,
+        height,
+        depth: spanZ,
+        x: minX - thickness * 0.5,
+        y,
+        z: (minZ + maxZ) * 0.5,
+        material,
+        name: "CityBoundaryWallWest"
+      }),
+      this._createBoundaryWall({
+        width: thickness,
+        height,
+        depth: spanZ,
+        x: maxX + thickness * 0.5,
+        y,
+        z: (minZ + maxZ) * 0.5,
+        material,
+        name: "CityBoundaryWallEast"
+      })
+    ];
+
+    for (const wall of walls) {
+      root.add(wall);
+      buildMeshBvh(wall);
+      this._boundaryWallMeshes.push(wall);
+    }
+
+    params.scene.add(root);
+    this._boundaryWallRoot = root;
   }
 
   setInitialBuildingsHidden(): void {
@@ -129,7 +227,8 @@ export class CityWorldController {
    * Возвращает true, если есть hit.
    */
   checkCollision(bikerRoot: THREE.Object3D): boolean {
-    if (this._activeBuildingMeshes.length === 0) return false;
+    const collisionMeshes = this._getCollisionMeshes();
+    if (collisionMeshes.length === 0) return false;
 
     bikerRoot.updateMatrixWorld(true);
     this._tip.copy(this._tipLocal);
@@ -146,7 +245,7 @@ export class CityWorldController {
     this._raycaster.near = 0;
     this._raycaster.far = len;
 
-    const hits = this._raycaster.intersectObjects(this._activeBuildingMeshes, false);
+    const hits = this._raycaster.intersectObjects(collisionMeshes, false);
     this._prevTip.copy(this._tip);
     return hits.length > 0;
   }
@@ -241,6 +340,34 @@ export class CityWorldController {
         this._meshToBuilding.set(m.uuid, { root: b.root, meshes: b.meshes });
       }
     }
+  }
+
+  private _getCollisionMeshes(): THREE.Mesh[] {
+    if (this._boundaryWallMeshes.length === 0) return this._activeBuildingMeshes;
+    if (this._activeBuildingMeshes.length === 0) return this._boundaryWallMeshes;
+    return [...this._activeBuildingMeshes, ...this._boundaryWallMeshes];
+  }
+
+  private _createBoundaryWall(params: Readonly<{
+    width: number;
+    height: number;
+    depth: number;
+    x: number;
+    y: number;
+    z: number;
+    material: THREE.Material;
+    name: string;
+  }>): THREE.Mesh {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(params.width, params.height, params.depth),
+      params.material
+    );
+    mesh.name = params.name;
+    mesh.position.set(params.x, params.y, params.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.updateMatrixWorld(true);
+    return mesh;
   }
 
   private _ensureMeshOcclusionMaterial(mesh: THREE.Mesh, opacity: number): void {

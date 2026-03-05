@@ -12,7 +12,14 @@ export const CITY_ASSETS = {
 } as const;
 export const CITY_WORLD = {
   /** Поворот карты вокруг Y в градусах. 0 = как в 3D файле. */
-  mapRotationYDeg: -90
+  mapRotationYDeg: -90,
+  boundaryWalls: {
+    enabled: true,
+    height: 2.8,
+    thickness: 1.4,
+    inset: 0.6,
+    color: 0x7d7d7d
+  }
 } as const;
 
 /**
