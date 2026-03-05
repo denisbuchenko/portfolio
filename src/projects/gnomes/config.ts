@@ -36,9 +36,9 @@ export const GNOMES_CONFIG = {
   },
 
   lighting: {
-    hemisphereIntensity: 0.65,
-    keyIntensity: 2.4,
-    fillIntensity: 0.8,
+    hemisphereIntensity: 0.82,
+    keyIntensity: 1.95,
+    fillIntensity: 1.05,
   },
 } as const;
 

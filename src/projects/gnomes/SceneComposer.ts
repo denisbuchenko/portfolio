@@ -15,6 +15,7 @@ export class SceneComposer {
       antialias: true,
       alpha: false,
       powerPreference: "high-performance",
+      logarithmicDepthBuffer: true,
     });
 
     this._renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -25,7 +26,7 @@ export class SceneComposer {
 
     this._scene = new THREE.Scene();
     this._scene.background = new THREE.Color(0x05070c);
-    this._scene.fog = new THREE.Fog(0x05070c, 7.5, 18);
+    this._scene.fog = new THREE.Fog(0x05070c, 8.5, 21);
 
     this._ground = this._createGround();
     this._scene.add(this._ground);
@@ -73,19 +74,24 @@ export class SceneComposer {
     const key = new THREE.DirectionalLight(0xffffff, GNOMES_CONFIG.lighting.keyIntensity);
     key.position.set(3.5, 6.0, 4.0);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    key.shadow.camera.near = 0.1;
-    key.shadow.camera.far = 30;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.near = 0.5;
+    key.shadow.camera.far = 24;
     key.shadow.camera.left = -6;
     key.shadow.camera.right = 6;
     key.shadow.camera.top = 8;
     key.shadow.camera.bottom = -8;
-    key.shadow.bias = -0.00015;
+    key.shadow.bias = -0.00005;
+    key.shadow.normalBias = 0.02;
     this._scene.add(key);
 
     const fill = new THREE.PointLight(0x9ad5ff, GNOMES_CONFIG.lighting.fillIntensity, 30);
     fill.position.set(-2.2, 2.2, 2.4);
     this._scene.add(fill);
+
+    const rim = new THREE.DirectionalLight(0xaac7ff, 0.3);
+    rim.position.set(-3.0, 2.8, -2.5);
+    this._scene.add(rim);
   }
 }
 

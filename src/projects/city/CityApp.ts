@@ -27,6 +27,10 @@ export class CityApp {
 
   private _renderer: THREE.WebGLRenderer;
   private _scene: THREE.Scene;
+  private _sunLight: THREE.DirectionalLight | null = null;
+  private _sunTarget = new THREE.Object3D();
+  private _sunOffset = new THREE.Vector3(180, 260, 140);
+  private _tmpShadowCenter = new THREE.Vector3();
 
   private _overviewCamera: THREE.OrthographicCamera;
   private _overviewPerspectiveCamera: THREE.PerspectiveCamera;
@@ -89,40 +93,42 @@ export class CityApp {
       canvas: this._canvas,
       antialias: true,
       alpha: false,
-      powerPreference: "high-performance"
+      powerPreference: "high-performance",
+      logarithmicDepthBuffer: true
     });
     this._renderer.outputColorSpace = THREE.SRGBColorSpace;
     this._renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this._renderer.toneMappingExposure = 1.05;
     this._renderer.shadowMap.enabled = true;
-    this._renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this._renderer.shadowMap.type = THREE.VSMShadowMap;
 
     this._scene = new THREE.Scene();
     this._scene.background = new THREE.Color(0x070a10);
+    this._scene.add(this._sunTarget);
 
     this._girlsSystem = new CityGirlsSystem({ scene: this._scene });
 
-    this._overviewCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 2000);
+    this._overviewCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 1, 1200);
     // Камера смотрит строго вниз, поэтому фиксируем up, чтобы не было "рандомного" поворота экрана.
     this._overviewCamera.up.set(0, 0, -1);
     this._overviewCamera.position.set(0, 220, 0);
     this._overviewCamera.lookAt(0, 0, 0);
 
-    this._overviewPerspectiveCamera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+    this._overviewPerspectiveCamera = new THREE.PerspectiveCamera(55, 1, 1.5, 1200);
     this._overviewPerspectiveCamera.up.set(0, 0, -1);
     this._overviewPerspectiveCamera.position.set(0, 220, 0);
     this._overviewPerspectiveCamera.lookAt(0, 0, 0);
 
-    this._gameCamera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+    this._gameCamera = new THREE.PerspectiveCamera(55, 1, 1.5, 900);
     this._gameCamera.position.set(0, 12, 18);
     this._gameCamera.lookAt(0, 0, 0);
 
     // Временная камера для плавного перехода overview -> gameplay без "скачка" при смене типа камеры.
-    this._focusCamera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+    this._focusCamera = new THREE.PerspectiveCamera(55, 1, 1.5, 900);
     this._focusCamera.position.set(0, 12, 18);
     this._focusCamera.lookAt(0, 0, 0);
 
-    this._gameOrthoCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 2000);
+    this._gameOrthoCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 1, 900);
     this._gameOrthoCamera.position.set(0, 12, 18);
     this._gameOrthoCamera.lookAt(0, 0, 0);
 
@@ -191,21 +197,29 @@ export class CityApp {
   }
 
   private _setupLights(): void {
-    const hemi = new THREE.HemisphereLight(0xbfd2ff, 0x101018, 0.55);
+    const hemi = new THREE.HemisphereLight(0xd6e5ff, 0x12161f, 0.78);
     this._scene.add(hemi);
 
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
-    key.position.set(180, 260, 140);
+    key.position.copy(this._sunOffset);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
-    key.shadow.camera.near = 10;
-    key.shadow.camera.far = 900;
-    key.shadow.camera.left = -320;
-    key.shadow.camera.right = 320;
-    key.shadow.camera.top = 320;
-    key.shadow.camera.bottom = -320;
-    key.shadow.bias = -0.00015;
+    key.shadow.camera.near = 30;
+    key.shadow.camera.far = 700;
+    key.shadow.camera.left = -180;
+    key.shadow.camera.right = 180;
+    key.shadow.camera.top = 180;
+    key.shadow.camera.bottom = -180;
+    key.shadow.bias = 0;
+    key.shadow.normalBias = 0.08;
+    key.shadow.blurSamples = 8;
+    key.target = this._sunTarget;
     this._scene.add(key);
+    this._sunLight = key;
+
+    const fill = new THREE.DirectionalLight(0x9bc2ff, 0.45);
+    fill.position.set(-120, 90, -140);
+    this._scene.add(fill);
   }
 
   private _load = async (): Promise<void> => {
@@ -235,6 +249,8 @@ export class CityApp {
     this._cityRoot.updateMatrixWorld(true);
     this._mapBox.setFromObject(this._cityRoot);
     this._mapBox.getCenter(this._mapCenter);
+    this._updateCameraClipping();
+    this._fitSunShadowToMap();
 
     // NPC girls (явная инициализация).
     await this._girlsSystem.init({ cityRoot: this._cityRoot });
@@ -245,6 +261,7 @@ export class CityApp {
 
     // Индекс домов (для видимости/коллизий/окклюзии).
     this._world.buildFromCityRoot(this._cityRoot);
+    this._configureCityShadowModes(this._cityRoot);
     this._world.initBoundaryWalls({
       scene: this._scene,
       worldBox: this._mapBox.clone(),
@@ -336,6 +353,110 @@ export class CityApp {
     }
   }
 
+  private _configureCityShadowModes(root: THREE.Object3D): void {
+    const buildingMeshes = new Set<string>();
+    for (const building of this._world.buildingsIndex.buildings) {
+      for (const mesh of building.meshes) buildingMeshes.add(mesh.uuid);
+    }
+
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+
+      const isBuildingMesh = buildingMeshes.has(mesh.uuid);
+      const isRoadLike = this._isRoadLikeNodeName(o.name);
+
+      if (isBuildingMesh) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = false;
+        return;
+      }
+
+      if (isRoadLike) {
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+        return;
+      }
+
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+    });
+  }
+
+  private _isRoadLikeNodeName(name: string | undefined): boolean {
+    if (!name) return false;
+    const lower = name.toLowerCase();
+    return lower.includes("road") || name.includes("Дорога");
+  }
+
+  private _updateCameraClipping(): void {
+    this._mapBox.getSize(this._tmpSize);
+    const mapSpan = Math.max(this._tmpSize.x, this._tmpSize.z, 200);
+    const mapHeight = Math.max(this._tmpSize.y, 40);
+    const overviewDist = this._overviewPerspectiveCamera.position.distanceTo(this._mapCenter);
+    const far = Math.max(700, overviewDist + mapSpan * 1.35 + mapHeight * 2.5);
+    const perspectiveNear = Math.max(1.5, Math.min(6, far * 0.0035));
+
+    for (const cam of [this._overviewPerspectiveCamera, this._gameCamera, this._focusCamera]) {
+      cam.near = perspectiveNear;
+      cam.far = far;
+      cam.updateProjectionMatrix();
+    }
+
+    for (const cam of [this._overviewCamera, this._gameOrthoCamera]) {
+      cam.near = 1;
+      cam.far = far;
+      cam.updateProjectionMatrix();
+    }
+  }
+
+  private _fitSunShadowToMap(): void {
+    if (!this._sunLight) return;
+
+    this._mapBox.getSize(this._tmpSize);
+    const mapSpan = Math.max(this._tmpSize.x, this._tmpSize.z, 200);
+    const pad = Math.max(24, mapSpan * 0.14);
+    const halfExtent = mapSpan * 0.5 + pad;
+
+    this._sunTarget.position.copy(this._mapCenter);
+    this._sunTarget.updateMatrixWorld();
+    this._sunLight.position.copy(this._mapCenter).add(this._sunOffset);
+
+    const shadowCam = this._sunLight.shadow.camera as THREE.OrthographicCamera;
+    shadowCam.left = -halfExtent;
+    shadowCam.right = halfExtent;
+    shadowCam.top = halfExtent;
+    shadowCam.bottom = -halfExtent;
+    shadowCam.near = 40;
+    shadowCam.far = Math.max(500, this._sunOffset.length() + this._tmpSize.y + pad);
+    shadowCam.updateProjectionMatrix();
+  }
+
+  private _fitSunShadowToFocus(center: THREE.Vector3, halfExtent: number): void {
+    if (!this._sunLight) return;
+
+    const extent = Math.max(28, halfExtent);
+    const texelWorldSize = (extent * 2) / Math.max(1, this._sunLight.shadow.mapSize.x);
+    this._tmpShadowCenter.set(
+      Math.round(center.x / texelWorldSize) * texelWorldSize,
+      center.y,
+      Math.round(center.z / texelWorldSize) * texelWorldSize
+    );
+
+    this._sunTarget.position.copy(this._tmpShadowCenter);
+    this._sunTarget.updateMatrixWorld();
+    this._sunLight.position.copy(this._tmpShadowCenter).add(this._sunOffset);
+
+    const shadowCam = this._sunLight.shadow.camera as THREE.OrthographicCamera;
+    shadowCam.left = -extent;
+    shadowCam.right = extent;
+    shadowCam.top = extent;
+    shadowCam.bottom = -extent;
+    shadowCam.near = 50;
+    shadowCam.far = Math.max(420, this._sunOffset.length() + extent * 1.5);
+    shadowCam.updateProjectionMatrix();
+  }
+
   private _onResize = (): void => {
     const w = this._host.clientWidth || window.innerWidth;
     const h = this._host.clientHeight || window.innerHeight;
@@ -404,6 +525,7 @@ export class CityApp {
 
     const usePerspective = CITY_CAMERA.overview.usePerspective ?? false;
     const cam = usePerspective ? this._overviewPerspectiveCamera : this._overviewCamera;
+    this._fitSunShadowToMap();
 
     // Пролёт по Z.
     const minZ = this._mapBox.min.z;
@@ -548,6 +670,7 @@ export class CityApp {
     this._focusCamera.quaternion.slerpQuaternions(this._focusFromQuat, this._focusToQuat, k);
     this._focusCamera.fov = THREE.MathUtils.lerp(this._focusFromFov, this._focusToFov, k);
     this._focusCamera.updateProjectionMatrix();
+    this._fitSunShadowToFocus(this._tmpFocusPos, 72);
     this._activeCamera = this._focusCamera;
 
     if (t01 >= 1) {
@@ -751,6 +874,7 @@ export class CityApp {
     this._debugPanel.setVisible(false);
     this._speedMul = 1;
     this._encounter = null;
+    this._fitSunShadowToFocus(this._bikerRoot!.position, 64);
   }
 
   private _updatePlaying(dtSec: number): void {
@@ -853,6 +977,7 @@ export class CityApp {
     this._gameplayCamera.computeFixedQuaternionInto(cam.quaternion);
     const followDesired = this._gameplayCamera.computeDesiredPositionInto(this._tmpCamFollow, this._bikerRoot.position, this._proximityDistanceMul);
     cam.position.lerp(followDesired, THREE.MathUtils.clamp(CITY_CAMERA.gameplay.view.followLerp, 0, 1));
+    this._fitSunShadowToFocus(this._bikerRoot.position, 64);
     this._activeCamera = cam;
 
     // Дом может загораживать персонажа — делаем его полупрозрачным.
@@ -959,6 +1084,8 @@ export class CityApp {
     this._gameplayCamera.computeFixedQuaternionInto(cam.quaternion);
     const followDesired = this._gameplayCamera.computeDesiredPositionInto(this._tmpCamFollow, this._bikerRoot.position, 1);
     girl.controller.instance.root.getWorldPosition(this._tmpGirlPos);
+    this._tmpFocusPos.addVectors(this._bikerRoot.position, this._tmpGirlPos).multiplyScalar(0.5);
+    this._fitSunShadowToFocus(this._tmpFocusPos, 68);
     const focusDesired = this._gameplayCamera.computeDesiredPositionInto(
       this._tmpCamFocus,
       this._tmpGirlPos,
