@@ -7,6 +7,18 @@ type _PlaybackButton = {
   button: HTMLButtonElement;
 };
 
+type _ClipRange = {
+  start: number;
+  end: number;
+};
+
+type _ClipBinding = {
+  endValue: number[];
+  property: "position" | "quaternion" | "scale";
+  startValue: number[];
+  target: THREE.Object3D;
+};
+
 export interface SunducProjectOptions {
   host: HTMLElement;
   embedded?: boolean;
@@ -36,13 +48,18 @@ export class SunducProject {
   private readonly _mixerRoot = new THREE.Group();
 
   private _mixer: THREE.AnimationMixer | null = null;
+  private _modelRoot: THREE.Object3D | null = null;
   private _actionsByName = new Map<string, THREE.AnimationAction>();
+  private _clipBindings = new Map<string, _ClipBinding[]>();
+  private _clipPinnedAtEnd = new Map<string, boolean>();
+  private _clipRanges = new Map<string, _ClipRange>();
+  private _clipStates = new Map<string, boolean>();
+  private _clipNamesByAction = new WeakMap<THREE.AnimationAction, string>();
   private _playbackButtons: _PlaybackButton[] = [];
   private _stoneClipNames: string[] = [];
   private _sequenceClipNames: string[] = [];
   private _frameHandle = 0;
   private _disposed = false;
-  private _isLoaded = false;
 
   private _dragPointerId: number | null = null;
   private _lastPointer = new THREE.Vector2();
@@ -50,7 +67,6 @@ export class SunducProject {
   private _pitch = THREE.MathUtils.degToRad(SUNDUC_CONFIG.model.initialRotationDeg.x);
   private _targetYaw = this._yaw;
   private _targetPitch = this._pitch;
-  private _sequenceToken = 0;
 
   constructor(options: SunducProjectOptions) {
     this._host = options.host;
@@ -128,7 +144,6 @@ export class SunducProject {
 
   dispose(): void {
     this._disposed = true;
-    this._sequenceToken++;
     cancelAnimationFrame(this._frameHandle);
     this._resizeObserver.disconnect();
     this._canvas.removeEventListener("pointerdown", this._onPointerDown);
@@ -138,6 +153,10 @@ export class SunducProject {
     this._canvas.removeEventListener("pointerleave", this._onPointerUp);
     this._renderer.dispose();
     this._actionsByName.clear();
+    this._clipBindings.clear();
+    this._clipPinnedAtEnd.clear();
+    this._clipRanges.clear();
+    this._clipStates.clear();
     this._playbackButtons = [];
     this._root.remove();
     this._host.classList.remove("launcher--puzzle");
@@ -245,23 +264,28 @@ export class SunducProject {
       if (this._disposed) return;
 
       const model = gltf.scene;
+      this._modelRoot = model;
       enableShadowsAndSrgb(model);
       this._fitModel(model);
       this._modelGroup.add(model);
 
       this._mixer = new THREE.AnimationMixer(model);
       for (const clip of gltf.animations) {
+        this._clipRanges.set(clip.name, this._getClipRange(clip));
+        this._clipBindings.set(clip.name, this._buildClipBindings(clip, model));
         const action = this._mixer.clipAction(clip);
         action.clampWhenFinished = true;
         action.loop = THREE.LoopOnce;
         action.enabled = true;
+        action.paused = true;
         this._actionsByName.set(clip.name, action);
+        this._clipNamesByAction.set(action, clip.name);
       }
+      this._mixer.addEventListener("finished", this._onMixerFinished);
 
       this._buildAnimationUi([...this._actionsByName.keys()]);
-      this._isLoaded = true;
       this._setButtonsEnabled(true);
-      this._setStatus("Модель готова. Ниже можно тестировать отдельные клипы и полный сценарий.");
+      this._setStatus("Модель готова. Включай тумблеры, чтобы ставить анимации в нужное состояние.");
     } catch (error) {
       if (this._disposed) return;
       this._setStatus(`Ошибка загрузки: ${error instanceof Error ? error.message : String(error)}`);
@@ -302,133 +326,102 @@ export class SunducProject {
     this._sequenceClipNames = [closeClip, duduClip, keyClip, openClip].filter((name): name is string => Boolean(name));
 
     for (const clipName of stoneClips) {
-      this._stoneButtonsWrap.appendChild(this._createPlaybackButton(clipName, clipName));
-    }
-
-    if (SUNDUC_CONFIG.debug.showScenarioButton) {
-      const scenarioBtn = document.createElement("button");
-      scenarioBtn.className = "btn sunduc__debug-btn";
-      scenarioBtn.type = "button";
-      scenarioBtn.textContent = "Play full scenario";
-      scenarioBtn.addEventListener("click", () => {
-        void this._playScenario();
-      });
-      this._sequenceButtonsWrap.appendChild(scenarioBtn);
+      this._stoneButtonsWrap.appendChild(this._createToggleButton(clipName, clipName));
     }
 
     const resetBtn = document.createElement("button");
     resetBtn.className = "btn sunduc__debug-btn";
     resetBtn.type = "button";
-    resetBtn.textContent = "Reset pose";
+    resetBtn.textContent = "Reset all";
     resetBtn.addEventListener("click", () => this._resetAnimations());
     this._sequenceButtonsWrap.appendChild(resetBtn);
 
     for (const clipName of this._sequenceClipNames) {
-      this._sequenceButtonsWrap.appendChild(this._createPlaybackButton(clipName, clipName));
+      this._sequenceButtonsWrap.appendChild(this._createToggleButton(clipName, clipName));
     }
 
     const normalizedStones = this._stoneClipNames.length > 0 ? this._stoneClipNames.join(", ") : "не найдены";
     const normalizedSequence = this._sequenceClipNames.length > 0 ? this._sequenceClipNames.join(" → ") : "не собран";
-    this._debugSummary.textContent = `Камни: ${normalizedStones}. Сценарий: ${normalizedSequence}.`;
+    this._debugSummary.textContent =
+      `Камни: ${normalizedStones}. Остальные клипы: ${normalizedSequence}. ` +
+      "Каждый тумблер включает клип с первого keyframe и выключает его возвратом в начало.";
+
+    for (const clipName of [...this._stoneClipNames, ...this._sequenceClipNames]) {
+      this._setClipToggleState(clipName, false, { syncUi: true });
+    }
   }
 
-  private _createPlaybackButton(label: string, clipName: string): HTMLButtonElement {
+  private _createToggleButton(label: string, clipName: string): HTMLButtonElement {
     const button = document.createElement("button");
     button.className = "btn sunduc__debug-btn";
     button.type = "button";
     button.textContent = label;
+    button.setAttribute("aria-pressed", "false");
     button.addEventListener("click", () => {
-      void this._playClipByName(clipName);
+      this._toggleClip(clipName);
     });
     this._playbackButtons.push({ clipName, button });
     return button;
   }
 
-  private async _playScenario(): Promise<void> {
-    if (!this._isLoaded) return;
-
-    this._sequenceToken++;
-    const token = this._sequenceToken;
-    this._setStatus("Сценарий воспроизводится…");
-
-    for (const stoneClip of this._stoneClipNames) {
-      if (token !== this._sequenceToken) return;
-      await this._playClipByName(stoneClip, { preserveOthers: true, updateStatus: false, preserveSequenceToken: true });
-    }
-
-    for (const clipName of this._sequenceClipNames) {
-      if (token !== this._sequenceToken) return;
-      await this._playClipByName(clipName, { preserveOthers: true, updateStatus: false, preserveSequenceToken: true });
-    }
-
-    if (token === this._sequenceToken) {
-      this._setStatus("Сценарий завершён. Можно запускать отдельные клипы или снова прокрутить всю цепочку.");
-    }
+  private _toggleClip(clipName: string): void {
+    const nextState = !this._clipStates.get(clipName);
+    this._setClipToggleState(clipName, nextState, { syncUi: true });
   }
 
-  private async _playClipByName(
+  private _setClipToggleState(
     clipName: string,
+    active: boolean,
     options?: {
-      preserveOthers?: boolean;
-      updateStatus?: boolean;
-      preserveSequenceToken?: boolean;
+      syncUi?: boolean;
     }
-  ): Promise<void> {
+  ): void {
     const action = this._actionsByName.get(clipName);
     if (!action || !this._mixer) return;
+    const range = this._clipRanges.get(clipName);
+    if (!range) return;
 
-    if (!options?.preserveSequenceToken) this._sequenceToken++;
-    const token = this._sequenceToken;
-
-    if (!options?.preserveOthers) this._resetAnimations();
-
-    this._setButtonActive(clipName, true);
-    if (options?.updateStatus !== false) {
-      this._setStatus(`Воспроизводится: ${clipName}`);
-    }
-
-    action.stop();
-    action.reset();
+    this._clipStates.set(clipName, active);
+    action.enabled = true;
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
-    action.play();
 
-    await new Promise<void>((resolve) => {
-      const onFinished = (event: THREE.Event & { type: "finished"; action: THREE.AnimationAction }): void => {
-        if (event.action !== action) return;
-        this._mixer?.removeEventListener("finished", onFinished);
-        resolve();
-      };
-
-      this._mixer?.addEventListener("finished", onFinished);
-    });
-
-    if (token !== this._sequenceToken) return;
-
-    this._setButtonActive(clipName, false);
-    if (options?.updateStatus !== false) {
-      this._setStatus(`Клип завершён: ${clipName}`);
+    if (active) {
+      this._clipPinnedAtEnd.set(clipName, false);
+      action.stop();
+      action.reset();
+      action.time = range.start;
+      action.paused = false;
+      action.play();
+      this._applyClipPose(clipName, "start");
+      this._setStatus(`Воспроизводится: ${clipName}`);
+    } else {
+      this._clipPinnedAtEnd.set(clipName, false);
+      action.stop();
+      action.enabled = false;
+      action.paused = true;
+      action.time = range.start;
+      this._applyClipPose(clipName, "start");
+      this._applyPinnedClipPoses();
+      this._setStatus(`Сброшено в начало: ${clipName}`);
     }
+
+    if (options?.syncUi !== false) this._setButtonActive(clipName, active);
   }
 
   private _resetAnimations(): void {
-    this._sequenceToken++;
-    this._setAllButtonsInactive();
-
     if (!this._mixer) return;
 
-    this._mixer.stopAllAction();
-    this._mixer.setTime(0);
-    this._setStatus("Поза сброшена в исходное состояние.");
+    for (const clipName of [...this._stoneClipNames, ...this._sequenceClipNames]) {
+      this._setClipToggleState(clipName, false, { syncUi: true });
+    }
+
+    this._setStatus("Все тогглы возвращены в начальное состояние.");
   }
 
   private _setButtonsEnabled(enabled: boolean): void {
-    for (const { button } of this._playbackButtons) {
-      button.disabled = !enabled;
-    }
-
-    const extraButtons = this._sequenceButtonsWrap.querySelectorAll("button");
-    extraButtons.forEach((button) => {
+    const buttons = this._root.querySelectorAll(".sunduc__debug button");
+    buttons.forEach((button) => {
       (button as HTMLButtonElement).disabled = !enabled;
     });
   }
@@ -441,12 +434,7 @@ export class SunducProject {
     for (const item of this._playbackButtons) {
       if (item.clipName !== clipName) continue;
       item.button.classList.toggle("btn--active", active);
-    }
-  }
-
-  private _setAllButtonsInactive(): void {
-    for (const item of this._playbackButtons) {
-      item.button.classList.remove("btn--active");
+      item.button.setAttribute("aria-pressed", active ? "true" : "false");
     }
   }
 
@@ -486,10 +474,112 @@ export class SunducProject {
     this._mixerRoot.rotation.y = this._yaw;
     this._mixerRoot.rotation.x = this._pitch;
     this._mixer?.update(delta);
+    this._applyPinnedClipPoses();
     this._renderer.render(this._scene, this._camera);
 
     this._frameHandle = requestAnimationFrame(this._frame);
   };
+
+  private _onMixerFinished = (event: THREE.Event): void => {
+    const mixerEvent = event as THREE.Event & { action?: THREE.AnimationAction };
+    const action = mixerEvent.action;
+    if (!action) return;
+
+    const clipName = this._clipNamesByAction.get(action);
+    if (!clipName) return;
+
+    const range = this._clipRanges.get(clipName);
+    if (!range) return;
+
+    if (!this._clipStates.get(clipName)) return;
+
+    action.stop();
+    action.enabled = false;
+    this._clipPinnedAtEnd.set(clipName, true);
+    this._applyClipPose(clipName, "end");
+    action.time = range.end;
+    action.time = range.end;
+    this._setButtonActive(clipName, true);
+    this._setStatus(`Зафиксировано на последнем keyframe: ${clipName}`);
+  };
+
+  private _getClipRange(clip: THREE.AnimationClip): _ClipRange {
+    let start = Number.POSITIVE_INFINITY;
+    let end = 0;
+
+    for (const track of clip.tracks) {
+      if (track.times.length === 0) continue;
+      start = Math.min(start, track.times[0]);
+      end = Math.max(end, track.times[track.times.length - 1]);
+    }
+
+    if (!Number.isFinite(start)) start = 0;
+    if (end < start) end = clip.duration;
+
+    return { start, end };
+  }
+
+  private _buildClipBindings(clip: THREE.AnimationClip, root: THREE.Object3D): _ClipBinding[] {
+    const bindings: _ClipBinding[] = [];
+
+    for (const track of clip.tracks) {
+      const splitIdx = track.name.lastIndexOf(".");
+      if (splitIdx <= 0) continue;
+
+      const nodeName = track.name.slice(0, splitIdx);
+      const property = track.name.slice(splitIdx + 1);
+      if (property !== "position" && property !== "quaternion" && property !== "scale") continue;
+
+      const target = root.getObjectByName(nodeName);
+      if (!target) continue;
+
+      const valueSize = track.getValueSize();
+      const startValue = Array.from(track.values.slice(0, valueSize), (value) => Number(value));
+      const endValue = Array.from(track.values.slice(track.values.length - valueSize), (value) => Number(value));
+
+      bindings.push({
+        target,
+        property,
+        startValue,
+        endValue,
+      });
+    }
+
+    return bindings;
+  }
+
+  private _applyPinnedClipPoses(): void {
+    for (const [clipName, pinned] of this._clipPinnedAtEnd) {
+      if (!pinned || !this._clipStates.get(clipName)) continue;
+      this._applyClipPose(clipName, "end");
+    }
+  }
+
+  private _applyClipPose(clipName: string, pose: "start" | "end"): void {
+    const bindings = this._clipBindings.get(clipName);
+    if (!bindings) return;
+
+    for (const binding of bindings) {
+      const value = pose === "end" ? binding.endValue : binding.startValue;
+
+      switch (binding.property) {
+        case "position":
+          binding.target.position.fromArray(value);
+          binding.target.updateMatrix();
+          break;
+        case "scale":
+          binding.target.scale.fromArray(value);
+          binding.target.updateMatrix();
+          break;
+        case "quaternion":
+          binding.target.quaternion.fromArray(value).normalize();
+          binding.target.updateMatrix();
+          break;
+      }
+    }
+
+    this._modelRoot?.updateMatrixWorld(true);
+  }
 
   private _onPointerDown = (event: PointerEvent): void => {
     this._dragPointerId = event.pointerId;
