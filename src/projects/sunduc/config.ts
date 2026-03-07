@@ -1,0 +1,56 @@
+export const SUNDUC_CONFIG = {
+  assetUrl: "/sunduc/sunduc.glb",
+  title: "Сундук ветрины",
+  eyebrow: "Новый проект",
+  lead:
+    "Интерактивная 3D-модель сундука с отдельными анимациями камней, последовательным сценарием открытия и ручным осмотром на пальце или мышке.",
+  paragraphs: [
+    "Верхний блок специально занимает заметную часть экрана, чтобы поместилось описание идеи, логики анимаций и любые пояснения для клиента или команды.",
+    "Ниже находится сама модель. Её можно быстро крутить жестом, проверять отдельные камни и по шагам прогонять весь сценарий открытия через дебаг-панель."
+  ],
+  badges: ["Drag / Swipe rotate", "GLB / GLTF", "Animation debug", "Mobile friendly"],
+  layout: {
+    infoMinHeightVh: 16,
+    viewerMinHeightVh: 62,
+    infoMaxWidthPx: 1280,
+    debugPanelWidthPx: 280,
+    canvasMinHeightPx: 420
+  },
+  camera: {
+    fovDeg: 34,
+    near: 0.1,
+    far: 100,
+    position: { x: 0, y: 1.45, z: 7.2 },
+    lookAt: { x: 0, y: 1.0, z: 0 },
+    fitHeight: 2.3
+  },
+  lighting: {
+    ambientIntensity: 1.6,
+    keyIntensity: 2.6,
+    fillIntensity: 1.15,
+    rimIntensity: 1.35
+  },
+  model: {
+    scale: 1,
+    initialRotationDeg: { x: -8, y: 28, z: 0 },
+    offset: { x: 0, y: 0, z: 0 },
+    dragSensitivity: { x: 0.012, y: 0.009 },
+    damping: 0.14,
+    minPitchDeg: -30,
+    maxPitchDeg: 26
+  },
+  debug: {
+    showPanel: true,
+    showScenarioButton: true
+  },
+  animationAliases: {
+    stones: ["stone1", "stone2", "stone3", "stone4"],
+    stoneSearch: ["stone", "stine"],
+    close: ["close1", "open1"],
+    dudu: ["dudu"],
+    key: ["key"],
+    open: ["open2"]
+  }
+} as const;
+
+export type SunducConfig = typeof SUNDUC_CONFIG;

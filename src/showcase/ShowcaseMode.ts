@@ -22,6 +22,7 @@ import { GnomesApp } from "../projects/gnomes/GnomesApp";
 import { GNOMES_CONFIG } from "../projects/gnomes/config";
 import { CityApp } from "../projects/city/CityApp";
 import { mountOsminogProject } from "../projects/osminog";
+import { mountSunducProject } from "../projects/sunduc";
 import type { Overlay } from "../ui/overlay";
 
 // ─── типы ────────────────────────────────────────────────────────────────────
@@ -34,9 +35,10 @@ interface ShowcaseOpts {
 interface SectionDef {
   key: string;
   title: string;
-  heightVh: number;
+  heightVh?: number;
   needsGate: boolean;
   interactLabel: string;
+  layout?: "sticky" | "flow";
 }
 
 interface SectionState {
@@ -55,6 +57,7 @@ interface SectionState {
 // ─── секции ──────────────────────────────────────────────────────────────────
 
 const SECTION_DEFS: SectionDef[] = [
+  { key: "sunduc", title: "Сундук", needsGate: false, interactLabel: "", layout: "flow" },
   { key: "particles", title: "Частицы", heightVh: 100, needsGate: true, interactLabel: "Взаимодействовать" },
   { key: "puzzle", title: "Пазл", heightVh: 100, needsGate: true, interactLabel: "Взаимодействовать" },
   { key: "gnomes", title: "Гномы", heightVh: GNOMES_CONFIG.pages * 100, needsGate: false, interactLabel: "" },
@@ -152,13 +155,20 @@ export class ShowcaseMode {
     for (let i = 0; i < SECTION_DEFS.length; i++) {
       const def = SECTION_DEFS[i];
       const sectionEl = _el("section", "showcase__section");
-      sectionEl.style.height = `${def.heightVh}vh`;
+      const layout = def.layout ?? "sticky";
+      if (layout === "sticky") {
+        sectionEl.style.height = `${def.heightVh ?? 100}vh`;
+      } else {
+        sectionEl.classList.add("showcase__section--flow");
+      }
       sectionEl.dataset.showcaseIdx = String(i);
 
       const stickyEl = _el("div", "showcase__sticky");
+      if (layout === "flow") stickyEl.classList.add("showcase__sticky--flow");
       sectionEl.appendChild(stickyEl);
 
       const containerEl = _el("div", "showcase__project-container");
+      if (layout === "flow") containerEl.classList.add("showcase__project-container--flow");
       stickyEl.appendChild(containerEl);
 
       // Loading placeholder
@@ -306,6 +316,9 @@ export class ShowcaseMode {
 
     try {
       switch (s.def.key) {
+        case "sunduc":
+          this._mountSunduc(s);
+          break;
         case "particles":
           this._mountParticles(s);
           break;
@@ -327,6 +340,17 @@ export class ShowcaseMode {
       console.error(`[Showcase] mount «${s.def.key}» failed:`, e);
       s.containerEl.innerHTML = `<div class="showcase__error"><p>Ошибка: ${e instanceof Error ? e.message : String(e)}</p></div>`;
     }
+  }
+
+  /* ── Particles ── */
+
+  private _mountSunduc(s: SectionState): void {
+    const container = s.containerEl;
+    container.innerHTML = "";
+
+    const disposeSunduc = mountSunducProject(container, { embedded: true });
+    s.projectRef = null;
+    s.disposeProject = disposeSunduc;
   }
 
   /* ── Particles ── */
