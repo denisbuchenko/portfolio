@@ -54,6 +54,7 @@ export class SunducProject {
   private _clipPinnedAtEnd = new Map<string, boolean>();
   private _clipRanges = new Map<string, _ClipRange>();
   private _clipStates = new Map<string, boolean>();
+  private _clipVisibilityTargets = new Map<string, THREE.Object3D[]>();
   private _clipNamesByAction = new WeakMap<THREE.AnimationAction, string>();
   private _playbackButtons: _PlaybackButton[] = [];
   private _stoneClipNames: string[] = [];
@@ -157,6 +158,7 @@ export class SunducProject {
     this._clipPinnedAtEnd.clear();
     this._clipRanges.clear();
     this._clipStates.clear();
+    this._clipVisibilityTargets.clear();
     this._playbackButtons = [];
     this._root.remove();
     this._host.classList.remove("launcher--puzzle");
@@ -273,6 +275,7 @@ export class SunducProject {
       for (const clip of gltf.animations) {
         this._clipRanges.set(clip.name, this._getClipRange(clip));
         this._clipBindings.set(clip.name, this._buildClipBindings(clip, model));
+        this._clipVisibilityTargets.set(clip.name, this._collectClipTargets(clip, model));
         const action = this._mixer.clipAction(clip);
         action.clampWhenFinished = true;
         action.loop = THREE.LoopOnce;
@@ -349,6 +352,10 @@ export class SunducProject {
     for (const clipName of [...this._stoneClipNames, ...this._sequenceClipNames]) {
       this._setClipToggleState(clipName, false, { syncUi: true });
     }
+
+    for (const clipName of [...this._stoneClipNames, ...this._sequenceClipNames]) {
+      this._syncClipVisibility(clipName);
+    }
   }
 
   private _createToggleButton(label: string, clipName: string): HTMLButtonElement {
@@ -388,6 +395,7 @@ export class SunducProject {
 
     if (active) {
       this._clipPinnedAtEnd.set(clipName, false);
+      this._syncClipVisibility(clipName, true);
       action.stop();
       action.reset();
       action.time = range.start;
@@ -402,6 +410,7 @@ export class SunducProject {
       action.paused = true;
       action.time = range.start;
       this._applyClipPose(clipName, "start");
+      this._syncClipVisibility(clipName, false);
       this._applyPinnedClipPoses();
       this._setStatus(`Сброшено в начало: ${clipName}`);
     }
@@ -496,6 +505,7 @@ export class SunducProject {
     action.stop();
     action.enabled = false;
     this._clipPinnedAtEnd.set(clipName, true);
+    this._syncClipVisibility(clipName, true);
     this._applyClipPose(clipName, "end");
     action.time = range.end;
     action.time = range.end;
@@ -548,6 +558,22 @@ export class SunducProject {
     return bindings;
   }
 
+  private _collectClipTargets(clip: THREE.AnimationClip, root: THREE.Object3D): THREE.Object3D[] {
+    const targets = new Map<string, THREE.Object3D>();
+
+    for (const track of clip.tracks) {
+      const splitIdx = track.name.lastIndexOf(".");
+      if (splitIdx <= 0) continue;
+
+      const nodeName = track.name.slice(0, splitIdx);
+      const target = root.getObjectByName(nodeName);
+      if (!target) continue;
+      targets.set(target.uuid, target);
+    }
+
+    return [...targets.values()];
+  }
+
   private _applyPinnedClipPoses(): void {
     for (const [clipName, pinned] of this._clipPinnedAtEnd) {
       if (!pinned || !this._clipStates.get(clipName)) continue;
@@ -579,6 +605,27 @@ export class SunducProject {
     }
 
     this._modelRoot?.updateMatrixWorld(true);
+  }
+
+  private _syncClipVisibility(clipName: string, forcedState?: boolean): void {
+    if (!this._shouldToggleVisibility(clipName)) return;
+
+    const visible = forcedState ?? Boolean(this._clipStates.get(clipName));
+    const targets = this._clipVisibilityTargets.get(clipName);
+    if (!targets) return;
+
+    for (const target of targets) {
+      target.visible = visible;
+    }
+  }
+
+  private _shouldToggleVisibility(clipName: string): boolean {
+    return this._matchesStoneClip(clipName) || this._matchesKeyClip(clipName);
+  }
+
+  private _matchesKeyClip(clipName: string): boolean {
+    const keyClip = this._findClipByAliases([clipName], SUNDUC_CONFIG.animationAliases.key);
+    return keyClip !== null;
   }
 
   private _onPointerDown = (event: PointerEvent): void => {
