@@ -40,19 +40,9 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
     SUNDUC_CONFIG.camera.position.y,
     SUNDUC_CONFIG.camera.position.z
   );
-  camera.lookAt(
-    SUNDUC_CONFIG.camera.lookAt.x,
-    SUNDUC_CONFIG.camera.lookAt.y,
-    SUNDUC_CONFIG.camera.lookAt.z
-  );
 
   const rotationRoot = new THREE.Group();
   const modelGroup = new THREE.Group();
-  modelGroup.position.set(
-    SUNDUC_CONFIG.model.offset.x,
-    SUNDUC_CONFIG.model.offset.y,
-    SUNDUC_CONFIG.model.offset.z
-  );
   rotationRoot.add(modelGroup);
   scene.add(rotationRoot);
 
@@ -87,16 +77,54 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
   };
 
   function _fitModel(model: THREE.Object3D): void {
-    const box = new THREE.Box3().setFromObject(model);
-    const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    const fitScale = SUNDUC_CONFIG.camera.fitHeight / Math.max(size.y, 0.001);
+    model.updateMatrixWorld(true);
 
-    model.position.x -= center.x;
-    model.position.y -= box.min.y;
-    model.position.z -= center.z;
+    const fitBounds = new THREE.Box3().setFromObject(model);
+    const pivotBounds = _getBoundsByNodeNames(model, SUNDUC_CONFIG.model.centering.pivotNodeNames) ?? fitBounds;
+    const groundBounds = _getBoundsByNodeNames(model, SUNDUC_CONFIG.model.centering.groundNodeNames) ?? pivotBounds;
+
+    const fitSize = fitBounds.getSize(new THREE.Vector3());
+    const pivotCenter = pivotBounds.getCenter(new THREE.Vector3());
+    const fitScale = SUNDUC_CONFIG.camera.fitHeight / Math.max(fitSize.y, 0.001);
+
+    model.position.set(
+      -pivotCenter.x,
+      -groundBounds.min.y,
+      -pivotCenter.z
+    );
     model.scale.setScalar(fitScale * SUNDUC_CONFIG.model.scale);
+
+    const offsetScale = fitScale * SUNDUC_CONFIG.model.scale;
+    modelGroup.position.set(
+      SUNDUC_CONFIG.model.offset.x,
+      SUNDUC_CONFIG.model.offset.y,
+      SUNDUC_CONFIG.model.offset.z
+    );
+
+    const focusY = (pivotCenter.y - groundBounds.min.y) * offsetScale;
+    camera.lookAt(
+      SUNDUC_CONFIG.model.offset.x + SUNDUC_CONFIG.camera.lookAtOffset.x,
+      SUNDUC_CONFIG.model.offset.y + focusY + SUNDUC_CONFIG.camera.lookAtOffset.y,
+      SUNDUC_CONFIG.model.offset.z + SUNDUC_CONFIG.camera.lookAtOffset.z
+    );
   }
+}
+
+function _getBoundsByNodeNames(root: THREE.Object3D, nodeNames: readonly string[]): THREE.Box3 | null {
+  let bounds: THREE.Box3 | null = null;
+
+  for (const nodeName of nodeNames) {
+    const object = root.getObjectByName(nodeName);
+    if (!object) continue;
+
+    const objectBounds = new THREE.Box3().setFromObject(object);
+    if (objectBounds.isEmpty()) continue;
+
+    if (bounds) bounds.union(objectBounds);
+    else bounds = objectBounds.clone();
+  }
+
+  return bounds;
 }
 
 function _setupLights(scene: THREE.Scene): void {

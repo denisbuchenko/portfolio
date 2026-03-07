@@ -21,7 +21,7 @@ export const SUNDUC_CONFIG = {
     near: 0.1,
     far: 100,
     position: { x: 0, y: 1.45, z: 7.2 },
-    lookAt: { x: 0, y: 1.0, z: 0 },
+    lookAtOffset: { x: 0, y: 0, z: 0 },
     fitHeight: 2.3
   },
   lighting: {
@@ -34,6 +34,10 @@ export const SUNDUC_CONFIG = {
     scale: 1,
     initialRotationDeg: { x: -8, y: 28, z: 0 },
     offset: { x: 0, y: 0, z: 0 },
+    centering: {
+      pivotNodeNames: ["base", "base2", "L", "top", "Cube.004", "Cube.005"],
+      groundNodeNames: ["base", "base2", "L"]
+    },
     dragSensitivity: { x: 0.012, y: 0.009 },
     damping: 0.14,
     minPitchDeg: -30,
