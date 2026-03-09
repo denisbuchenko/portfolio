@@ -32,6 +32,8 @@ export class ParticleApp {
   private _hud = new HudController();
 
   private _disposed = false;
+  private _renderActive = true;
+  private _raf = 0;
   private _mode: Mode = -1;
   private _texSize = 0;
   private _viewBounds = new THREE.Vector2(4, 4);
@@ -53,6 +55,11 @@ export class ParticleApp {
   ];
 
   private _overlay: Overlay;
+  private _onWindowResize = () => this._onResize();
+  private _onCanvasPointerMove = (e: PointerEvent) => this._onPointerMove(e);
+  private _onCanvasPointerDown = (e: PointerEvent) => this._onPointerDown(e);
+  private _onCanvasPointerUp = (e: PointerEvent) => this._onPointerUp(e);
+  private _onWebglContextLost = (e: Event) => this._onContextLost(e);
 
   constructor(opts: { canvas: HTMLCanvasElement; gl: WebGL2RenderingContext; overlay: Overlay }) {
     this._overlay = opts.overlay;
@@ -87,7 +94,8 @@ export class ParticleApp {
     this._bindUI();
     this._bindEvents();
     this._onResize();
-    this._animate();
+    this._clock.start();
+    this._requestNextFrame();
   }
 
   private _createRenderer(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): THREE.WebGLRenderer {
@@ -179,28 +187,37 @@ export class ParticleApp {
   }
 
   private _bindEvents(): void {
-    window.addEventListener("resize", () => this._onResize());
+    window.addEventListener("resize", this._onWindowResize);
 
     const canvas = this._renderer.domElement;
-    canvas.addEventListener("pointermove", (e) => this._onPointerMove(e));
-    canvas.addEventListener("pointerdown", (e) => this._onPointerDown(e));
-    canvas.addEventListener("pointerup", (e) => this._onPointerUp(e));
-    canvas.addEventListener("pointercancel", (e) => this._onPointerUp(e));
+    canvas.addEventListener("pointermove", this._onCanvasPointerMove);
+    canvas.addEventListener("pointerdown", this._onCanvasPointerDown);
+    canvas.addEventListener("pointerup", this._onCanvasPointerUp);
+    canvas.addEventListener("pointercancel", this._onCanvasPointerUp);
+    canvas.addEventListener("webglcontextlost", this._onWebglContextLost, { passive: false });
+  }
 
-    canvas.addEventListener(
-      "webglcontextlost",
-      (e) => {
-        e.preventDefault();
-        this._overlay.show(
-          "WebGL контекст потерян",
-          "Браузер потерял GPU/контекст WebGL. Попробуй перезагрузить страницу или закрыть тяжёлые вкладки."
-        );
-      },
-      { passive: false }
+  private _unbindEvents(): void {
+    window.removeEventListener("resize", this._onWindowResize);
+
+    const canvas = this._renderer.domElement;
+    canvas.removeEventListener("pointermove", this._onCanvasPointerMove);
+    canvas.removeEventListener("pointerdown", this._onCanvasPointerDown);
+    canvas.removeEventListener("pointerup", this._onCanvasPointerUp);
+    canvas.removeEventListener("pointercancel", this._onCanvasPointerUp);
+    canvas.removeEventListener("webglcontextlost", this._onWebglContextLost);
+  }
+
+  private _onContextLost(e: Event): void {
+    e.preventDefault();
+    this._overlay.show(
+      "WebGL контекст потерян",
+      "Браузер потерял GPU/контекст WebGL. Попробуй перезагрузить страницу или закрыть тяжёлые вкладки."
     );
   }
 
   private _onPointerMove(e: PointerEvent): void {
+    if (!this._renderActive) return;
     this._pointer.updateFromEvent(e, this._renderer.domElement, this._camera);
     if (this._mode === 2) this._paintInput.onMove(e, this._renderer.domElement);
     if (this._mode === 3) {
@@ -217,6 +234,7 @@ export class ParticleApp {
   }
 
   private _onPointerDown(e: PointerEvent): void {
+    if (!this._renderActive) return;
     this._onPointerMove(e);
     if (this._mode === 0) this._pointer.capture(e, this._renderer.domElement, this._time);
     if (this._mode === 2) this._paintInput.capture(e, this._renderer.domElement);
@@ -231,6 +249,7 @@ export class ParticleApp {
   }
 
   private _onPointerUp(e: PointerEvent): void {
+    if (!this._renderActive) return;
     this._pointer.release(e, this._renderer.domElement);
     this._paintInput.release(e, this._renderer.domElement);
     this._traceGame.onPointerUp(e, this._renderer.domElement);
@@ -351,11 +370,45 @@ export class ParticleApp {
 
   dispose(): void {
     this._disposed = true;
+    this._pauseInteractions();
+    this._unbindEvents();
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = 0;
     this._renderer.dispose();
   }
 
-  private _animate = (): void => {
+  resume(): void {
+    this.setRenderActive(true);
+  }
+
+  pause(): void {
+    this.setRenderActive(false);
+  }
+
+  setRenderActive(active: boolean): void {
     if (this._disposed) return;
+    if (this._renderActive === active) return;
+
+    this._renderActive = active;
+    if (active) {
+      this._clock.start();
+      this._clock.getDelta();
+      this._requestNextFrame();
+      return;
+    }
+
+    this._pauseInteractions();
+    this._clock.stop();
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = 0;
+  }
+
+  private _animate = (): void => {
+    if (this._disposed || !this._renderActive) {
+      this._raf = 0;
+      return;
+    }
+
     const dt = Math.max(0, this._clock.getDelta());
     this._time += dt;
     this._gas.uniforms.uTime.value = this._time;
@@ -454,8 +507,20 @@ export class ParticleApp {
       presentToScreen: true
     });
 
-    requestAnimationFrame(this._animate);
+    this._raf = requestAnimationFrame(this._animate);
   };
+
+  private _requestNextFrame(): void {
+    if (this._raf || this._disposed || !this._renderActive) return;
+    this._raf = requestAnimationFrame(this._animate);
+  }
+
+  private _pauseInteractions(): void {
+    const canvas = this._renderer.domElement;
+    this._pointer.forceRelease(canvas);
+    this._paintInput.forceRelease(canvas);
+    this._traceGame.forceRelease(canvas, "pause");
+  }
 }
 
 

@@ -454,14 +454,15 @@ export class ShowcaseMode {
     s.containerEl.appendChild(canvas);
     canvas.style.width = "100%";
     canvas.style.height = "100%";
+    app.setRenderActive(s.hot);
 
     s.projectRef = app;
     s.disposeProject = () => app.dispose();
     s.activateProject = () => {
-      this._callProjectMethod(app, ["resume", "wake", "startRendering"]);
+      app.resume();
     };
     s.deactivateProject = () => {
-      this._callProjectMethod(app, ["pause", "sleep", "stopRendering", "suspend"]);
+      app.pause();
     };
   }
 
