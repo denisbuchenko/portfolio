@@ -4,6 +4,7 @@ export type MelodyTrackerState = {
   readonly currentSequenceIndex: number;
   readonly currentNoteIndex: number;
   readonly isCompleted: boolean;
+  readonly isLocked: boolean;
 };
 
 type MelodySequenceTrackerOptions<TNote extends string> = {
@@ -21,6 +22,7 @@ export class MelodySequenceTracker<TNote extends string> {
   private _noteIndex = 0;
   private _resetTimer = 0;
   private _lastInputAt = 0;
+  private _locked = false;
 
   constructor(options: MelodySequenceTrackerOptions<TNote>) {
     this._pauseResetMs = options.pauseResetMs;
@@ -39,11 +41,14 @@ export class MelodySequenceTracker<TNote extends string> {
       totalSequenceCount: this._sequences.length,
       currentSequenceIndex: this._sequenceIndex,
       currentNoteIndex: this._noteIndex,
-      isCompleted: this._sequenceIndex >= this._sequences.length
+      isCompleted: this._sequenceIndex >= this._sequences.length,
+      isLocked: this._locked
     };
   }
 
   notePlayed(note: TNote): MelodyTrackerState {
+    if (this._locked) return this.getState();
+
     const now = Date.now();
 
     if (this._shouldResetByPause(now)) {
@@ -75,11 +80,18 @@ export class MelodySequenceTracker<TNote extends string> {
       if (this._noteIndex >= currentSequence.length) {
         this._sequenceIndex += 1;
         this._noteIndex = 0;
+        if (this._sequenceIndex >= this._sequences.length) {
+          this._locked = true;
+          this._clearResetTimer();
+          this._lastInputAt = 0;
+        }
       }
     }
 
-    this._lastInputAt = now;
-    this._restartResetTimer();
+    if (!this._locked) {
+      this._lastInputAt = now;
+      this._restartResetTimer();
+    }
     this._emitState();
     return this.getState();
   }
@@ -123,6 +135,7 @@ export class MelodySequenceTracker<TNote extends string> {
     this._sequenceIndex = 0;
     this._noteIndex = 0;
     this._lastInputAt = 0;
+    this._locked = false;
   }
 
   private _emitState(): void {

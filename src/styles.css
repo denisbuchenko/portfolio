@@ -665,7 +665,7 @@ canvas {
 .osminog__melody-progress {
   position: absolute;
   left: 50%;
-  bottom: 14px;
+  top: 14px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -687,7 +687,7 @@ canvas {
 
 .osminog__melody-progress--hidden {
   opacity: 0;
-  transform: translateX(-50%) translateY(6px);
+  transform: translateX(-50%) translateY(-6px);
 }
 
 .osminog__melody-dot {
@@ -713,8 +713,8 @@ canvas {
 .osminog__melody-success {
   position: absolute;
   left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%) translateY(6px);
+  top: 12px;
+  transform: translateX(-50%) translateY(-6px);
   padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid rgba(16, 185, 129, 0.24);

@@ -437,7 +437,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
       _duduAudio?.stopAll();
       _activePointerId = null;
       _activeKeyName = null;
-      _melodyTracker?.reset();
+      if (!_melodyTracker?.getState().isLocked) _melodyTracker?.reset();
     }
 
     if (_threeVisible) _renderThree();
