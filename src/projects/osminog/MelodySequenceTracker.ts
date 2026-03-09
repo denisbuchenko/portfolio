@@ -69,12 +69,9 @@ export class MelodySequenceTracker<TNote extends string> {
 
     if (note !== expectedNote) {
       this._resetInternal();
-
-      if (!this._tryStartFromFirstSequence(note)) {
-        this._lastInputAt = 0;
-        this._emitState();
-        return this.getState();
-      }
+      this._lastInputAt = 0;
+      this._emitState();
+      return this.getState();
     } else {
       this._noteIndex += 1;
       if (this._noteIndex >= currentSequence.length) {
@@ -100,15 +97,6 @@ export class MelodySequenceTracker<TNote extends string> {
     this._resetInternal();
     this._emitState();
     return this.getState();
-  }
-
-  private _tryStartFromFirstSequence(note: TNote): boolean {
-    const firstSequence = this._sequences[0];
-    if (!firstSequence || firstSequence[0] !== note) return false;
-
-    this._sequenceIndex = 0;
-    this._noteIndex = 1;
-    return true;
   }
 
   private _shouldResetByPause(now: number): boolean {
