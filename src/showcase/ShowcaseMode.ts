@@ -47,10 +47,13 @@ interface SectionState {
   stickyEl: HTMLElement;
   containerEl: HTMLElement;
   mounted: boolean;
+  hot: boolean;
   interacting: boolean;
   blocker: HTMLElement | null;
   interactBtn: HTMLElement | null;
   disposeProject: (() => void) | null;
+  activateProject: (() => void) | null;
+  deactivateProject: (() => void) | null;
   projectRef: unknown;
 }
 
@@ -78,7 +81,8 @@ export class ShowcaseMode {
   private _exitBtn: HTMLElement;
   private _raf = 0;
   private _interactingIdx = -1;
-  private _mountObserver: IntersectionObserver;
+  private _warmObserver: IntersectionObserver;
+  private _hotObserver: IntersectionObserver;
   private _activeObserver: IntersectionObserver;
 
   constructor(opts: ShowcaseOpts) {
@@ -100,8 +104,12 @@ export class ShowcaseMode {
     this._exitBtn = this._buildExitBtn();
     this._navEl = this._buildNav();
 
-    // Observers (lazy mount + active section tracking)
-    this._mountObserver = this._createMountObserver();
+    // Observers:
+    // warm  — заранее подготавливает проект в памяти;
+    // hot   — включает "живой" режим рядом с viewport;
+    // active — обновляет навигацию.
+    this._warmObserver = this._createWarmObserver();
+    this._hotObserver = this._createHotObserver();
     this._activeObserver = this._createActiveObserver();
 
     // Scroll listener for scroll-dependent projects
@@ -109,6 +117,7 @@ export class ShowcaseMode {
 
     // Initial active dot
     this._updateActiveDot(0);
+    this._setSectionHot(0, true);
 
     // Animation loop (for per-frame updates)
     this._raf = requestAnimationFrame(this._tick);
@@ -119,10 +128,14 @@ export class ShowcaseMode {
   dispose(): void {
     cancelAnimationFrame(this._raf);
     this._host.removeEventListener("scroll", this._onHostScroll);
-    this._mountObserver.disconnect();
+    this._warmObserver.disconnect();
+    this._hotObserver.disconnect();
     this._activeObserver.disconnect();
 
-    for (const s of this._sections) s.disposeProject?.();
+    for (const s of this._sections) {
+      s.deactivateProject?.();
+      s.disposeProject?.();
+    }
 
     this._showcaseEl.remove();
     this._backBtn.remove();
@@ -207,10 +220,13 @@ export class ShowcaseMode {
         stickyEl,
         containerEl,
         mounted: false,
+        hot: false,
         interacting: false,
         blocker,
         interactBtn,
         disposeProject: null,
+        activateProject: null,
+        deactivateProject: null,
         projectRef: null,
       });
     }
@@ -267,18 +283,31 @@ export class ShowcaseMode {
 
   // ── observers ──────────────────────────────────────────────────────────────
 
-  private _createMountObserver(): IntersectionObserver {
+  private _createWarmObserver(): IntersectionObserver {
     const obs = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
           const idx = Number((entry.target as HTMLElement).dataset.showcaseIdx ?? -1);
-          if (idx >= 0 && !this._sections[idx].mounted) {
-            this._mountSection(idx);
-          }
+          if (idx >= 0) this._ensureSectionWarm(idx);
         }
       },
-      { root: this._host, rootMargin: "100% 0px" }
+      { root: this._host, rootMargin: "175% 0px" }
+    );
+    for (const s of this._sections) obs.observe(s.el);
+    return obs;
+  }
+
+  private _createHotObserver(): IntersectionObserver {
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const idx = Number((entry.target as HTMLElement).dataset.showcaseIdx ?? -1);
+          if (idx < 0) continue;
+          this._setSectionHot(idx, entry.isIntersecting);
+        }
+      },
+      { root: this._host, rootMargin: "75% 0px" }
     );
     for (const s of this._sections) obs.observe(s.el);
     return obs;
@@ -301,6 +330,51 @@ export class ShowcaseMode {
   private _updateActiveDot(idx: number): void {
     for (let i = 0; i < this._navItems.length; i++) {
       this._navItems[i].classList.toggle("showcase__nav-item--active", i === idx);
+    }
+  }
+
+  private _ensureSectionWarm(idx: number): void {
+    const s = this._sections[idx];
+    if (!s || s.mounted) return;
+    this._mountSection(idx);
+  }
+
+  private _setSectionHot(idx: number, hot: boolean): void {
+    const s = this._sections[idx];
+    if (!s) return;
+
+    if (hot) this._ensureSectionWarm(idx);
+    if (!s.mounted) return;
+    if (s.hot === hot) return;
+    if (!hot && s.interacting) return;
+
+    s.hot = hot;
+    if (hot) {
+      s.activateProject?.();
+      if (s.def.key === "city" && !s.interacting) this._updateCityProgress();
+      return;
+    }
+    s.deactivateProject?.();
+  }
+
+  private _callProjectMethod(
+    project: unknown,
+    trueMethodNames: string[],
+    falseMethodNames?: string[],
+    flag?: boolean
+  ): void {
+    if (!project) return;
+
+    const methodNames = typeof flag === "boolean" ? (flag ? trueMethodNames : falseMethodNames ?? []) : trueMethodNames;
+    for (const methodName of methodNames) {
+      const candidate = (project as Record<string, unknown>)[methodName];
+      if (typeof candidate !== "function") continue;
+      if (typeof flag === "boolean" && candidate.length >= 1) {
+        (candidate as (value: boolean) => void)(flag);
+      } else {
+        (candidate as () => void)();
+      }
+      return;
     }
   }
 
@@ -351,6 +425,8 @@ export class ShowcaseMode {
     const disposeSunduc = mountSunducProject(container, { embedded: true });
     s.projectRef = null;
     s.disposeProject = disposeSunduc;
+    s.activateProject = null;
+    s.deactivateProject = null;
   }
 
   /* ── Particles ── */
@@ -381,6 +457,12 @@ export class ShowcaseMode {
 
     s.projectRef = app;
     s.disposeProject = () => app.dispose();
+    s.activateProject = () => {
+      this._callProjectMethod(app, ["resume", "wake", "startRendering"]);
+    };
+    s.deactivateProject = () => {
+      this._callProjectMethod(app, ["pause", "sleep", "stopRendering", "suspend"]);
+    };
   }
 
   /* ── Puzzle ── */
@@ -393,6 +475,12 @@ export class ShowcaseMode {
     const project = new PuzzleProject(host);
     s.projectRef = project;
     s.disposeProject = () => project.dispose();
+    s.activateProject = () => {
+      this._callProjectMethod(project, ["resume", "wake", "startRendering"]);
+    };
+    s.deactivateProject = () => {
+      this._callProjectMethod(project, ["pause", "sleep", "stopRendering", "suspend"]);
+    };
   }
 
   /* ── Gnomes ── */
@@ -444,6 +532,12 @@ export class ShowcaseMode {
       disposed = true;
       app.dispose();
     };
+    s.activateProject = () => {
+      this._callProjectMethod(app, ["resume", "wake", "startRendering"]);
+    };
+    s.deactivateProject = () => {
+      this._callProjectMethod(app, ["pause", "sleep", "stopRendering", "suspend"]);
+    };
   }
 
   /* ── City ── */
@@ -466,12 +560,28 @@ export class ShowcaseMode {
     wrapper.appendChild(canvas);
 
     const app = new CityApp({ host: wrapper, canvas, uiRoot });
-    // Отключаем внутренний скролл (в пассивном режиме прогресс ставим вручную)
-    app.setScrollInputEnabled(false);
-    void app.start();
+    let started = false;
+    const _ensureStarted = (): void => {
+      if (started) return;
+      started = true;
+      // Отключаем внутренний скролл: в витрине прогресс задается извне.
+      app.setScrollInputEnabled(false);
+      void app.start();
+    };
 
     s.projectRef = app;
     s.disposeProject = () => app.dispose();
+    s.activateProject = () => {
+      _ensureStarted();
+      this._callProjectMethod(app, ["resume", "wake"]);
+      this._callProjectMethod(app, ["setRenderActive", "setAnimationActive"], ["setRenderActive", "setAnimationActive"], true);
+      if (!s.interacting) app.setScrollInputEnabled(false);
+    };
+    s.deactivateProject = () => {
+      app.setScrollInputEnabled(false);
+      this._callProjectMethod(app, ["pause", "sleep", "suspend"]);
+      this._callProjectMethod(app, ["setRenderActive", "setAnimationActive"], ["setRenderActive", "setAnimationActive"], false);
+    };
   }
 
   /* ── Osminog ── */
@@ -488,6 +598,8 @@ export class ShowcaseMode {
 
     s.projectRef = null;
     s.disposeProject = disposeOsminog;
+    s.activateProject = null;
+    s.deactivateProject = null;
   }
 
   // ── interaction gate ───────────────────────────────────────────────────────
@@ -495,6 +607,7 @@ export class ShowcaseMode {
   private _startInteraction(idx: number): void {
     const s = this._sections[idx];
     if (!s || s.interacting) return;
+    this._setSectionHot(idx, true);
     s.interacting = true;
     this._interactingIdx = idx;
 
