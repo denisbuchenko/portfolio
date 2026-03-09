@@ -17,7 +17,8 @@
     "dagre": "^0.8.5",
     "lottie-web": "^5.13.0",
     "three": "^0.160.0",
-    "three-mesh-bvh": "^0.9.8"
+    "three-mesh-bvh": "^0.9.8",
+    "tone": "^15.1.22"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

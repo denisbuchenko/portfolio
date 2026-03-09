@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { enableShadowsAndSrgb, loadGltf } from "../city/three/loadGltf";
 import { OSMINOG_DUDU_CONFIG } from "./config";
+import { createDuduAudio, type DuduAudio, type DuduKeyName } from "./createDuduAudio";
 import { LottieSegmentsController, type OsminogUiMode } from "./LottieSegmentsController";
 
 function _setActiveBtn(btn: HTMLButtonElement, active: boolean): void {
@@ -341,10 +342,18 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   let _keyTargets: THREE.Object3D[] = [];
   let _cameraAspect = 16 / 9;
   let _renderViewport: _RenderViewport = { x: 0, y: 0, width: 1, height: 1 };
+  let _duduAudio: DuduAudio | null = null;
+  let _activePointerId: number | null = null;
+  let _activeKeyName: DuduKeyName | null = null;
   const _replacedHitMaterials: THREE.Material[] = [];
 
   const _raycaster = new THREE.Raycaster();
   const _pointer = new THREE.Vector2();
+  const _duduAudioPromise = createDuduAudio().catch((error) => {
+    // eslint-disable-next-line no-console
+    console.error("[dudu-audio] Не удалось загрузить звук", error);
+    return null;
+  });
 
   const _renderThree = (): void => {
     if (!_renderer || !_scene || !_camera || !_threeVisible) return;
@@ -385,6 +394,12 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     threeCanvas.classList.toggle("osminog__three--visible", _threeVisible);
     _setActiveBtn(btnDudu, _threeVisible);
 
+    if (!_threeVisible) {
+      _duduAudio?.stopAll();
+      _activePointerId = null;
+      _activeKeyName = null;
+    }
+
     if (_threeVisible) _renderThree();
   };
 
@@ -408,11 +423,10 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     _duduAction.play();
   };
 
-  const _handleThreePointerDown = (event: PointerEvent): void => {
-    if (!_threeVisible || !_camera) return;
-
+  const _setRayFromPointer = (event: PointerEvent): boolean => {
+    if (!_camera) return false;
     const rect = threeCanvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    if (rect.width <= 0 || rect.height <= 0) return false;
 
     const layerWidth = Math.max(1, threeLayer.clientWidth);
     const layerHeight = Math.max(1, threeLayer.clientHeight);
@@ -427,31 +441,98 @@ export function mountOsminogProject(host: HTMLElement): () => void {
       event.clientY < viewportTop ||
       event.clientY > viewportTop + viewportHeight
     ) {
-      return;
+      return false;
     }
 
     _pointer.x = ((event.clientX - viewportLeft) / Math.max(1, viewportWidth)) * 2 - 1;
     _pointer.y = -((event.clientY - viewportTop) / Math.max(1, viewportHeight)) * 2 + 1;
     _raycaster.setFromCamera(_pointer, _camera);
+    return true;
+  };
+
+  const _getKeyHitName = (event: PointerEvent): DuduKeyName | null => {
+    if (!_setRayFromPointer(event)) return null;
+
+    const hit = _raycaster.intersectObjects(_keyTargets, false)[0];
+    if (!hit) return null;
+
+    const hitName = _resolveHitAreaName(hit.object);
+    if (!hitName) return null;
+    return hitName as DuduKeyName;
+  };
+
+  const _isDuduHit = (event: PointerEvent): boolean => {
+    if (!_setRayFromPointer(event)) return false;
+    return Boolean(_raycaster.intersectObjects(_duduTargets, false)[0]);
+  };
+
+  const _releaseActiveKey = (): void => {
+    if (_activeKeyName) _duduAudio?.stopKey(_activeKeyName);
+    _activeKeyName = null;
+    _activePointerId = null;
+  };
+
+  const _startOrSwitchKey = (keyName: DuduKeyName): void => {
+    const note = OSMINOG_DUDU_CONFIG.audio.notesByKey[keyName];
+    if (_activeKeyName === keyName) return;
+
+    if (_activeKeyName) _duduAudio?.stopKey(_activeKeyName);
+    _activeKeyName = keyName;
+
+    // eslint-disable-next-line no-console
+    console.log(`[dudu] ${keyName} -> ${note}`);
+    void _duduAudio?.playKey(keyName);
+  };
+
+  const _handleThreePointerDown = (event: PointerEvent): void => {
+    if (!_threeVisible || !_camera) return;
 
     if (_interactionReady) {
-      const hit = _raycaster.intersectObjects(_keyTargets, false)[0];
-      if (!hit) return;
-
-      const hitName = _resolveHitAreaName(hit.object);
+      const hitName = _getKeyHitName(event);
       if (!hitName) return;
 
-      // eslint-disable-next-line no-console
-      console.log(`[dudu] Нажали на ${hitName}`);
+      _activePointerId = event.pointerId;
+      _startOrSwitchKey(hitName);
+      try {
+        threeCanvas.setPointerCapture(event.pointerId);
+      } catch {
+        // ignore pointer capture issues on unsupported devices
+      }
       return;
     }
 
     if (_animationPlaying) return;
 
-    const hit = _raycaster.intersectObjects(_duduTargets, false)[0];
-    if (!hit) return;
-
+    void _duduAudio?.ensureStarted();
+    if (!_isDuduHit(event)) return;
     _playDuduAnimation();
+  };
+
+  const _handleThreePointerMove = (event: PointerEvent): void => {
+    if (!_threeVisible || !_interactionReady) return;
+    if (_activePointerId !== event.pointerId) return;
+
+    const hitName = _getKeyHitName(event);
+    if (!hitName) {
+      if (_activeKeyName) _duduAudio?.stopKey(_activeKeyName);
+      _activeKeyName = null;
+      return;
+    }
+
+    _startOrSwitchKey(hitName);
+  };
+
+  const _handleThreePointerEnd = (event: PointerEvent): void => {
+    if (_activePointerId !== event.pointerId) return;
+
+    _releaseActiveKey();
+    if (threeCanvas.hasPointerCapture(event.pointerId)) {
+      try {
+        threeCanvas.releasePointerCapture(event.pointerId);
+      } catch {
+        // ignore pointer capture issues on unsupported devices
+      }
+    }
   };
 
   const _frameThree = (ts: number): void => {
@@ -474,6 +555,15 @@ export function mountOsminogProject(host: HTMLElement): () => void {
 
   void (async () => {
     try {
+      void _duduAudioPromise.then((audio) => {
+        if (!audio) return;
+        if (_disposed) {
+          audio.dispose();
+          return;
+        }
+        _duduAudio = audio;
+      });
+
       const [mod, gltf] = await Promise.all([
         import("lottie-web"),
         loadGltf(OSMINOG_DUDU_CONFIG.assetUrl)
@@ -577,6 +667,9 @@ export function mountOsminogProject(host: HTMLElement): () => void {
       _resizeThree();
 
       threeCanvas.addEventListener("pointerdown", _handleThreePointerDown);
+      threeCanvas.addEventListener("pointermove", _handleThreePointerMove);
+      window.addEventListener("pointerup", _handleThreePointerEnd);
+      window.addEventListener("pointercancel", _handleThreePointerEnd);
       _threeReady = true;
       btnDudu.disabled = false;
       _threeFrame = requestAnimationFrame(_frameThree);
@@ -598,8 +691,12 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     _anim?.destroy();
     cancelAnimationFrame(_threeFrame);
     threeCanvas.removeEventListener("pointerdown", _handleThreePointerDown);
+    threeCanvas.removeEventListener("pointermove", _handleThreePointerMove);
+    window.removeEventListener("pointerup", _handleThreePointerEnd);
+    window.removeEventListener("pointercancel", _handleThreePointerEnd);
     _threeResizeObserver?.disconnect();
     if (_mixer) _mixer.removeEventListener("finished", _handleThreeAnimationFinished);
+    _duduAudio?.dispose();
     _renderer?.dispose();
     _invisibleHitMaterial?.dispose();
     for (const material of _replacedHitMaterials) material.dispose();
