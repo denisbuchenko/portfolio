@@ -48,14 +48,14 @@ export const OSMINOG_DUDU_CONFIG = {
   audio: {
     baseUrl: "/sound/flute_sound_kit/",
     notesByKey: {
-      key1: "C5",
-      key2: "B4",
-      key3: "A4",
-      key4: "G4",
-      key5: "F4",
-      key6: "E4",
-      key7: "D4",
-      key8: "C4"
+      key1: "G5",
+      key2: "F5",
+      key3: "E5",
+      key4: "D5",
+      key5: "C5",
+      key6: "B4",
+      key7: "A4",
+      key8: "G4"
     },
     sampleUrls: {
       C4: "FluteClean_C4.wav",
