@@ -14,6 +14,23 @@ import { ShowcaseMode } from "./showcase/ShowcaseMode";
 const overlay = createOverlay();
 let showcaseInstance: ShowcaseMode | null = null;
 
+function _blockTextSelectionUi(): void {
+  const _preventDefault = (event: Event): void => {
+    event.preventDefault();
+  };
+  const _clearSelection = (): void => {
+    window.getSelection()?.removeAllRanges();
+  };
+
+  document.addEventListener("contextmenu", _preventDefault, { passive: false });
+  document.addEventListener("selectstart", _preventDefault, { passive: false });
+  document.addEventListener("dragstart", _preventDefault, { passive: false });
+  document.addEventListener("gesturestart", _preventDefault as EventListener, { passive: false });
+  document.addEventListener("selectionchange", _clearSelection, { passive: true });
+  document.addEventListener("touchstart", _clearSelection, { passive: true, capture: true });
+  document.addEventListener("touchend", _clearSelection, { passive: true, capture: true });
+}
+
 function showPicker(): void {
   const el = document.getElementById("project-picker");
   if (!el) return;
@@ -180,6 +197,7 @@ function startShowcase(): void {
   });
 }
 
+_blockTextSelectionUi();
 showPicker();
 
 

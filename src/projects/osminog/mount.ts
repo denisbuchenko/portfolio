@@ -344,6 +344,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   let _renderViewport: _RenderViewport = { x: 0, y: 0, width: 1, height: 1 };
   let _duduAudio: DuduAudio | null = null;
   let _activePointerId: number | null = null;
+  let _activeTouchId: number | null = null;
   let _activeKeyName: DuduKeyName | null = null;
   const _replacedHitMaterials: THREE.Material[] = [];
 
@@ -354,6 +355,23 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     console.error("[dudu-audio] Не удалось загрузить звук", error);
     return null;
   });
+  let _audioGestureSeq = 0;
+
+  const _getDuduAudio = async (): Promise<DuduAudio | null> => {
+    if (_duduAudio) return _duduAudio;
+
+    const audio = await _duduAudioPromise;
+    if (!audio || _disposed) return null;
+    _duduAudio = audio;
+    return audio;
+  };
+
+  const _ensureDuduAudioStarted = async (): Promise<DuduAudio | null> => {
+    const audio = await _getDuduAudio();
+    if (!audio) return null;
+    await audio.ensureStarted();
+    return audio;
+  };
 
   const _renderThree = (): void => {
     if (!_renderer || !_scene || !_camera || !_threeVisible) return;
@@ -423,7 +441,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     _duduAction.play();
   };
 
-  const _setRayFromPointer = (event: PointerEvent): boolean => {
+  const _setRayFromClientPoint = (clientX: number, clientY: number): boolean => {
     if (!_camera) return false;
     const rect = threeCanvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return false;
@@ -436,19 +454,21 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     const viewportHeight = (rect.height * _renderViewport.height) / layerHeight;
 
     if (
-      event.clientX < viewportLeft ||
-      event.clientX > viewportLeft + viewportWidth ||
-      event.clientY < viewportTop ||
-      event.clientY > viewportTop + viewportHeight
+      clientX < viewportLeft ||
+      clientX > viewportLeft + viewportWidth ||
+      clientY < viewportTop ||
+      clientY > viewportTop + viewportHeight
     ) {
       return false;
     }
 
-    _pointer.x = ((event.clientX - viewportLeft) / Math.max(1, viewportWidth)) * 2 - 1;
-    _pointer.y = -((event.clientY - viewportTop) / Math.max(1, viewportHeight)) * 2 + 1;
+    _pointer.x = ((clientX - viewportLeft) / Math.max(1, viewportWidth)) * 2 - 1;
+    _pointer.y = -((clientY - viewportTop) / Math.max(1, viewportHeight)) * 2 + 1;
     _raycaster.setFromCamera(_pointer, _camera);
     return true;
   };
+
+  const _setRayFromPointer = (event: PointerEvent): boolean => _setRayFromClientPoint(event.clientX, event.clientY);
 
   const _getKeyHitName = (event: PointerEvent): DuduKeyName | null => {
     if (!_setRayFromPointer(event)) return null;
@@ -466,10 +486,27 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     return Boolean(_raycaster.intersectObjects(_duduTargets, false)[0]);
   };
 
+  const _getKeyHitNameFromClientPoint = (clientX: number, clientY: number): DuduKeyName | null => {
+    if (!_setRayFromClientPoint(clientX, clientY)) return null;
+
+    const hit = _raycaster.intersectObjects(_keyTargets, false)[0];
+    if (!hit) return null;
+
+    const hitName = _resolveHitAreaName(hit.object);
+    if (!hitName) return null;
+    return hitName as DuduKeyName;
+  };
+
+  const _isDuduHitFromClientPoint = (clientX: number, clientY: number): boolean => {
+    if (!_setRayFromClientPoint(clientX, clientY)) return false;
+    return Boolean(_raycaster.intersectObjects(_duduTargets, false)[0]);
+  };
+
   const _releaseActiveKey = (): void => {
     if (_activeKeyName) _duduAudio?.stopKey(_activeKeyName);
     _activeKeyName = null;
     _activePointerId = null;
+    _activeTouchId = null;
   };
 
   const _startOrSwitchKey = (keyName: DuduKeyName): void => {
@@ -478,10 +515,18 @@ export function mountOsminogProject(host: HTMLElement): () => void {
 
     if (_activeKeyName) _duduAudio?.stopKey(_activeKeyName);
     _activeKeyName = keyName;
+    const gestureSeq = ++_audioGestureSeq;
 
     // eslint-disable-next-line no-console
     console.log(`[dudu] ${keyName} -> ${note}`);
-    void _duduAudio?.playKey(keyName);
+    void (async () => {
+      const audio = await _ensureDuduAudioStarted();
+      if (!audio) return;
+      if (_disposed) return;
+      if (_activeKeyName !== keyName) return;
+      if (gestureSeq !== _audioGestureSeq) return;
+      await audio.playKey(keyName);
+    })();
   };
 
   const _handleThreePointerDown = (event: PointerEvent): void => {
@@ -503,7 +548,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
 
     if (_animationPlaying) return;
 
-    void _duduAudio?.ensureStarted();
+    void _ensureDuduAudioStarted();
     if (!_isDuduHit(event)) return;
     _playDuduAnimation();
   };
@@ -526,6 +571,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     if (_activePointerId !== event.pointerId) return;
 
     _releaseActiveKey();
+    _audioGestureSeq += 1;
     if (threeCanvas.hasPointerCapture(event.pointerId)) {
       try {
         threeCanvas.releasePointerCapture(event.pointerId);
@@ -533,6 +579,79 @@ export function mountOsminogProject(host: HTMLElement): () => void {
         // ignore pointer capture issues on unsupported devices
       }
     }
+  };
+
+  const _handleThreeTouchStart = (): void => {
+    void _ensureDuduAudioStarted();
+  };
+
+  const _findTrackedTouch = (event: TouchEvent): Touch | null => {
+    const targetTouch =
+      _activeTouchId === null
+        ? event.changedTouches[0] ?? event.touches[0] ?? null
+        : Array.from(event.touches).find((touch) => touch.identifier === _activeTouchId) ??
+          Array.from(event.changedTouches).find((touch) => touch.identifier === _activeTouchId) ??
+          null;
+
+    return targetTouch;
+  };
+
+  const _handleThreeTouchStartInteractive = (event: TouchEvent): void => {
+    if (!_threeVisible) return;
+    if (event.changedTouches.length === 0) return;
+
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+
+    event.preventDefault();
+    void _ensureDuduAudioStarted();
+
+    if (_interactionReady) {
+      const hitName = _getKeyHitNameFromClientPoint(touch.clientX, touch.clientY);
+      if (!hitName) return;
+
+      _activeTouchId = touch.identifier;
+      _startOrSwitchKey(hitName);
+      return;
+    }
+
+    if (_animationPlaying) return;
+    if (!_isDuduHitFromClientPoint(touch.clientX, touch.clientY)) return;
+    _playDuduAnimation();
+  };
+
+  const _handleThreeTouchMove = (event: TouchEvent): void => {
+    if (!_threeVisible || !_interactionReady) return;
+    if (_activeTouchId === null) return;
+
+    const touch = _findTrackedTouch(event);
+    if (!touch) return;
+
+    event.preventDefault();
+
+    const hitName = _getKeyHitNameFromClientPoint(touch.clientX, touch.clientY);
+    if (!hitName) {
+      if (_activeKeyName) _duduAudio?.stopKey(_activeKeyName);
+      _activeKeyName = null;
+      return;
+    }
+
+    _startOrSwitchKey(hitName);
+  };
+
+  const _handleThreeTouchEnd = (event: TouchEvent): void => {
+    if (_activeTouchId === null) return;
+
+    const touch = _findTrackedTouch(event);
+    if (!touch) return;
+
+    event.preventDefault();
+    _releaseActiveKey();
+    _audioGestureSeq += 1;
+  };
+
+  const _handleThreeContextMenu = (event: Event): void => {
+    event.preventDefault();
   };
 
   const _frameThree = (ts: number): void => {
@@ -668,6 +787,12 @@ export function mountOsminogProject(host: HTMLElement): () => void {
 
       threeCanvas.addEventListener("pointerdown", _handleThreePointerDown);
       threeCanvas.addEventListener("pointermove", _handleThreePointerMove);
+      threeCanvas.addEventListener("touchstart", _handleThreeTouchStart, { passive: true });
+      threeCanvas.addEventListener("touchstart", _handleThreeTouchStartInteractive, { passive: false });
+      threeCanvas.addEventListener("touchmove", _handleThreeTouchMove, { passive: false });
+      threeCanvas.addEventListener("touchend", _handleThreeTouchEnd, { passive: false });
+      threeCanvas.addEventListener("touchcancel", _handleThreeTouchEnd, { passive: false });
+      threeCanvas.addEventListener("contextmenu", _handleThreeContextMenu);
       window.addEventListener("pointerup", _handleThreePointerEnd);
       window.addEventListener("pointercancel", _handleThreePointerEnd);
       _threeReady = true;
@@ -692,6 +817,12 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     cancelAnimationFrame(_threeFrame);
     threeCanvas.removeEventListener("pointerdown", _handleThreePointerDown);
     threeCanvas.removeEventListener("pointermove", _handleThreePointerMove);
+    threeCanvas.removeEventListener("touchstart", _handleThreeTouchStart);
+    threeCanvas.removeEventListener("touchstart", _handleThreeTouchStartInteractive);
+    threeCanvas.removeEventListener("touchmove", _handleThreeTouchMove);
+    threeCanvas.removeEventListener("touchend", _handleThreeTouchEnd);
+    threeCanvas.removeEventListener("touchcancel", _handleThreeTouchEnd);
+    threeCanvas.removeEventListener("contextmenu", _handleThreeContextMenu);
     window.removeEventListener("pointerup", _handleThreePointerEnd);
     window.removeEventListener("pointercancel", _handleThreePointerEnd);
     _threeResizeObserver?.disconnect();
