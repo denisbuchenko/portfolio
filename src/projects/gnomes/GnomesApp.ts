@@ -31,6 +31,9 @@ export class GnomesApp {
 
   private _raf = 0;
   private _lastTs = 0;
+  private _started = false;
+  private _disposed = false;
+  private _renderActive = true;
 
   private _getScrollY: () => number;
 
@@ -51,9 +54,12 @@ export class GnomesApp {
   }
 
   async start(): Promise<void> {
+    if (this._started) return;
+    this._started = true;
     this._setStatus("Загрузка гномов…");
 
     await this._factory.load();
+    if (this._disposed) return;
     this._cameraRig.setFocusOffsetY(this._factory.focusOffsetY);
     this._pickOffsetY = this._factory.focusOffsetY;
 
@@ -92,7 +98,8 @@ export class GnomesApp {
     this._canvas.addEventListener("pointerup", this._onPointerUp, { passive: true });
 
     this._lastTs = performance.now();
-    this._raf = requestAnimationFrame((t) => this._frame(t));
+    this._syncSceneState();
+    if (this._renderActive) this._requestNextFrame();
     this._setStatus("Готово • Скролль вниз, чтобы перейти к следующему гному");
   }
 
@@ -111,6 +118,7 @@ export class GnomesApp {
   }
 
   dispose(): void {
+    this._disposed = true;
     window.removeEventListener("resize", this._onResize);
     window.removeEventListener("scroll", this._onScroll);
     this._canvas.removeEventListener("pointerdown", this._onPointerDown);
@@ -121,18 +129,41 @@ export class GnomesApp {
     this._composer.dispose();
   }
 
+  resume(): void {
+    this.setRenderActive(true);
+  }
+
+  pause(): void {
+    this.setRenderActive(false);
+  }
+
+  setRenderActive(active: boolean): void {
+    if (this._disposed) return;
+    if (this._renderActive === active) return;
+
+    this._renderActive = active;
+    if (active) {
+      this._lastTs = performance.now();
+      this._syncSceneState();
+      this._requestNextFrame();
+      return;
+    }
+
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = 0;
+  }
+
   private _frame(ts: number): void {
+    if (!this._renderActive || this._disposed) {
+      this._raf = 0;
+      return;
+    }
+
     this._raf = requestAnimationFrame((t) => this._frame(t));
     const deltaSec = Math.min(0.05, Math.max(0.001, (ts - this._lastTs) * 0.001));
     this._lastTs = ts;
 
-    // Подтягиваем scrollY на каждом кадре — если браузер не триггерит scroll event (иногда на iOS).
-    this._cameraRig.setScrollY(this._getScrollY());
-    this._cameraRig.update(deltaSec);
-
-    for (const g of this._gnomes) g.controller.update(deltaSec);
-
-    this._composer.renderer.render(this._composer.scene, this._cameraRig.camera);
+    this._updateScene(deltaSec);
   }
 
   private _handleResize(): void {
@@ -147,6 +178,7 @@ export class GnomesApp {
 
   private _handleScroll(): void {
     this._cameraRig.setScrollY(this._getScrollY());
+    if (!this._renderActive) return;
   }
 
   private _layoutPages(): void {
@@ -182,11 +214,13 @@ export class GnomesApp {
   }
 
   private _handlePointerDown(e: PointerEvent): void {
+    if (!this._renderActive) return;
     // На мобильных pointerdown часто начинается как скролл — считаем кликом только tap (pointerup без смещения).
     this._tapStart = { x: e.clientX, y: e.clientY, t: performance.now() };
   }
 
   private _handlePointerUp(e: PointerEvent): void {
+    if (!this._renderActive) return;
     if (!this._tapStart) return;
     const dt = performance.now() - this._tapStart.t;
     const dx = e.clientX - this._tapStart.x;
@@ -258,6 +292,26 @@ export class GnomesApp {
   private _setStatus(text: string): void {
     if (!this._statusEl) return;
     this._statusEl.textContent = text;
+  }
+
+  private _requestNextFrame(): void {
+    if (this._raf || !this._renderActive || this._disposed) return;
+    this._raf = requestAnimationFrame((t) => this._frame(t));
+  }
+
+  private _syncSceneState(): void {
+    this._cameraRig.setScrollY(this._getScrollY());
+    this._updateScene(0);
+  }
+
+  private _updateScene(deltaSec: number): void {
+    // Подтягиваем scrollY на каждом кадре — если браузер не триггерит scroll event (иногда на iOS).
+    this._cameraRig.setScrollY(this._getScrollY());
+    this._cameraRig.update(deltaSec);
+
+    for (const g of this._gnomes) g.controller.update(deltaSec);
+
+    this._composer.renderer.render(this._composer.scene, this._cameraRig.camera);
   }
 }
 

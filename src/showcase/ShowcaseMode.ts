@@ -518,6 +518,7 @@ export class ShowcaseMode {
     const getScrollY = (): number => Math.max(0, hostEl.scrollTop - sectionEl.offsetTop);
 
     const app = new GnomesApp({ canvas, statusEl: status, uiRoot, getScrollY });
+    app.setRenderActive(s.hot);
 
     let disposed = false;
     void app.start().catch((e) => {
@@ -533,10 +534,10 @@ export class ShowcaseMode {
       app.dispose();
     };
     s.activateProject = () => {
-      this._callProjectMethod(app, ["resume", "wake", "startRendering"]);
+      app.resume();
     };
     s.deactivateProject = () => {
-      this._callProjectMethod(app, ["pause", "sleep", "stopRendering", "suspend"]);
+      app.pause();
     };
   }
 
