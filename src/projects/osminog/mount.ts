@@ -114,6 +114,22 @@ function _getContainedViewport(
   };
 }
 
+function _getCenteredViewportInRegion(
+  regionX: number,
+  regionY: number,
+  regionWidth: number,
+  regionHeight: number,
+  aspect: number
+): _RenderViewport {
+  const viewport = _getContainedViewport(regionWidth, regionHeight, aspect);
+  return {
+    x: regionX + viewport.x,
+    y: regionY + viewport.y,
+    width: viewport.width,
+    height: viewport.height
+  };
+}
+
 export function mountOsminogProject(host: HTMLElement): () => void {
   host.innerHTML = "";
   host.style.display = "block";
@@ -132,10 +148,14 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   animContainer.className = "osminog__anim";
   stage.appendChild(animContainer);
 
+  const threeLayer = document.createElement("div");
+  threeLayer.className = "osminog__three-layer";
+  stage.appendChild(threeLayer);
+
   const threeCanvas = document.createElement("canvas");
   threeCanvas.className = "osminog__three";
   threeCanvas.setAttribute("aria-label", "3D дудка");
-  animContainer.appendChild(threeCanvas);
+  threeLayer.appendChild(threeCanvas);
 
   const loading = document.createElement("div");
   loading.className = "osminog__loading";
@@ -222,8 +242,8 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   const _renderThree = (): void => {
     if (!_renderer || !_scene || !_camera || !_threeVisible) return;
 
-    const fullWidth = Math.max(1, animContainer.clientWidth);
-    const fullHeight = Math.max(1, animContainer.clientHeight);
+    const fullWidth = Math.max(1, threeLayer.clientWidth);
+    const fullHeight = Math.max(1, threeLayer.clientHeight);
 
     _renderer.setViewport(0, 0, fullWidth, fullHeight);
     _renderer.setScissorTest(false);
@@ -239,10 +259,12 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   const _resizeThree = (): void => {
     if (!_renderer || !_camera) return;
 
-    const width = Math.max(1, animContainer.clientWidth);
-    const height = Math.max(1, animContainer.clientHeight);
+    const width = Math.max(1, threeLayer.clientWidth);
+    const height = Math.max(1, threeLayer.clientHeight);
+    const regionTop = Math.round(height * 0.04);
+    const regionHeight = Math.max(1, Math.round(height * 0.92));
 
-    _renderViewport = _getContainedViewport(width, height, _cameraAspect);
+    _renderViewport = _getCenteredViewportInRegion(0, regionTop, width, regionHeight, _cameraAspect);
     _camera.aspect = _cameraAspect;
     _camera.updateProjectionMatrix();
     _renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -284,10 +306,12 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     const rect = threeCanvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
 
-    const viewportLeft = rect.left + (rect.width * _renderViewport.x) / Math.max(1, animContainer.clientWidth);
-    const viewportTop = rect.top + (rect.height * _renderViewport.y) / Math.max(1, animContainer.clientHeight);
-    const viewportWidth = (rect.width * _renderViewport.width) / Math.max(1, animContainer.clientWidth);
-    const viewportHeight = (rect.height * _renderViewport.height) / Math.max(1, animContainer.clientHeight);
+    const layerWidth = Math.max(1, threeLayer.clientWidth);
+    const layerHeight = Math.max(1, threeLayer.clientHeight);
+    const viewportLeft = rect.left + (rect.width * _renderViewport.x) / layerWidth;
+    const viewportTop = rect.top + (rect.height * _renderViewport.y) / layerHeight;
+    const viewportWidth = (rect.width * _renderViewport.width) / layerWidth;
+    const viewportHeight = (rect.height * _renderViewport.height) / layerHeight;
 
     if (
       event.clientX < viewportLeft ||
@@ -439,7 +463,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
       }
 
       _threeResizeObserver = new ResizeObserver(_resizeThree);
-      _threeResizeObserver.observe(animContainer);
+      _threeResizeObserver.observe(threeLayer);
       _resizeThree();
 
       threeCanvas.addEventListener("pointerdown", _handleThreePointerDown);
