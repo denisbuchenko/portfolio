@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { enableShadowsAndSrgb, loadGltf } from "../city/three/loadGltf";
+import { OSMINOG_DUDU_CONFIG } from "./config";
 import { LottieSegmentsController, type OsminogUiMode } from "./LottieSegmentsController";
 
 function _setActiveBtn(btn: HTMLButtonElement, active: boolean): void {
@@ -57,13 +58,18 @@ function _disposeThreeObject(root: THREE.Object3D): void {
 }
 
 function _setupDuduLights(scene: THREE.Scene, root: THREE.Object3D): void {
-  const ambient = new THREE.AmbientLight(0xffffff, 1.4);
+  const ambient = new THREE.AmbientLight(0xffffff, OSMINOG_DUDU_CONFIG.lighting.ambientIntensity);
   scene.add(ambient);
 
-  const key = new THREE.DirectionalLight(0xfff2d8, 1.75);
+  const key = new THREE.DirectionalLight(0xfff2d8, OSMINOG_DUDU_CONFIG.lighting.keyIntensity);
   const lightAnchor = root.getObjectByName("Area");
   if (lightAnchor) key.position.copy(lightAnchor.getWorldPosition(new THREE.Vector3()));
-  else key.position.set(0.9, 1.1, 1.2);
+  else
+    key.position.set(
+      OSMINOG_DUDU_CONFIG.lighting.fallbackKeyPosition.x,
+      OSMINOG_DUDU_CONFIG.lighting.fallbackKeyPosition.y,
+      OSMINOG_DUDU_CONFIG.lighting.fallbackKeyPosition.z
+    );
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.near = 0.1;
@@ -71,12 +77,20 @@ function _setupDuduLights(scene: THREE.Scene, root: THREE.Object3D): void {
   key.shadow.bias = -0.0002;
   scene.add(key);
 
-  const fill = new THREE.DirectionalLight(0x87c8ff, 1.05);
-  fill.position.set(-1.2, 1.1, 1.5);
+  const fill = new THREE.DirectionalLight(0x87c8ff, OSMINOG_DUDU_CONFIG.lighting.fillIntensity);
+  fill.position.set(
+    OSMINOG_DUDU_CONFIG.lighting.fillPosition.x,
+    OSMINOG_DUDU_CONFIG.lighting.fillPosition.y,
+    OSMINOG_DUDU_CONFIG.lighting.fillPosition.z
+  );
   scene.add(fill);
 
-  const rim = new THREE.DirectionalLight(0xa78bfa, 0.8);
-  rim.position.set(0.2, 1.4, -1.6);
+  const rim = new THREE.DirectionalLight(0xa78bfa, OSMINOG_DUDU_CONFIG.lighting.rimIntensity);
+  rim.position.set(
+    OSMINOG_DUDU_CONFIG.lighting.rimPosition.x,
+    OSMINOG_DUDU_CONFIG.lighting.rimPosition.y,
+    OSMINOG_DUDU_CONFIG.lighting.rimPosition.z
+  );
   scene.add(rim);
 }
 
@@ -130,6 +144,97 @@ function _getCenteredViewportInRegion(
   };
 }
 
+function _applyViewportAdjustments(
+  viewport: _RenderViewport,
+  containerWidth: number,
+  containerHeight: number
+): _RenderViewport {
+  const scale = Math.max(0.1, OSMINOG_DUDU_CONFIG.frame.scale);
+  const scaledWidth = Math.max(1, Math.round(viewport.width * scale));
+  const scaledHeight = Math.max(1, Math.round(viewport.height * scale));
+
+  const centeredX = viewport.x + Math.round((viewport.width - scaledWidth) * 0.5);
+  const centeredY = viewport.y + Math.round((viewport.height - scaledHeight) * 0.5);
+
+  const adjustedX = centeredX + OSMINOG_DUDU_CONFIG.frame.offsetXPx;
+  const adjustedY = centeredY + OSMINOG_DUDU_CONFIG.frame.offsetYPx;
+
+  const clampedWidth = Math.min(scaledWidth, containerWidth);
+  const clampedHeight = Math.min(scaledHeight, containerHeight);
+
+  return {
+    x: Math.min(Math.max(0, adjustedX), Math.max(0, containerWidth - clampedWidth)),
+    y: Math.min(Math.max(0, adjustedY), Math.max(0, containerHeight - clampedHeight)),
+    width: clampedWidth,
+    height: clampedHeight
+  };
+}
+
+type _CameraFrame = {
+  position: THREE.Vector3;
+  target: THREE.Vector3;
+  forward: THREE.Vector3;
+  right: THREE.Vector3;
+  up: THREE.Vector3;
+};
+
+function _captureCameraFrame(camera: THREE.PerspectiveCamera): _CameraFrame {
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.normalize();
+
+  const up = camera.up.clone().applyQuaternion(camera.quaternion).normalize();
+  const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+  const orthogonalUp = new THREE.Vector3().crossVectors(right, forward).normalize();
+  const target = camera.position
+    .clone()
+    .add(forward.clone().multiplyScalar(OSMINOG_DUDU_CONFIG.camera.focusDistance));
+
+  return {
+    position: camera.position.clone(),
+    target,
+    forward,
+    right,
+    up: orthogonalUp
+  };
+}
+
+function _applyCameraConfig(camera: THREE.PerspectiveCamera): void {
+  const frame = _captureCameraFrame(camera);
+  const panOffset = frame.right
+    .clone()
+    .multiplyScalar(OSMINOG_DUDU_CONFIG.camera.pan.x)
+    .add(frame.up.clone().multiplyScalar(OSMINOG_DUDU_CONFIG.camera.pan.y));
+
+  const position = frame.position
+    .clone()
+    .add(panOffset)
+    .add(frame.forward.clone().multiplyScalar(OSMINOG_DUDU_CONFIG.camera.dolly));
+
+  const target = frame.target
+    .clone()
+    .add(panOffset)
+    .add(frame.right.clone().multiplyScalar(OSMINOG_DUDU_CONFIG.camera.aim.x))
+    .add(frame.up.clone().multiplyScalar(OSMINOG_DUDU_CONFIG.camera.aim.y));
+
+  camera.position.copy(position);
+
+  if (OSMINOG_DUDU_CONFIG.camera.fovOffsetDeg !== 0) {
+    camera.fov += OSMINOG_DUDU_CONFIG.camera.fovOffsetDeg;
+  }
+
+  camera.lookAt(target);
+  camera.updateProjectionMatrix();
+}
+
+function _createFallbackCamera(): THREE.PerspectiveCamera {
+  const fallback = OSMINOG_DUDU_CONFIG.camera.fallback;
+  const camera = new THREE.PerspectiveCamera(fallback.fovDeg, 1, fallback.near, fallback.far);
+  camera.position.set(fallback.position.x, fallback.position.y, fallback.position.z);
+  camera.lookAt(fallback.target.x, fallback.target.y, fallback.target.z);
+  return camera;
+}
+
 export function mountOsminogProject(host: HTMLElement): () => void {
   host.innerHTML = "";
   host.style.display = "block";
@@ -150,6 +255,8 @@ export function mountOsminogProject(host: HTMLElement): () => void {
 
   const threeLayer = document.createElement("div");
   threeLayer.className = "osminog__three-layer";
+  threeLayer.style.top = `${OSMINOG_DUDU_CONFIG.layer.topPercent * 100}%`;
+  threeLayer.style.height = `${OSMINOG_DUDU_CONFIG.layer.heightPercent * 100}%`;
   stage.appendChild(threeLayer);
 
   const threeCanvas = document.createElement("canvas");
@@ -261,10 +368,11 @@ export function mountOsminogProject(host: HTMLElement): () => void {
 
     const width = Math.max(1, threeLayer.clientWidth);
     const height = Math.max(1, threeLayer.clientHeight);
-    const regionTop = Math.round(height * 0.04);
-    const regionHeight = Math.max(1, Math.round(height * 0.92));
+    const regionTop = Math.round(height * OSMINOG_DUDU_CONFIG.frame.topPercent);
+    const regionHeight = Math.max(1, Math.round(height * OSMINOG_DUDU_CONFIG.frame.heightPercent));
 
-    _renderViewport = _getCenteredViewportInRegion(0, regionTop, width, regionHeight, _cameraAspect);
+    const baseViewport = _getCenteredViewportInRegion(0, regionTop, width, regionHeight, _cameraAspect);
+    _renderViewport = _applyViewportAdjustments(baseViewport, width, height);
     _camera.aspect = _cameraAspect;
     _camera.updateProjectionMatrix();
     _renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -368,7 +476,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     try {
       const [mod, gltf] = await Promise.all([
         import("lottie-web"),
-        loadGltf("/sunduc/dudu.glb")
+        loadGltf(OSMINOG_DUDU_CONFIG.assetUrl)
       ]);
       if (_disposed) return;
 
@@ -413,16 +521,18 @@ export function mountOsminogProject(host: HTMLElement): () => void {
       _setupDuduLights(_scene, _threeRoot);
 
       const embeddedCamera = _threeRoot.getObjectByName("main Camera");
-      if (embeddedCamera instanceof THREE.PerspectiveCamera) {
+      if (OSMINOG_DUDU_CONFIG.camera.useEmbeddedCamera && embeddedCamera instanceof THREE.PerspectiveCamera) {
         _camera = embeddedCamera;
-        _cameraAspect = embeddedCamera.aspect > 0 ? embeddedCamera.aspect : 16 / 9;
+        _cameraAspect =
+          OSMINOG_DUDU_CONFIG.camera.preserveEmbeddedAspect && embeddedCamera.aspect > 0
+            ? embeddedCamera.aspect
+            : 16 / 9;
       } else {
-        _camera = new THREE.PerspectiveCamera(28, 1, 0.1, 100);
+        _camera = _createFallbackCamera();
         _cameraAspect = 16 / 9;
-        _camera.position.set(-0.12, 0.68, 2.02);
-        _camera.lookAt(0, 0.55, 0.8);
         _scene.add(_camera);
       }
+      _applyCameraConfig(_camera);
 
       const duduRoot = _threeRoot.getObjectByName("Cylinder");
       _duduTargets = _collectMeshTargets(duduRoot);
