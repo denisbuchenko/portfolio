@@ -537,6 +537,7 @@ canvas {
 }
 
 .osminog__anim {
+  position: relative;
   width: min(92vw, 720px);
   height: min(62vh, 520px);
   border-radius: 18px;
@@ -546,9 +547,33 @@ canvas {
   overflow: hidden;
 }
 
+.osminog__anim svg {
+  position: relative;
+  z-index: 1;
+}
+
+.osminog__three {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  background: transparent;
+  transition: opacity 180ms ease;
+}
+
+.osminog__three--visible {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
 .osminog__loading {
   position: absolute;
   inset: 0;
+  z-index: 3;
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -566,6 +591,15 @@ canvas {
   position: absolute;
   left: 14px;
   top: 14px;
+  pointer-events: auto;
+}
+
+.osminog__dudu-toggle {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  min-width: 78px;
+  padding-inline: 12px;
   pointer-events: auto;
 }
 

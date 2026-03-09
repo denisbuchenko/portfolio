@@ -62,7 +62,6 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
     </div>
     <aside class="sunduc__debug${SUNDUC_CONFIG.debug.showPanel ? "" : " sunduc__debug--hidden"}">
       <div class="sunduc__debug-title">Debug Animations</div>
-      <div class="sunduc__debug-summary">Считываю клипы…</div>
       <div class="sunduc__debug-group">
         <div class="sunduc__debug-label">Камни</div>
         <div class="sunduc__debug-grid sunduc__debug-stones"></div>
@@ -71,6 +70,7 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
         <div class="sunduc__debug-label">Сценарий</div>
         <div class="sunduc__debug-grid sunduc__debug-sequence"></div>
       </div>
+      <div class="sunduc__debug-summary">Считываю клипы…</div>
     </aside>
   `;
 
