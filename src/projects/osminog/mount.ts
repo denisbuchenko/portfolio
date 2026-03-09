@@ -237,7 +237,14 @@ function _createFallbackCamera(): THREE.PerspectiveCamera {
   return camera;
 }
 
-export function mountOsminogProject(host: HTMLElement): () => void {
+export type MountedOsminogProject = {
+  dispose(): void;
+  pause(): void;
+  resume(): void;
+  setRenderActive(active: boolean): void;
+};
+
+export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
   host.innerHTML = "";
   host.style.display = "block";
   host.style.padding = "0";
@@ -339,6 +346,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   });
 
   let _disposed = false;
+  let _renderActive = true;
   let _unsubscribe: (() => void) | null = null;
   let _controller: LottieSegmentsController | null = null;
   let _anim: import("lottie-web").AnimationItem | null = null;
@@ -392,6 +400,49 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     if (!audio) return null;
     await audio.ensureStarted();
     return audio;
+  };
+
+  const _requestThreeFrame = (): void => {
+    if (_threeFrame || _disposed || !_renderActive || !_threeReady) return;
+    _lastFrameTs = performance.now();
+    _threeFrame = requestAnimationFrame(_frameThree);
+  };
+
+  const _releaseThreeInteraction = (): void => {
+    if (_activePointerId !== null && threeCanvas.hasPointerCapture(_activePointerId)) {
+      try {
+        threeCanvas.releasePointerCapture(_activePointerId);
+      } catch {
+        // ignore pointer capture issues on unsupported devices
+      }
+    }
+    _releaseActiveKey();
+    _audioGestureSeq += 1;
+  };
+
+  const _setPlaybackActive = (active: boolean): void => {
+    if (_anim) {
+      if (active) _anim.play();
+      else _anim.pause();
+    }
+
+    if (!active) {
+      _duduAudio?.stopAll();
+      _releaseThreeInteraction();
+      if (!_melodyTracker?.getState().isLocked) _melodyTracker?.reset();
+      if (_melodySuccessTimer) {
+        window.clearTimeout(_melodySuccessTimer);
+        _melodySuccessTimer = 0;
+      }
+      melodyProgress.classList.remove("osminog__melody-progress--hidden");
+      melodySuccess.classList.remove("osminog__melody-success--visible");
+      if (_threeFrame) cancelAnimationFrame(_threeFrame);
+      _threeFrame = 0;
+      return;
+    }
+
+    _requestThreeFrame();
+    if (_threeVisible) _renderThree();
   };
 
   const _renderThree = (): void => {
@@ -581,6 +632,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   };
 
   const _handleThreePointerDown = (event: PointerEvent): void => {
+    if (!_renderActive) return;
     if (!_threeVisible || !_camera) return;
 
     if (_interactionReady) {
@@ -605,6 +657,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   };
 
   const _handleThreePointerMove = (event: PointerEvent): void => {
+    if (!_renderActive) return;
     if (!_threeVisible || !_interactionReady) return;
     if (_activePointerId !== event.pointerId) return;
 
@@ -619,6 +672,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   };
 
   const _handleThreePointerEnd = (event: PointerEvent): void => {
+    if (!_renderActive) return;
     if (_activePointerId !== event.pointerId) return;
 
     _releaseActiveKey();
@@ -633,6 +687,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   };
 
   const _handleThreeTouchStart = (): void => {
+    if (!_renderActive) return;
     void _ensureDuduAudioStarted();
   };
 
@@ -648,6 +703,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   };
 
   const _handleThreeTouchStartInteractive = (event: TouchEvent): void => {
+    if (!_renderActive) return;
     if (!_threeVisible) return;
     if (event.changedTouches.length === 0) return;
 
@@ -672,6 +728,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   };
 
   const _handleThreeTouchMove = (event: TouchEvent): void => {
+    if (!_renderActive) return;
     if (!_threeVisible || !_interactionReady) return;
     if (_activeTouchId === null) return;
 
@@ -691,6 +748,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   };
 
   const _handleThreeTouchEnd = (event: TouchEvent): void => {
+    if (!_renderActive) return;
     if (_activeTouchId === null) return;
 
     const touch = _findTrackedTouch(event);
@@ -706,7 +764,10 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   };
 
   const _frameThree = (ts: number): void => {
-    if (_disposed) return;
+    if (_disposed || !_renderActive) {
+      _threeFrame = 0;
+      return;
+    }
 
     const deltaSeconds = Math.min(0.05, Math.max(0.001, (ts - _lastFrameTs) * 0.001));
     _lastFrameTs = ts;
@@ -854,7 +915,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
       window.addEventListener("pointercancel", _handleThreePointerEnd);
       _threeReady = true;
       btnDudu.disabled = false;
-      _threeFrame = requestAnimationFrame(_frameThree);
+      _setPlaybackActive(_renderActive);
       _updateLoadingState();
     } catch (e) {
       loading.textContent = `Ошибка загрузки: ${e instanceof Error ? e.message : String(e)}`;
@@ -866,7 +927,8 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   btn3.addEventListener("click", () => _controller?.request(3));
   btnDudu.addEventListener("click", () => _setDuduVisible(!_threeVisible));
 
-  return () => {
+  const _mounted: MountedOsminogProject = {
+    dispose(): void {
     _disposed = true;
     _unsubscribe?.();
     _controller?.dispose();
@@ -893,6 +955,21 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     if (_threeRoot) _disposeThreeObject(_threeRoot);
     root.remove();
     host.classList.remove("launcher--puzzle");
+    },
+    pause(): void {
+      _mounted.setRenderActive(false);
+    },
+    resume(): void {
+      _mounted.setRenderActive(true);
+    },
+    setRenderActive(active: boolean): void {
+      if (_disposed) return;
+      if (_renderActive === active) return;
+      _renderActive = active;
+      _setPlaybackActive(active);
+    }
   };
+
+  return _mounted;
 }
 

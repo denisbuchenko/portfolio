@@ -422,11 +422,16 @@ export class ShowcaseMode {
     const container = s.containerEl;
     container.innerHTML = "";
 
-    const disposeSunduc = mountSunducProject(container, { embedded: true });
-    s.projectRef = null;
-    s.disposeProject = disposeSunduc;
-    s.activateProject = null;
-    s.deactivateProject = null;
+    const project = mountSunducProject(container, { embedded: true });
+    project.setRenderActive(s.hot);
+    s.projectRef = project;
+    s.disposeProject = () => project.dispose();
+    s.activateProject = () => {
+      project.resume();
+    };
+    s.deactivateProject = () => {
+      project.pause();
+    };
   }
 
   /* ── Particles ── */
@@ -593,16 +598,22 @@ export class ShowcaseMode {
     const container = s.containerEl;
     container.innerHTML = "";
 
-    const disposeOsminog = mountOsminogProject(container);
+    const project = mountOsminogProject(container);
 
     // Убираем кнопку «В меню» из осьминога (в витрине она не нужна)
     const menuBtn = container.querySelector(".osminog__menu");
     menuBtn?.remove();
 
-    s.projectRef = null;
-    s.disposeProject = disposeOsminog;
-    s.activateProject = null;
-    s.deactivateProject = null;
+    project.setRenderActive(s.hot);
+
+    s.projectRef = project;
+    s.disposeProject = () => project.dispose();
+    s.activateProject = () => {
+      project.resume();
+    };
+    s.deactivateProject = () => {
+      project.pause();
+    };
   }
 
   // ── interaction gate ───────────────────────────────────────────────────────

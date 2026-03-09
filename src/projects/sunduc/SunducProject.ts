@@ -21,6 +21,7 @@ export class SunducProject {
   private _interactiveClipNames: string[] = [];
   private _frameHandle = 0;
   private _disposed = false;
+  private _renderActive = true;
 
   constructor(options: SunducProjectOptions) {
     this._ui = createSunducUI({
@@ -57,6 +58,32 @@ export class SunducProject {
     this._rotationController.dispose();
     this._viewer.dispose();
     this._ui.dispose();
+  }
+
+  resume(): void {
+    this.setRenderActive(true);
+  }
+
+  pause(): void {
+    this.setRenderActive(false);
+  }
+
+  setRenderActive(active: boolean): void {
+    if (this._disposed) return;
+    if (this._renderActive === active) return;
+
+    this._renderActive = active;
+    if (active) {
+      this._clock.start();
+      this._clock.getDelta();
+      this._renderOnce(0);
+      this._requestFrame();
+      return;
+    }
+
+    this._clock.stop();
+    cancelAnimationFrame(this._frameHandle);
+    this._frameHandle = 0;
   }
 
   private async _load(): Promise<void> {
@@ -101,13 +128,25 @@ export class SunducProject {
   }
 
   private _frame = (): void => {
-    if (this._disposed) return;
+    if (this._disposed || !this._renderActive) {
+      this._frameHandle = 0;
+      return;
+    }
 
     const deltaSeconds = Math.min(this._clock.getDelta(), 0.05);
-    this._rotationController.update(deltaSeconds);
-    this._animationController?.update(deltaSeconds);
-    this._viewer.render();
+    this._renderOnce(deltaSeconds);
 
     this._frameHandle = requestAnimationFrame(this._frame);
   };
+
+  private _requestFrame(): void {
+    if (this._frameHandle || this._disposed || !this._renderActive) return;
+    this._frameHandle = requestAnimationFrame(this._frame);
+  }
+
+  private _renderOnce(deltaSeconds: number): void {
+    this._rotationController.update(deltaSeconds);
+    this._animationController?.update(deltaSeconds);
+    this._viewer.render();
+  }
 }
