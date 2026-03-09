@@ -3,6 +3,7 @@ import { enableShadowsAndSrgb, loadGltf } from "../city/three/loadGltf";
 import { OSMINOG_DUDU_CONFIG } from "./config";
 import { createDuduAudio, type DuduAudio, type DuduKeyName } from "./createDuduAudio";
 import { LottieSegmentsController, type OsminogUiMode } from "./LottieSegmentsController";
+import { MelodySequenceTracker, type MelodyTrackerState } from "./MelodySequenceTracker";
 
 function _setActiveBtn(btn: HTMLButtonElement, active: boolean): void {
   if (active) btn.classList.add("btn--active");
@@ -294,6 +295,11 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   controls.className = "osminog__controls";
   uiRoot.appendChild(controls);
 
+  const melodyProgress = document.createElement("div");
+  melodyProgress.className = "osminog__melody-progress";
+  melodyProgress.setAttribute("aria-label", "Прогресс мелодии");
+  uiRoot.appendChild(melodyProgress);
+
   const btn1 = document.createElement("button");
   btn1.className = "btn osminog__seg-btn";
   btn1.type = "button";
@@ -318,6 +324,14 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   btn1.disabled = true;
   btn2.disabled = true;
   btn3.disabled = true;
+
+  const melodyDots = OSMINOG_DUDU_CONFIG.melody.sequences.map((_, index) => {
+    const dot = document.createElement("span");
+    dot.className = "osminog__melody-dot";
+    dot.setAttribute("aria-label", `Комбинация ${index + 1}`);
+    melodyProgress.appendChild(dot);
+    return dot;
+  });
 
   let _disposed = false;
   let _unsubscribe: (() => void) | null = null;
@@ -346,6 +360,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   let _activePointerId: number | null = null;
   let _activeTouchId: number | null = null;
   let _activeKeyName: DuduKeyName | null = null;
+  let _melodyTracker: MelodySequenceTracker<(typeof OSMINOG_DUDU_CONFIG.melody.sequences)[number][number]> | null = null;
   const _replacedHitMaterials: THREE.Material[] = [];
 
   const _raycaster = new THREE.Raycaster();
@@ -416,9 +431,18 @@ export function mountOsminogProject(host: HTMLElement): () => void {
       _duduAudio?.stopAll();
       _activePointerId = null;
       _activeKeyName = null;
+      _melodyTracker?.reset();
     }
 
     if (_threeVisible) _renderThree();
+  };
+
+  const _updateMelodyProgressUi = (state: MelodyTrackerState): void => {
+    for (const [index, dot] of melodyDots.entries()) {
+      const completed = index < state.completedSequenceCount;
+      dot.classList.toggle("osminog__melody-dot--done", completed);
+    }
+    melodyProgress.classList.toggle("osminog__melody-progress--complete", state.isCompleted);
   };
 
   const _handleThreeAnimationFinished = (event: THREE.Event): void => {
@@ -516,6 +540,8 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     if (_activeKeyName) _duduAudio?.stopKey(_activeKeyName);
     _activeKeyName = keyName;
     const gestureSeq = ++_audioGestureSeq;
+
+    _melodyTracker?.notePlayed(note);
 
     // eslint-disable-next-line no-console
     console.log(`[dudu] ${keyName} -> ${note}`);
@@ -671,6 +697,12 @@ export function mountOsminogProject(host: HTMLElement): () => void {
   const _updateLoadingState = (): void => {
     if (_lottieReady && _threeReady) loading.remove();
   };
+
+  _melodyTracker = new MelodySequenceTracker({
+    pauseResetMs: OSMINOG_DUDU_CONFIG.melody.pauseResetMs,
+    sequences: OSMINOG_DUDU_CONFIG.melody.sequences,
+    onStateChange: _updateMelodyProgressUi
+  });
 
   void (async () => {
     try {
@@ -828,6 +860,7 @@ export function mountOsminogProject(host: HTMLElement): () => void {
     _threeResizeObserver?.disconnect();
     if (_mixer) _mixer.removeEventListener("finished", _handleThreeAnimationFinished);
     _duduAudio?.dispose();
+    _melodyTracker?.dispose();
     _renderer?.dispose();
     _invisibleHitMaterial?.dispose();
     for (const material of _replacedHitMaterials) material.dispose();

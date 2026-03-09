@@ -71,6 +71,15 @@ export const OSMINOG_DUDU_CONFIG = {
     compressorRatio: 3,
     attackSec: 0.02,
     releaseSec: 0.42
+  },
+  melody: {
+    pauseResetMs: 3000,
+    sequences: [
+      ["G4", "G4", "A4", "G4", "C5", "B4"],
+      ["G4", "G4", "A4", "G4", "D5", "C5"],
+      ["G4", "G4", "G5", "E5", "C5", "B4", "A4"],
+      ["F5", "F5", "E5", "C5", "D5", "C5"]
+    ]
   }
 } as const;
 
