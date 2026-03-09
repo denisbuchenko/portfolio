@@ -25,6 +25,14 @@ export class PuzzleProject {
   private _sourceImg: HTMLImageElement | null = null;
   private _rafId = 0;
   private _resizeRaf = 0;
+  private _disposed = false;
+  private _renderActive = true;
+
+  private _onCanvasPointerDown = (e: PointerEvent) => this._onPointerDown(e);
+  private _onCanvasPointerMove = (e: PointerEvent) => this._onPointerMove(e);
+  private _onCanvasPointerMoveDraw = (e: PointerEvent) => this._onPointerMoveDraw(e);
+  private _onCanvasPointerUpOrCancel = (e: PointerEvent) => this._onPointerUpOrCancel(e);
+  private _onWindowResize = () => this._scheduleRebuild();
 
   constructor(host: HTMLElement) {
     this._ui = mountPuzzleUI({ 
@@ -59,15 +67,32 @@ export class PuzzleProject {
   }
 
   private _setupEventListeners(): void {
-    this._ui.canvas.addEventListener("pointerdown", (e) => this._onPointerDown(e));
-    this._ui.canvas.addEventListener("pointermove", (e) => this._onPointerMove(e));
-    this._ui.canvas.addEventListener("pointermove", (e) => this._onPointerMoveDraw(e));
-    this._ui.canvas.addEventListener("pointerup", (e) => this._onPointerUpOrCancel(e));
-    this._ui.canvas.addEventListener("pointercancel", (e) => this._onPointerUpOrCancel(e));
+    this._ui.canvas.addEventListener("pointerdown", this._onCanvasPointerDown);
+    this._ui.canvas.addEventListener("pointermove", this._onCanvasPointerMove);
+    this._ui.canvas.addEventListener("pointermove", this._onCanvasPointerMoveDraw);
+    this._ui.canvas.addEventListener("pointerup", this._onCanvasPointerUpOrCancel);
+    this._ui.canvas.addEventListener("pointercancel", this._onCanvasPointerUpOrCancel);
 
-    window.addEventListener("resize", () => {
-      if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
-      this._resizeRaf = requestAnimationFrame(() => void this._rebuild());
+    window.addEventListener("resize", this._onWindowResize);
+  }
+
+  private _removeEventListeners(): void {
+    this._ui.canvas.removeEventListener("pointerdown", this._onCanvasPointerDown);
+    this._ui.canvas.removeEventListener("pointermove", this._onCanvasPointerMove);
+    this._ui.canvas.removeEventListener("pointermove", this._onCanvasPointerMoveDraw);
+    this._ui.canvas.removeEventListener("pointerup", this._onCanvasPointerUpOrCancel);
+    this._ui.canvas.removeEventListener("pointercancel", this._onCanvasPointerUpOrCancel);
+
+    window.removeEventListener("resize", this._onWindowResize);
+  }
+
+  private _scheduleRebuild(): void {
+    if (this._disposed) return;
+    if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+    this._resizeRaf = requestAnimationFrame(() => {
+      this._resizeRaf = 0;
+      void this._rebuild();
+      this._renderOnce();
     });
   }
 
@@ -77,7 +102,8 @@ export class PuzzleProject {
       await this._rebuild();
       await this._renderer?.loadAndPrewarm(getDpr());
 
-      if (!this._rafId) this._rafId = window.requestAnimationFrame(() => this._frame());
+      if (this._renderActive) this._requestFrame();
+      else this._renderOnce();
       this._ui.statusEl.classList.add("puzzle__status--ready");
     } catch (e) {
       this._ui.statusEl.textContent = e instanceof Error ? e.message : String(e);
@@ -89,6 +115,7 @@ export class PuzzleProject {
   }
 
   private _onPointerDown(e: PointerEvent): void {
+    if (!this._renderActive) return;
     if (!this._manager.geom) return;
     if (this._manager.drag || this._manager.draw) return;
 
@@ -112,16 +139,19 @@ export class PuzzleProject {
   }
 
   private _onPointerMove(e: PointerEvent): void {
+    if (!this._renderActive) return;
     this._input.handlePointerMove(e, this._ui.canvas, this._manager.drag, this._groupSys, (x, y) =>
       this._maskBitsAt(x, y)
     );
   }
 
   private _onPointerMoveDraw(e: PointerEvent): void {
+    if (!this._renderActive) return;
     this._input.handlePointerMoveDraw(e, this._ui.canvas, this._manager.draw, this._paint);
   }
 
   private _onPointerUpOrCancel(e: PointerEvent): void {
+    if (!this._renderActive) return;
     this._input.handlePointerUpOrCancel(
       e,
       this._ui.canvas,
@@ -154,18 +184,89 @@ export class PuzzleProject {
   }
 
   dispose(): void {
+    this._disposed = true;
     if (this._rafId) {
       cancelAnimationFrame(this._rafId);
       this._rafId = 0;
     }
+    if (this._resizeRaf) {
+      cancelAnimationFrame(this._resizeRaf);
+      this._resizeRaf = 0;
+    }
+    this._resetInteractions();
+    this._removeEventListeners();
     this._ui.destroy();
   }
 
+  resume(): void {
+    this.setRenderActive(true);
+  }
+
+  pause(): void {
+    this.setRenderActive(false);
+  }
+
+  setRenderActive(active: boolean): void {
+    if (this._disposed) return;
+    if (this._renderActive === active) return;
+
+    this._renderActive = active;
+    if (active) {
+      this._renderOnce();
+      this._requestFrame();
+      return;
+    }
+
+    this._resetInteractions();
+    if (this._rafId) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = 0;
+    }
+  }
+
   private _frame(): void {
+    if (this._disposed || !this._renderActive) {
+      this._rafId = 0;
+      return;
+    }
+
     this._rafId = window.requestAnimationFrame(() => this._frame());
+    this._renderOnce();
+  }
+
+  private _requestFrame(): void {
+    if (this._rafId || this._disposed || !this._renderActive) return;
+    this._rafId = window.requestAnimationFrame(() => this._frame());
+  }
+
+  private _renderOnce(): void {
     const dpr = getDpr();
     this._renderer?.render(this._manager.pieces, performance.now() * 0.001, dpr);
     this._manager.updateStatus(this._ui, this._groupSys);
+  }
+
+  private _resetInteractions(): void {
+    const drag = this._manager.drag;
+    const draw = this._manager.draw;
+
+    if (drag) {
+      try {
+        this._ui.canvas.releasePointerCapture(drag.pointerId);
+      } catch {
+        // ignore
+      }
+      this._manager.setDrag(null);
+      if (this._manager.geom) this._manager.trySnapGroup(drag.groupId, this._groupSys);
+    }
+
+    if (draw) {
+      try {
+        this._ui.canvas.releasePointerCapture(draw.pointerId);
+      } catch {
+        // ignore
+      }
+      this._manager.setDraw(null);
+    }
   }
 }
 

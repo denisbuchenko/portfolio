@@ -474,13 +474,14 @@ export class ShowcaseMode {
     host.classList.add("launcher", "launcher--puzzle");
 
     const project = new PuzzleProject(host);
+    project.setRenderActive(s.hot);
     s.projectRef = project;
     s.disposeProject = () => project.dispose();
     s.activateProject = () => {
-      this._callProjectMethod(project, ["resume", "wake", "startRendering"]);
+      project.resume();
     };
     s.deactivateProject = () => {
-      this._callProjectMethod(project, ["pause", "sleep", "stopRendering", "suspend"]);
+      project.pause();
     };
   }
 
