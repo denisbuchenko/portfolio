@@ -246,7 +246,11 @@ export type MountedOsminogProject = {
   triggerDuduFromInventory(): boolean;
 };
 
-export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
+export interface MountOsminogProjectOptions {
+  onRewardItem?: (itemId: "key") => void;
+}
+
+export function mountOsminogProject(host: HTMLElement, options?: MountOsminogProjectOptions): MountedOsminogProject {
   host.innerHTML = "";
   host.style.display = "block";
   host.style.padding = "0";
@@ -335,9 +339,17 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
   btn3.setAttribute("aria-label", "Анимация 3");
   controls.appendChild(btn3);
 
+  const btn4 = document.createElement("button");
+  btn4.className = "btn osminog__seg-btn";
+  btn4.type = "button";
+  btn4.textContent = "4";
+  btn4.setAttribute("aria-label", "Финальный кадр");
+  controls.appendChild(btn4);
+
   btn1.disabled = true;
   btn2.disabled = true;
   btn3.disabled = true;
+  btn4.disabled = true;
 
   const melodyDots = Array.from({ length: OSMINOG_DUDU_CONFIG.melody.sequences.length + 1 }, (_, index) => {
     const dot = document.createElement("span");
@@ -350,6 +362,7 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
   let _disposed = false;
   let _renderActive = true;
   let _unsubscribe: (() => void) | null = null;
+  let _unsubscribeSuccessSequence: (() => void) | null = null;
   let _controller: LottieSegmentsController | null = null;
   let _anim: import("lottie-web").AnimationItem | null = null;
   let _renderer: THREE.WebGLRenderer | null = null;
@@ -377,6 +390,8 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
   let _activeKeyName: DuduKeyName | null = null;
   let _melodyTracker: MelodySequenceTracker<(typeof OSMINOG_DUDU_CONFIG.melody.sequences)[number][number]> | null = null;
   let _melodySuccessTimer = 0;
+  let _inventoryRewardTimer = 0;
+  let _keyRewardGranted = false;
   const _replacedHitMaterials: THREE.Material[] = [];
 
   const _raycaster = new THREE.Raycaster();
@@ -544,6 +559,8 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
     melodySuccess.classList.remove("osminog__melody-success--visible");
 
     if (!state.isCompleted) return;
+
+    _controller?.triggerSuccessSequence();
 
     _melodySuccessTimer = window.setTimeout(() => {
       melodyProgress.classList.add("osminog__melody-progress--hidden");
@@ -851,12 +868,23 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
         _setActiveBtn(btn1, mode === 1);
         _setActiveBtn(btn2, mode === 2);
         _setActiveBtn(btn3, mode === 3);
+        _setActiveBtn(btn4, mode === 4);
       };
       _unsubscribe = _controller.onUiModeChange(updateUi);
+      _unsubscribeSuccessSequence = _controller.onSuccessSequenceComplete(() => {
+        if (_keyRewardGranted) return;
+        _keyRewardGranted = true;
+        _inventoryRewardTimer = window.setTimeout(() => {
+          if (_disposed) return;
+          options?.onRewardItem?.("key");
+          _inventoryRewardTimer = 0;
+        }, 1500);
+      });
 
       btn1.disabled = false;
       btn2.disabled = false;
       btn3.disabled = false;
+      btn4.disabled = false;
       _lottieReady = true;
 
       _renderer = new THREE.WebGLRenderer({
@@ -956,6 +984,7 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
   btn1.addEventListener("click", () => _controller?.request(1));
   btn2.addEventListener("click", () => _controller?.request(2));
   btn3.addEventListener("click", () => _controller?.request(3));
+  btn4.addEventListener("click", () => _controller?.request(4));
   btnDudu.addEventListener("click", () => {
     _triggerDuduToggle();
   });
@@ -964,6 +993,7 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
     dispose(): void {
     _disposed = true;
     _unsubscribe?.();
+    _unsubscribeSuccessSequence?.();
     _controller?.dispose();
     _anim?.destroy();
     cancelAnimationFrame(_threeFrame);
@@ -982,6 +1012,7 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
     _duduAudio?.dispose();
     _melodyTracker?.dispose();
     if (_melodySuccessTimer) window.clearTimeout(_melodySuccessTimer);
+    if (_inventoryRewardTimer) window.clearTimeout(_inventoryRewardTimer);
     _renderer?.dispose();
     _invisibleHitMaterial?.dispose();
     for (const material of _replacedHitMaterials) material.dispose();

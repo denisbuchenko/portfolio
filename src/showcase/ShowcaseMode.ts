@@ -598,7 +598,11 @@ export class ShowcaseMode {
     const container = s.containerEl;
     container.innerHTML = "";
 
-    const project = mountOsminogProject(container);
+    const project = mountOsminogProject(container, {
+      onRewardItem: (itemId) => {
+        this._inventoryUi.addItem(itemId);
+      },
+    });
     const unsubscribeInventoryDrag = this._inventoryUi.subscribeDrag((event) => {
       if (event.phase !== "end") return;
       if (event.itemId !== "flute") return;
