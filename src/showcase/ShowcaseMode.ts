@@ -599,6 +599,15 @@ export class ShowcaseMode {
     container.innerHTML = "";
 
     const project = mountOsminogProject(container);
+    const unsubscribeInventoryDrag = this._inventoryUi.subscribeDrag((event) => {
+      if (event.phase !== "end") return;
+      if (event.itemId !== "flute") return;
+      if (!project.hitTestInventoryDrop(event.clientX, event.clientY)) return;
+
+      const triggered = project.triggerDuduFromInventory();
+      if (!triggered) return;
+      this._inventoryUi.close();
+    });
 
     // Убираем кнопку «В меню» из осьминога (в витрине она не нужна)
     const menuBtn = container.querySelector(".osminog__menu");
@@ -607,7 +616,12 @@ export class ShowcaseMode {
     project.setRenderActive(s.hot);
 
     s.projectRef = project;
-    s.disposeProject = () => project.dispose();
+    s.cleanupSection = unsubscribeInventoryDrag;
+    s.disposeProject = () => {
+      unsubscribeInventoryDrag();
+      s.cleanupSection = null;
+      project.dispose();
+    };
     s.activateProject = () => {
       project.resume();
     };

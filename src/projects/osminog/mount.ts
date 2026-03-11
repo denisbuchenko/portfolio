@@ -242,6 +242,8 @@ export type MountedOsminogProject = {
   pause(): void;
   resume(): void;
   setRenderActive(active: boolean): void;
+  hitTestInventoryDrop(clientX: number, clientY: number): boolean;
+  triggerDuduFromInventory(): boolean;
 };
 
 export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
@@ -492,6 +494,35 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
     }
 
     if (_threeVisible) _renderThree();
+  };
+
+  const _triggerDuduToggle = (): boolean => {
+    if (_disposed || btnDudu.disabled) return false;
+    _setDuduVisible(!_threeVisible);
+    return true;
+  };
+
+  const _hitTestInventoryDrop = (clientX: number, clientY: number): boolean => {
+    const rect = stage.getBoundingClientRect();
+    if (
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    ) {
+      return false;
+    }
+
+    const insetX = rect.width * 0.08;
+    const insetTop = rect.height * 0.06;
+    const insetBottom = rect.height * 0.1;
+
+    return (
+      clientX >= rect.left + insetX &&
+      clientX <= rect.right - insetX &&
+      clientY >= rect.top + insetTop &&
+      clientY <= rect.bottom - insetBottom
+    );
   };
 
   const _updateMelodyProgressUi = (state: MelodyTrackerState): void => {
@@ -925,7 +956,9 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
   btn1.addEventListener("click", () => _controller?.request(1));
   btn2.addEventListener("click", () => _controller?.request(2));
   btn3.addEventListener("click", () => _controller?.request(3));
-  btnDudu.addEventListener("click", () => _setDuduVisible(!_threeVisible));
+  btnDudu.addEventListener("click", () => {
+    _triggerDuduToggle();
+  });
 
   const _mounted: MountedOsminogProject = {
     dispose(): void {
@@ -967,6 +1000,12 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
       if (_renderActive === active) return;
       _renderActive = active;
       _setPlaybackActive(active);
+    },
+    hitTestInventoryDrop(clientX: number, clientY: number): boolean {
+      return _hitTestInventoryDrop(clientX, clientY);
+    },
+    triggerDuduFromInventory(): boolean {
+      return _triggerDuduToggle();
     }
   };
 
