@@ -24,6 +24,7 @@ import { CityApp } from "../projects/city/CityApp";
 import { mountOsminogProject } from "../projects/osminog";
 import { mountSunducProject } from "../projects/sunduc";
 import type { Overlay } from "../ui/overlay";
+import { ShowcaseInventory } from "./ShowcaseInventory";
 
 // ─── типы ────────────────────────────────────────────────────────────────────
 
@@ -75,8 +76,7 @@ export class ShowcaseMode {
   private _onBack: () => void;
   private _showcaseEl: HTMLElement;
   private _sections: SectionState[] = [];
-  private _navEl: HTMLElement;
-  private _navItems: HTMLElement[] = [];
+  private _inventoryUi: ShowcaseInventory;
   private _backBtn: HTMLElement;
   private _exitBtn: HTMLElement;
   private _raf = 0;
@@ -102,7 +102,7 @@ export class ShowcaseMode {
     // Fixed UI
     this._backBtn = this._buildBackBtn();
     this._exitBtn = this._buildExitBtn();
-    this._navEl = this._buildNav();
+    this._inventoryUi = new ShowcaseInventory({ host: this._host, initialSectionTitle: SECTION_DEFS[0]?.title ?? "" });
 
     // Observers:
     // warm  — заранее подготавливает проект в памяти;
@@ -116,7 +116,7 @@ export class ShowcaseMode {
     this._host.addEventListener("scroll", this._onHostScroll, { passive: true });
 
     // Initial active dot
-    this._updateActiveDot(0);
+    this._updateActiveSection(0);
     this._setSectionHot(0, true);
 
     // Animation loop (for per-frame updates)
@@ -140,7 +140,7 @@ export class ShowcaseMode {
     this._showcaseEl.remove();
     this._backBtn.remove();
     this._exitBtn.remove();
-    this._navEl.remove();
+    this._inventoryUi.dispose();
 
     this._host.classList.remove("showcase-active");
     this._host.style.overflow = "";
@@ -254,33 +254,6 @@ export class ShowcaseMode {
     return btn;
   }
 
-  private _buildNav(): HTMLElement {
-    const nav = _el("div", "showcase__nav");
-
-    for (let i = 0; i < SECTION_DEFS.length; i++) {
-      const item = _el("div", "showcase__nav-item");
-
-      const label = _el("span", "showcase__nav-label");
-      label.textContent = SECTION_DEFS[i].title;
-
-      const dot = _el("div", "showcase__nav-dot");
-
-      item.appendChild(label);
-      item.appendChild(dot);
-
-      const sectionEl = this._sections[i].el;
-      item.addEventListener("click", () => {
-        sectionEl.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-
-      nav.appendChild(item);
-      this._navItems.push(item);
-    }
-
-    this._host.appendChild(nav);
-    return nav;
-  }
-
   // ── observers ──────────────────────────────────────────────────────────────
 
   private _createWarmObserver(): IntersectionObserver {
@@ -318,7 +291,7 @@ export class ShowcaseMode {
       (entries) => {
         for (const entry of entries) {
           const idx = Number((entry.target as HTMLElement).dataset.showcaseIdx ?? -1);
-          if (idx >= 0 && entry.isIntersecting) this._updateActiveDot(idx);
+          if (idx >= 0 && entry.isIntersecting) this._updateActiveSection(idx);
         }
       },
       { root: this._host, rootMargin: "-40% 0px -40% 0px" }
@@ -327,10 +300,9 @@ export class ShowcaseMode {
     return obs;
   }
 
-  private _updateActiveDot(idx: number): void {
-    for (let i = 0; i < this._navItems.length; i++) {
-      this._navItems[i].classList.toggle("showcase__nav-item--active", i === idx);
-    }
+  private _updateActiveSection(idx: number): void {
+    const sectionTitle = this._sections[idx]?.def.title ?? SECTION_DEFS[idx]?.title ?? "";
+    this._inventoryUi.setActiveSectionTitle(sectionTitle);
   }
 
   private _ensureSectionWarm(idx: number): void {
@@ -635,7 +607,7 @@ export class ShowcaseMode {
     // Show exit, hide back & nav
     this._exitBtn.classList.remove("showcase__exit-btn--hidden");
     this._backBtn.classList.add("showcase__back-btn--hidden");
-    this._navEl.classList.add("showcase__nav--hidden");
+    this._inventoryUi.setHidden(true);
 
     // Project-specific activation
     if (s.def.key === "city") {
@@ -662,7 +634,7 @@ export class ShowcaseMode {
     // Restore fixed UI
     this._exitBtn.classList.add("showcase__exit-btn--hidden");
     this._backBtn.classList.remove("showcase__back-btn--hidden");
-    this._navEl.classList.remove("showcase__nav--hidden");
+    this._inventoryUi.setHidden(false);
 
     // Project-specific deactivation
     if (s.def.key === "city") {
