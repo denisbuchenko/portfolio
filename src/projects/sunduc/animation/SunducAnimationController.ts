@@ -33,6 +33,7 @@ export class SunducAnimationController {
   private readonly _clipStates = new Map<string, boolean>();
   private readonly _clipVisibilityTargets = new Map<string, THREE.Object3D[]>();
   private readonly _clipNamesByAction = new WeakMap<THREE.AnimationAction, string>();
+  private readonly _finishWaiters = new Map<string, Array<() => void>>();
 
   constructor(options: SunducAnimationControllerOptions) {
     this._root = options.root;
@@ -61,12 +62,16 @@ export class SunducAnimationController {
   dispose(): void {
     this._mixer.removeEventListener("finished", this._onMixerFinished);
     this._mixer.stopAllAction();
+    for (const waiters of this._finishWaiters.values()) {
+      for (const resolve of waiters) resolve();
+    }
     this._actionsByName.clear();
     this._clipBindings.clear();
     this._clipPinnedAtEnd.clear();
     this._clipRanges.clear();
     this._clipStates.clear();
     this._clipVisibilityTargets.clear();
+    this._finishWaiters.clear();
   }
 
   getClipNames(): string[] {
@@ -108,6 +113,20 @@ export class SunducAnimationController {
     this._setClipActiveInternal(clipName, active, {
       emitStateChange: true,
       emitStatus: true
+    });
+  }
+
+  playClip(clipName: string): Promise<void> {
+    if (!this._actionsByName.has(clipName)) return Promise.resolve();
+
+    return new Promise((resolve) => {
+      const waiters = this._finishWaiters.get(clipName) ?? [];
+      waiters.push(resolve);
+      this._finishWaiters.set(clipName, waiters);
+      this._setClipActiveInternal(clipName, true, {
+        emitStateChange: true,
+        emitStatus: true
+      });
     });
   }
 
@@ -182,6 +201,10 @@ export class SunducAnimationController {
 
     this._onClipStateChange?.(clipName, true);
     this._onStatusChange(`Зафиксировано на последнем keyframe: ${clipName}`);
+    const waiters = this._finishWaiters.get(clipName);
+    if (!waiters) return;
+    this._finishWaiters.delete(clipName);
+    for (const resolve of waiters) resolve();
   };
 
   private _getClipRange(clip: THREE.AnimationClip): _ClipRange {

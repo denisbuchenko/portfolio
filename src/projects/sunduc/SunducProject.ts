@@ -2,9 +2,10 @@ import * as THREE from "three";
 import { loadGltf } from "../city/three/loadGltf";
 import { buildSunducAnimationCatalog } from "./animation/SunducAnimationCatalog";
 import { SunducAnimationController } from "./animation/SunducAnimationController";
+import { SunducSequenceController, type SunducDropAcceptance } from "./animation/SunducSequenceController";
 import { SUNDUC_CONFIG } from "./config";
 import { createSunducRotationController, type SunducRotationController } from "./rotation/createSunducRotationController";
-import type { SunducProjectOptions } from "./types";
+import type { SunducInventoryItemId, SunducProjectOptions } from "./types";
 import { createSunducUI, type SunducUI } from "./ui/createSunducUI";
 import { createSunducViewer, type SunducViewer } from "./viewer/createSunducViewer";
 
@@ -18,6 +19,7 @@ export class SunducProject {
   private readonly _resizeObserver: ResizeObserver;
 
   private _animationController: SunducAnimationController | null = null;
+  private _sequenceController: SunducSequenceController | null = null;
   private _interactiveClipNames: string[] = [];
   private _frameHandle = 0;
   private _disposed = false;
@@ -86,6 +88,33 @@ export class SunducProject {
     this._frameHandle = 0;
   }
 
+  hitTestInventoryDrop(clientX: number, clientY: number): boolean {
+    const rect = this._ui.canvasWrap.getBoundingClientRect();
+    if (
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    ) {
+      return false;
+    }
+
+    const insetX = rect.width * 0.16;
+    const insetTop = rect.height * 0.12;
+    const insetBottom = rect.height * 0.08;
+
+    return (
+      clientX >= rect.left + insetX &&
+      clientX <= rect.right - insetX &&
+      clientY >= rect.top + insetTop &&
+      clientY <= rect.bottom - insetBottom
+    );
+  }
+
+  acceptInventoryItem(itemId: SunducInventoryItemId): SunducDropAcceptance {
+    return this._sequenceController?.acceptItem(itemId) ?? { accepted: false };
+  }
+
   private async _load(): Promise<void> {
     try {
       const gltf = await loadGltf(SUNDUC_CONFIG.assetUrl);
@@ -101,6 +130,11 @@ export class SunducProject {
 
       const animationCatalog = buildSunducAnimationCatalog(this._animationController.getClipNames());
       this._interactiveClipNames = [...animationCatalog.stoneClipNames, ...animationCatalog.sequenceClipNames];
+      this._sequenceController = new SunducSequenceController({
+        animationCatalog,
+        animationController: this._animationController,
+        onStatusChange: (text) => this._ui.setStatus(text)
+      });
 
       this._ui.renderAnimationControls({
         stoneClipNames: animationCatalog.stoneClipNames,

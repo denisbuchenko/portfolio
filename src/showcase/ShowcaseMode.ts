@@ -55,6 +55,7 @@ interface SectionState {
   disposeProject: (() => void) | null;
   activateProject: (() => void) | null;
   deactivateProject: (() => void) | null;
+  cleanupSection: (() => void) | null;
   projectRef: unknown;
 }
 
@@ -133,6 +134,7 @@ export class ShowcaseMode {
     this._activeObserver.disconnect();
 
     for (const s of this._sections) {
+      s.cleanupSection?.();
       s.deactivateProject?.();
       s.disposeProject?.();
     }
@@ -227,6 +229,7 @@ export class ShowcaseMode {
         disposeProject: null,
         activateProject: null,
         deactivateProject: null,
+        cleanupSection: null,
         projectRef: null,
       });
     }
@@ -395,9 +398,34 @@ export class ShowcaseMode {
     container.innerHTML = "";
 
     const project = mountSunducProject(container, { embedded: true });
+    const unsubscribeInventoryDrag = this._inventoryUi.subscribeDrag((event) => {
+      if (event.phase !== "end") return;
+      if (!project.hitTestInventoryDrop(event.clientX, event.clientY)) return;
+
+      const dropResult = project.acceptInventoryItem(event.itemId);
+      if (!dropResult.accepted) return;
+
+      if (dropResult.consumeItemId) {
+        this._inventoryUi.removeItem(dropResult.consumeItemId);
+      }
+      if (dropResult.closeInventory) {
+        this._inventoryUi.close();
+      }
+
+      void dropResult.completion?.then((completion) => {
+        if (!completion?.rewardItemId) return;
+        this._inventoryUi.addItem(completion.rewardItemId);
+      });
+    });
+
     project.setRenderActive(s.hot);
     s.projectRef = project;
-    s.disposeProject = () => project.dispose();
+    s.cleanupSection = unsubscribeInventoryDrag;
+    s.disposeProject = () => {
+      unsubscribeInventoryDrag();
+      s.cleanupSection = null;
+      project.dispose();
+    };
     s.activateProject = () => {
       project.resume();
     };
