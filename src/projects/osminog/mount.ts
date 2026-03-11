@@ -843,7 +843,7 @@ export function mountOsminogProject(host: HTMLElement): MountedOsminogProject {
         renderer: "svg",
         loop: false,
         autoplay: false,
-        path: "/osminog/osminog.json"
+        path: "/osminog/osminog%20.json"
       });
 
       _controller = new LottieSegmentsController(_anim);
