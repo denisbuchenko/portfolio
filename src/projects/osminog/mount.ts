@@ -396,27 +396,26 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
 
   const _raycaster = new THREE.Raycaster();
   const _pointer = new THREE.Vector2();
-  const _duduAudioPromise = createDuduAudio().catch((error) => {
+  try {
+    _duduAudio = createDuduAudio();
+  } catch (error) {
     // eslint-disable-next-line no-console
-    console.error("[dudu-audio] Не удалось загрузить звук", error);
-    return null;
-  });
+    console.error("[dudu-audio] Не удалось инициализировать звук", error);
+    _duduAudio = null;
+  }
   let _audioGestureSeq = 0;
 
-  const _getDuduAudio = async (): Promise<DuduAudio | null> => {
-    if (_duduAudio) return _duduAudio;
-
-    const audio = await _duduAudioPromise;
+  const _ensureDuduAudioStarted = async (): Promise<DuduAudio | null> => {
+    const audio = _duduAudio;
     if (!audio || _disposed) return null;
-    _duduAudio = audio;
+    // Важно для iPhone Safari: Tone.start() должен происходить прямо в user gesture,
+    // без предварительных async import/loaded цепочек.
+    await audio.ensureStarted();
     return audio;
   };
 
-  const _ensureDuduAudioStarted = async (): Promise<DuduAudio | null> => {
-    const audio = await _getDuduAudio();
-    if (!audio) return null;
-    await audio.ensureStarted();
-    return audio;
+  const _primeDuduAudio = (): void => {
+    void _ensureDuduAudioStarted();
   };
 
   const _requestThreeFrame = (): void => {
@@ -736,7 +735,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
 
   const _handleThreeTouchStart = (): void => {
     if (!_renderActive) return;
-    void _ensureDuduAudioStarted();
+    _primeDuduAudio();
   };
 
   const _findTrackedTouch = (event: TouchEvent): Touch | null => {
@@ -758,8 +757,8 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     const touch = event.changedTouches[0];
     if (!touch) return;
 
-    event.preventDefault();
-    void _ensureDuduAudioStarted();
+    if (event.cancelable) event.preventDefault();
+    _primeDuduAudio();
 
     if (_interactionReady) {
       const hitName = _getKeyHitNameFromClientPoint(touch.clientX, touch.clientY);
@@ -783,7 +782,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     const touch = _findTrackedTouch(event);
     if (!touch) return;
 
-    event.preventDefault();
+    if (event.cancelable) event.preventDefault();
 
     const hitName = _getKeyHitNameFromClientPoint(touch.clientX, touch.clientY);
     if (!hitName) {
@@ -802,7 +801,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     const touch = _findTrackedTouch(event);
     if (!touch) return;
 
-    event.preventDefault();
+    if (event.cancelable) event.preventDefault();
     _releaseActiveKey();
     _audioGestureSeq += 1;
   };
@@ -840,15 +839,6 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
 
   void (async () => {
     try {
-      void _duduAudioPromise.then((audio) => {
-        if (!audio) return;
-        if (_disposed) {
-          audio.dispose();
-          return;
-        }
-        _duduAudio = audio;
-      });
-
       const [mod, gltf] = await Promise.all([
         import("lottie-web"),
         loadGltf(OSMINOG_DUDU_CONFIG.assetUrl)
@@ -962,6 +952,9 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
       _threeResizeObserver.observe(threeLayer);
       _resizeThree();
 
+      root.addEventListener("pointerdown", _primeDuduAudio, { capture: true });
+      root.addEventListener("touchstart", _primeDuduAudio, { passive: true, capture: true });
+      root.addEventListener("touchend", _primeDuduAudio, { passive: true, capture: true });
       threeCanvas.addEventListener("pointerdown", _handleThreePointerDown);
       threeCanvas.addEventListener("pointermove", _handleThreePointerMove);
       threeCanvas.addEventListener("touchstart", _handleThreeTouchStart, { passive: true });
@@ -997,6 +990,9 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     _controller?.dispose();
     _anim?.destroy();
     cancelAnimationFrame(_threeFrame);
+    root.removeEventListener("pointerdown", _primeDuduAudio, { capture: true } as EventListenerOptions);
+    root.removeEventListener("touchstart", _primeDuduAudio, { capture: true } as EventListenerOptions);
+    root.removeEventListener("touchend", _primeDuduAudio, { capture: true } as EventListenerOptions);
     threeCanvas.removeEventListener("pointerdown", _handleThreePointerDown);
     threeCanvas.removeEventListener("pointermove", _handleThreePointerMove);
     threeCanvas.removeEventListener("touchstart", _handleThreeTouchStart);

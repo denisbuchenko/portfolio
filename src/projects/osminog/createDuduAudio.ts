@@ -1,3 +1,4 @@
+import * as Tone from "tone";
 import { OSMINOG_DUDU_CONFIG } from "./config";
 
 export type DuduKeyName = keyof typeof OSMINOG_DUDU_CONFIG.audio.notesByKey;
@@ -10,9 +11,7 @@ export type DuduAudio = {
   dispose(): void;
 };
 
-export async function createDuduAudio(): Promise<DuduAudio> {
-  const Tone = await import("tone");
-
+export function createDuduAudio(): DuduAudio {
   const filter = new Tone.Filter(OSMINOG_DUDU_CONFIG.audio.lowpassHz, "lowpass");
   const compressor = new Tone.Compressor(
     OSMINOG_DUDU_CONFIG.audio.compressorThresholdDb,
@@ -32,11 +31,13 @@ export async function createDuduAudio(): Promise<DuduAudio> {
 
   sampler.chain(filter, compressor, reverb, gain, Tone.Destination);
 
-  await Tone.loaded();
-
   let _activeKey: DuduKeyName | null = null;
   let _activeNote: string | null = null;
   let _ready = true;
+  const _loadedPromise = Tone.loaded().catch((error) => {
+    _ready = false;
+    throw error;
+  });
 
   const _ensureStarted = async (): Promise<void> => {
     if (Tone.context.state !== "running") await Tone.start();
@@ -56,6 +57,14 @@ export async function createDuduAudio(): Promise<DuduAudio> {
       if (!note) return;
 
       await _ensureStarted();
+      try {
+        await _loadedPromise;
+      } catch (error) {
+        _ready = false;
+        // eslint-disable-next-line no-console
+        console.error("[dudu-audio] Семплы не загрузились", error);
+        return;
+      }
       if (!_ready) return;
 
       if (_activeKey === keyName) return;
