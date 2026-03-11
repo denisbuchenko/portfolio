@@ -227,11 +227,6 @@ export class ShowcaseInventory {
       img.alt = itemDef.label;
       itemBtn.appendChild(img);
 
-      const caption = document.createElement("span");
-      caption.className = "showcase-inventory__item-label";
-      caption.textContent = itemDef.label;
-      itemBtn.appendChild(caption);
-
       slotEl.appendChild(itemBtn);
     }
   }
@@ -424,8 +419,8 @@ function _ensureInventoryStyles(): void {
       position: absolute;
       top: 50%;
       right: 44px;
-      width: 126px;
-      padding: 10px;
+      width: 92px;
+      padding: 8px;
       border-radius: 16px;
       border: 1px solid rgba(255, 255, 255, 0.12);
       background: rgba(8, 12, 20, 0.9);
@@ -443,18 +438,19 @@ function _ensureInventoryStyles(): void {
 
     .showcase-inventory__header {
       display: grid;
-      gap: 4px;
-      margin-bottom: 8px;
+      gap: 3px;
+      margin-bottom: 6px;
     }
 
     .showcase-inventory__title {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
       color: #fff;
     }
 
     .showcase-inventory__screen-label {
-      font-size: 10px;
+      font-size: 9px;
+      line-height: 1.2;
       color: rgba(255, 255, 255, 0.6);
     }
 
@@ -469,13 +465,13 @@ function _ensureInventoryStyles(): void {
     }
 
     .showcase-inventory__slot {
-      min-height: 52px;
+      aspect-ratio: 1;
       border-radius: 12px;
       border: 1px solid rgba(255, 255, 255, 0.12);
       background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
         rgba(18, 24, 36, 0.92);
-      padding: 6px;
+      padding: 5px;
       display: flex;
       align-items: stretch;
       justify-content: stretch;
@@ -491,18 +487,16 @@ function _ensureInventoryStyles(): void {
 
     .showcase-inventory__item {
       width: 100%;
+      height: 100%;
       border: none;
       background: transparent;
       padding: 0;
-      display: grid;
-      grid-template-columns: 34px minmax(0, 1fr);
-      gap: 6px;
+      display: flex;
       align-items: center;
-      justify-items: stretch;
+      justify-content: center;
       cursor: grab;
       touch-action: none;
       color: inherit;
-      text-align: left;
     }
 
     .showcase-inventory__item:active {
@@ -510,8 +504,9 @@ function _ensureInventoryStyles(): void {
     }
 
     .showcase-inventory__item-image {
-      width: 34px;
-      max-width: 34px;
+      width: 100%;
+      height: 100%;
+      max-width: none;
       aspect-ratio: 1;
       border-radius: 8px;
       object-fit: cover;
@@ -519,17 +514,9 @@ function _ensureInventoryStyles(): void {
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
     }
 
-    .showcase-inventory__item-label {
-      font-size: 9px;
-      line-height: 1.2;
-      color: rgba(255, 255, 255, 0.72);
-      text-align: left;
-      pointer-events: none;
-    }
-
     .showcase-inventory__hint {
-      margin: 8px 0 0;
-      font-size: 10px;
+      margin: 6px 0 0;
+      font-size: 9px;
       line-height: 1.35;
       color: rgba(255, 255, 255, 0.56);
     }
@@ -560,8 +547,8 @@ function _ensureInventoryStyles(): void {
 
     @media (max-width: 900px) {
       .showcase-inventory__panel {
-        width: 116px;
-        padding: 8px;
+        width: 84px;
+        padding: 7px;
         right: 40px;
       }
 
@@ -573,7 +560,7 @@ function _ensureInventoryStyles(): void {
       }
 
       .showcase-inventory__slot {
-        min-height: 48px;
+        border-radius: 10px;
       }
     }
   `;
