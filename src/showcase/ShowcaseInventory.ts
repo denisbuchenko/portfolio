@@ -364,10 +364,13 @@ function _ensureInventoryStyles(): void {
     .showcase-inventory {
       position: fixed;
       top: 50%;
-      right: 20px;
+      right: 0;
       transform: translateY(-50%);
       z-index: 150;
       pointer-events: auto;
+      width: 0;
+      height: 0;
+      overflow: visible;
     }
 
     .showcase-inventory--hidden {
@@ -378,55 +381,80 @@ function _ensureInventoryStyles(): void {
     .showcase-inventory__toggle {
       position: absolute;
       top: 50%;
-      right: 100%;
-      transform: translateY(-50%) rotate(-90deg);
-      transform-origin: top right;
+      right: 0;
+      transform: translateY(-50%);
       border: 1px solid rgba(255, 255, 255, 0.16);
-      border-bottom: none;
-      border-radius: 16px 16px 0 0;
-      padding: 10px 16px;
+      border-right: none;
+      border-radius: 16px 0 0 16px;
+      min-width: 46px;
+      min-height: 148px;
+      padding: 16px 10px;
       background: rgba(10, 14, 24, 0.92);
       color: rgba(255, 255, 255, 0.82);
       text-transform: uppercase;
       letter-spacing: 0.08em;
       font-size: 11px;
+      font-weight: 700;
       cursor: pointer;
       backdrop-filter: blur(14px);
       box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      line-height: 1;
+      white-space: nowrap;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      z-index: 2;
+      transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
+    }
+
+    .showcase-inventory__toggle:hover {
+      background: rgba(16, 22, 36, 0.96);
+      border-color: rgba(255, 255, 255, 0.24);
+      color: rgba(255, 255, 255, 0.96);
+    }
+
+    .showcase-inventory__toggle:focus-visible {
+      outline: 2px solid rgba(110, 231, 255, 0.72);
+      outline-offset: 3px;
     }
 
     .showcase-inventory__panel {
-      width: 220px;
-      padding: 14px;
-      border-radius: 18px;
+      position: absolute;
+      top: 50%;
+      right: 44px;
+      width: 126px;
+      padding: 10px;
+      border-radius: 16px;
       border: 1px solid rgba(255, 255, 255, 0.12);
       background: rgba(8, 12, 20, 0.9);
       box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
       backdrop-filter: blur(18px);
       opacity: 0;
-      transform: translateX(calc(100% + 18px));
+      transform: translate(calc(100% + 12px), -50%);
       transition: transform 220ms ease, opacity 220ms ease;
     }
 
     .showcase-inventory--expanded .showcase-inventory__panel {
       opacity: 1;
-      transform: translateX(0);
+      transform: translate(0, -50%);
     }
 
     .showcase-inventory__header {
       display: grid;
       gap: 4px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     .showcase-inventory__title {
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 700;
       color: #fff;
     }
 
     .showcase-inventory__screen-label {
-      font-size: 11px;
+      font-size: 10px;
       color: rgba(255, 255, 255, 0.6);
     }
 
@@ -436,18 +464,18 @@ function _ensureInventoryStyles(): void {
 
     .showcase-inventory__grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 6px;
     }
 
     .showcase-inventory__slot {
-      min-height: 94px;
-      border-radius: 14px;
+      min-height: 52px;
+      border-radius: 12px;
       border: 1px solid rgba(255, 255, 255, 0.12);
       background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
         rgba(18, 24, 36, 0.92);
-      padding: 8px;
+      padding: 6px;
       display: flex;
       align-items: stretch;
       justify-content: stretch;
@@ -467,12 +495,14 @@ function _ensureInventoryStyles(): void {
       background: transparent;
       padding: 0;
       display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
       gap: 6px;
       align-items: center;
-      justify-items: center;
+      justify-items: stretch;
       cursor: grab;
       touch-action: none;
       color: inherit;
+      text-align: left;
     }
 
     .showcase-inventory__item:active {
@@ -480,26 +510,26 @@ function _ensureInventoryStyles(): void {
     }
 
     .showcase-inventory__item-image {
-      width: 100%;
-      max-width: 74px;
+      width: 34px;
+      max-width: 34px;
       aspect-ratio: 1;
-      border-radius: 10px;
+      border-radius: 8px;
       object-fit: cover;
       pointer-events: none;
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
     }
 
     .showcase-inventory__item-label {
-      font-size: 10px;
+      font-size: 9px;
       line-height: 1.2;
       color: rgba(255, 255, 255, 0.72);
-      text-align: center;
+      text-align: left;
       pointer-events: none;
     }
 
     .showcase-inventory__hint {
-      margin: 12px 0 0;
-      font-size: 11px;
+      margin: 8px 0 0;
+      font-size: 10px;
       line-height: 1.35;
       color: rgba(255, 255, 255, 0.56);
     }
@@ -529,17 +559,21 @@ function _ensureInventoryStyles(): void {
     }
 
     @media (max-width: 900px) {
-      .showcase-inventory {
-        right: 10px;
+      .showcase-inventory__panel {
+        width: 116px;
+        padding: 8px;
+        right: 40px;
       }
 
-      .showcase-inventory__panel {
-        width: 196px;
-        padding: 12px;
+      .showcase-inventory__toggle {
+        min-width: 42px;
+        min-height: 132px;
+        padding: 14px 9px;
+        font-size: 10px;
       }
 
       .showcase-inventory__slot {
-        min-height: 84px;
+        min-height: 48px;
       }
     }
   `;
