@@ -1,10 +1,12 @@
+import { ShowcaseInventoryRewardOverlay } from "./ShowcaseInventoryRewardOverlay";
+
 const INVENTORY_STYLE_ID = "showcase-inventory-styles";
 const INVENTORY_SLOT_COUNT = 4;
 
 export type InventoryItemId = "key" | "stone1" | "stone2" | "stone3" | "stone4" | "flute";
 export type InventoryDragPhase = "start" | "move" | "end";
 
-interface InventoryItemDef {
+export interface InventoryItemDef {
   id: InventoryItemId;
   label: string;
   imageSrc: string;
@@ -82,9 +84,11 @@ export class ShowcaseInventory {
   private _expanded = false;
   private _activeDrag: ActiveDragState | null = null;
   private _consoleApi: InventoryConsoleApi;
+  private _rewardOverlay: ShowcaseInventoryRewardOverlay;
 
   constructor(opts: ShowcaseInventoryOptions) {
     _ensureInventoryStyles();
+    this._rewardOverlay = new ShowcaseInventoryRewardOverlay();
 
     this._rootEl = document.createElement("div");
     this._rootEl.className = "showcase-inventory";
@@ -133,6 +137,7 @@ export class ShowcaseInventory {
   dispose(): void {
     this._finishActiveDrag();
     if (window.showcaseInventory === this._consoleApi) delete window.showcaseInventory;
+    this._rewardOverlay.dispose();
     this._rootEl.remove();
     this._subscribers.clear();
   }
@@ -169,6 +174,7 @@ export class ShowcaseInventory {
     }
     this._items.push(itemId);
     this._render();
+    this._rewardOverlay.enqueue(INVENTORY_CATALOG[itemId]);
     return true;
   }
 
