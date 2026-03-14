@@ -104,7 +104,6 @@ export class PuzzleProject {
 
       if (this._renderActive) this._requestFrame();
       else this._renderOnce();
-      this._ui.statusEl.classList.add("puzzle__status--ready");
     } catch (e) {
       this._ui.statusEl.textContent = e instanceof Error ? e.message : String(e);
     }

@@ -81,7 +81,7 @@ export class PuzzleManager {
 		groupSys.init(this._pieces);
 		paint.clear();
 		renderer.setPiecesMeshes(this._pieces);
-		ui.statusEl.textContent = "Готово";
+		ui.statusEl.textContent = "";
 		return true;
 	}
 
@@ -103,10 +103,7 @@ export class PuzzleManager {
 	}
 
 	updateStatus(ui: PuzzleUI, groupSys: GroupSystem): void {
-		if (!this._geom) return;
-		const dpr = getDpr();
-		ui.statusEl.textContent = `Кусочков: ${this._pieces.length} • Групп: ${groupSys.groups.size} • Цвет: ${ui
-			.getActiveColor()
-			.toUpperCase()} • DPR: ${dpr.toFixed(2)}`;
+		void ui;
+		void groupSys;
 	}
 }

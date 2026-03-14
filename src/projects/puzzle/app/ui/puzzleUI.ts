@@ -20,16 +20,12 @@ export function mountPuzzleUI(opts: {
   host.innerHTML = `
     <div class="puzzle">
       <canvas class="puzzle__canvas"></canvas>
-      <div class="puzzle__panel">
-        <div class="puzzle__title">Пазл 4×4</div>
-        <div class="puzzle__hint">Перетаскивай кусочки мышкой или пальцем.</div>
-      </div>
       <div class="puzzle__colors" aria-label="Выбор цвета">
         <button class="puzzle__color puzzle__color--r puzzle__color--active" data-color="r" type="button" aria-label="Красный"></button>
         <button class="puzzle__color puzzle__color--g" data-color="g" type="button" aria-label="Зелёный"></button>
         <button class="puzzle__color puzzle__color--b" data-color="b" type="button" aria-label="Синий"></button>
       </div>
-      <div class="puzzle__status" id="puzzle-status">Загрузка...</div>
+      <div class="puzzle__status" id="puzzle-status"></div>
     </div>
   `;
 
@@ -41,38 +37,47 @@ export function mountPuzzleUI(opts: {
   if (!colorsRoot) throw new Error("Puzzle colors element not found");
   const colorsRootEl: HTMLDivElement = colorsRoot;
 
-  colorsRootEl.style.setProperty("--puzzle-color-btn-size", `${config.puzzle.ui.colorButtonCssPx}px`);
+  colorsRootEl.style.setProperty("--puzzle-color-btn-size", `${Math.max(config.puzzle.ui.colorButtonCssPx, 26)}px`);
 
   let activeColor: ColorKey = "r";
 
-  function syncActiveClass(): void {
-    const buttons = Array.from(colorsRootEl.querySelectorAll("button.puzzle__color"));
+  const buttons = Array.from(
+    colorsRootEl.querySelectorAll<HTMLButtonElement>("button.puzzle__color"),
+  );
+
+  function _syncActiveClass(): void {
     for (const b of buttons) {
-      const bc = b.getAttribute("data-color") as ColorKey | null;
-      if (bc === activeColor) b.classList.add("puzzle__color--active");
-      else b.classList.remove("puzzle__color--active");
+      b.classList.toggle(
+        "puzzle__color--active",
+        b.getAttribute("data-color") === activeColor,
+      );
     }
   }
 
-  const onPointerDown = (e: PointerEvent) => {
-    // чтобы нажатия по UI не запускали рисование на канвасе
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  const onClick = (e: MouseEvent) => {
-    const target = e.target as HTMLElement | null;
-    const btn = target?.closest("button.puzzle__color") as HTMLButtonElement | null;
-    if (!btn) return;
+  function _selectColor(btn: HTMLButtonElement): void {
     const c = btn.getAttribute("data-color") as ColorKey | null;
     if (!c) return;
     const wasAlreadyActive = c === activeColor;
     activeColor = c;
-    syncActiveClass();
+    _syncActiveClass();
     opts.onColorSelect?.(c, wasAlreadyActive);
-  };
+  }
 
-  colorsRootEl.addEventListener("pointerdown", onPointerDown);
-  colorsRootEl.addEventListener("click", onClick);
+  /** Общий обработчик: блокируем всплытие к canvas, обновляем цвет. */
+  function _handleSelect(e: Event): void {
+    e.preventDefault();
+    e.stopPropagation();
+    const btn = (e.currentTarget as HTMLElement).closest(
+      "button.puzzle__color",
+    ) as HTMLButtonElement | null;
+    if (btn) _selectColor(btn);
+  }
+
+  // Вешаем на каждую кнопку отдельно, чтобы мобильный repaint класса был мгновенным.
+  for (const btn of buttons) {
+    btn.addEventListener("pointerdown", _handleSelect);
+    btn.addEventListener("touchstart", _handleSelect, { passive: false });
+  }
 
   return {
     canvas,
@@ -81,11 +86,13 @@ export function mountPuzzleUI(opts: {
     getActiveColor: () => activeColor,
     setActiveColor: (c) => {
       activeColor = c;
-      syncActiveClass();
+      _syncActiveClass();
     },
     destroy: () => {
-      colorsRootEl.removeEventListener("pointerdown", onPointerDown);
-      colorsRootEl.removeEventListener("click", onClick);
+      for (const btn of buttons) {
+        btn.removeEventListener("pointerdown", _handleSelect);
+        btn.removeEventListener("touchstart", _handleSelect);
+      }
     }
   };
 }
