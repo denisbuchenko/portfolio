@@ -83,6 +83,7 @@ export class ShowcaseMode {
   private _raf = 0;
   private _interactingIdx = -1;
   private _pendingInteractionIdx = -1;
+  private _osminogAligning = false;
   private _warmObserver: IntersectionObserver;
   private _hotObserver: IntersectionObserver;
   private _activeObserver: IntersectionObserver;
@@ -423,6 +424,32 @@ export class ShowcaseMode {
     if (opts?.centerSection !== false) {
       void this._centerCitySectionInShowcase(opts?.behavior ?? "auto");
     }
+  }
+
+  private _updateOsminogVisibilityState(): void {
+    const osminogIdx = this._resolveSectionIdx("osminog");
+    if (osminogIdx < 0) return;
+
+    const s = this._sections[osminogIdx];
+    if (!s?.mounted) return;
+    if (this._osminogAligning) return;
+
+    const hostRect = this._host.getBoundingClientRect();
+    const animEl = s.containerEl.querySelector(".osminog__anim");
+    if (!(animEl instanceof HTMLElement)) return;
+
+    const animRect = animEl.getBoundingClientRect();
+    const thresholdPx = 4;
+    const isAnimFullyVisible =
+      animRect.top >= hostRect.top - thresholdPx && animRect.bottom <= hostRect.bottom + thresholdPx;
+    if (isAnimFullyVisible) return;
+
+    const project = s.projectRef as
+      | { isDuduInteractionActive?: () => boolean; cancelDuduInteraction?: () => void }
+      | null;
+    if (!project?.isDuduInteractionActive?.()) return;
+
+    project.cancelDuduInteraction?.();
   }
 
   private _getSectionAlignScrollTop(s: SectionState): number {
@@ -770,6 +797,13 @@ export class ShowcaseMode {
       onRewardItem: (itemId) => {
         this._inventoryUi.addItem(itemId);
       },
+      onDuduHit: () => {
+        if (this._osminogAligning) return;
+        this._osminogAligning = true;
+        void this.alignProject("osminog", "smooth").finally(() => {
+          this._osminogAligning = false;
+        });
+      },
     });
     const unsubscribeInventoryDrag = this._inventoryUi.subscribeDrag((event) => {
       if (event.phase !== "end") return;
@@ -860,6 +894,7 @@ export class ShowcaseMode {
 
   private _onHostScroll = (): void => {
     this._updateCityProgress();
+    this._updateOsminogVisibilityState();
   };
 
   private _tick = (t: number): void => {

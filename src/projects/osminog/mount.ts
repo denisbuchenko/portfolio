@@ -244,10 +244,13 @@ export type MountedOsminogProject = {
   setRenderActive(active: boolean): void;
   hitTestInventoryDrop(clientX: number, clientY: number): boolean;
   triggerDuduFromInventory(): boolean;
+  isDuduInteractionActive(): boolean;
+  cancelDuduInteraction(): void;
 };
 
 export interface MountOsminogProjectOptions {
   onRewardItem?: (itemId: "key") => void;
+  onDuduHit?: () => void;
 }
 
 export function mountOsminogProject(host: HTMLElement, options?: MountOsminogProjectOptions): MountedOsminogProject {
@@ -272,11 +275,13 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
   threeLayer.className = "osminog__three-layer";
   threeLayer.style.top = `${OSMINOG_DUDU_CONFIG.layer.topPercent * 100}%`;
   threeLayer.style.height = `${OSMINOG_DUDU_CONFIG.layer.heightPercent * 100}%`;
+  threeLayer.style.touchAction = "pan-y";
   stage.appendChild(threeLayer);
 
   const threeCanvas = document.createElement("canvas");
   threeCanvas.className = "osminog__three";
   threeCanvas.setAttribute("aria-label", "3D дудка");
+  threeCanvas.style.setProperty("touch-action", "pan-y", "important");
   threeLayer.appendChild(threeCanvas);
 
   const loading = document.createElement("div");
@@ -379,6 +384,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
   let _lottieReady = false;
   let _interactionReady = false;
   let _animationPlaying = false;
+  let _duduAnimationDirection: "forward" | "reverse" | null = null;
   let _lastFrameTs = performance.now();
   let _duduTargets: THREE.Object3D[] = [];
   let _keyTargets: THREE.Object3D[] = [];
@@ -436,6 +442,35 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     _audioGestureSeq += 1;
   };
 
+  const _resetMelodyUi = (): void => {
+    if (_melodySuccessTimer) {
+      window.clearTimeout(_melodySuccessTimer);
+      _melodySuccessTimer = 0;
+    }
+    melodyProgress.classList.remove("osminog__melody-progress--hidden");
+    melodyProgress.classList.remove("osminog__melody-progress--complete");
+    melodySuccess.classList.remove("osminog__melody-success--visible");
+  };
+
+  const _resetDuduInteractionState = (): void => {
+    _duduAudio?.stopAll();
+    _releaseThreeInteraction();
+    _melodyTracker?.reset();
+    _resetMelodyUi();
+    _interactionReady = false;
+    _animationPlaying = false;
+    _duduAnimationDirection = null;
+
+    if (_duduAction) {
+      _duduAction.stop();
+      _duduAction.reset();
+      _duduAction.timeScale = 1;
+      _duduAction.enabled = true;
+      _duduAction.clampWhenFinished = true;
+      _duduAction.setLoop(THREE.LoopOnce, 1);
+    }
+  };
+
   const _setPlaybackActive = (active: boolean): void => {
     if (_anim) {
       if (active) _anim.play();
@@ -443,15 +478,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     }
 
     if (!active) {
-      _duduAudio?.stopAll();
-      _releaseThreeInteraction();
-      if (!_melodyTracker?.getState().isLocked) _melodyTracker?.reset();
-      if (_melodySuccessTimer) {
-        window.clearTimeout(_melodySuccessTimer);
-        _melodySuccessTimer = 0;
-      }
-      melodyProgress.classList.remove("osminog__melody-progress--hidden");
-      melodySuccess.classList.remove("osminog__melody-success--visible");
+      _resetDuduInteractionState();
       if (_threeFrame) cancelAnimationFrame(_threeFrame);
       _threeFrame = 0;
       return;
@@ -501,10 +528,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     _setActiveBtn(btnDudu, _threeVisible);
 
     if (!_threeVisible) {
-      _duduAudio?.stopAll();
-      _activePointerId = null;
-      _activeKeyName = null;
-      if (!_melodyTracker?.getState().isLocked) _melodyTracker?.reset();
+      _resetDuduInteractionState();
     }
 
     if (_threeVisible) _renderThree();
@@ -572,6 +596,13 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     if (!_duduAction) return;
     if ((event as THREE.Event & { action?: THREE.AnimationAction }).action !== _duduAction) return;
 
+    if (_duduAnimationDirection === "reverse") {
+      _resetDuduInteractionState();
+      _renderThree();
+      return;
+    }
+
+    _duduAnimationDirection = null;
     _animationPlaying = false;
     _interactionReady = true;
     _renderThree();
@@ -580,12 +611,45 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
   const _playDuduAnimation = (): void => {
     if (!_duduAction || _animationPlaying || _interactionReady) return;
 
+    _duduAnimationDirection = "forward";
     _animationPlaying = true;
     _duduAction.reset();
     _duduAction.enabled = true;
     _duduAction.clampWhenFinished = true;
     _duduAction.setLoop(THREE.LoopOnce, 1);
+    _duduAction.timeScale = 1;
     _duduAction.play();
+  };
+
+  const _rewindDuduAnimation = (): void => {
+    if (!_duduAction) {
+      _resetDuduInteractionState();
+      return;
+    }
+    if (!_threeVisible) {
+      _resetDuduInteractionState();
+      return;
+    }
+    if (!_animationPlaying && !_interactionReady) return;
+
+    _duduAudio?.stopAll();
+    _releaseThreeInteraction();
+    _melodyTracker?.reset();
+    _resetMelodyUi();
+    _interactionReady = false;
+    _animationPlaying = true;
+    _duduAnimationDirection = "reverse";
+
+    const clipDuration = Math.max(0.001, _duduAction.getClip().duration);
+    const currentTime = THREE.MathUtils.clamp(_duduAction.time, 0, clipDuration);
+    _duduAction.enabled = true;
+    _duduAction.clampWhenFinished = true;
+    _duduAction.setLoop(THREE.LoopOnce, 1);
+    _duduAction.paused = false;
+    _duduAction.timeScale = -1;
+    _duduAction.time = currentTime > 0.001 ? currentTime : clipDuration;
+    _duduAction.play();
+    _renderThree();
   };
 
   const _setRayFromClientPoint = (clientX: number, clientY: number): boolean => {
@@ -700,6 +764,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
 
     void _ensureDuduAudioStarted();
     if (!_isDuduHit(event)) return;
+    options?.onDuduHit?.();
     _playDuduAnimation();
   };
 
@@ -757,13 +822,13 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     const touch = event.changedTouches[0];
     if (!touch) return;
 
-    if (event.cancelable) event.preventDefault();
     _primeDuduAudio();
 
     if (_interactionReady) {
       const hitName = _getKeyHitNameFromClientPoint(touch.clientX, touch.clientY);
       if (!hitName) return;
 
+      if (event.cancelable) event.preventDefault();
       _activeTouchId = touch.identifier;
       _startOrSwitchKey(hitName);
       return;
@@ -771,6 +836,8 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
 
     if (_animationPlaying) return;
     if (!_isDuduHitFromClientPoint(touch.clientX, touch.clientY)) return;
+    if (event.cancelable) event.preventDefault();
+    options?.onDuduHit?.();
     _playDuduAnimation();
   };
 
@@ -1033,6 +1100,12 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     },
     triggerDuduFromInventory(): boolean {
       return _triggerDuduToggle();
+    },
+    isDuduInteractionActive(): boolean {
+      return _threeVisible && (_animationPlaying || _interactionReady);
+    },
+    cancelDuduInteraction(): void {
+      _rewindDuduAnimation();
     }
   };
 
