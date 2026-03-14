@@ -377,6 +377,7 @@ export class ShowcaseMode {
     const cityIdx = this._resolveSectionIdx("city");
     if (cityIdx < 0) return;
 
+    this._ensureSectionWarm(cityIdx);
     const citySection = this._sections[cityIdx];
     const cityApp = citySection?.projectRef as CityApp | null;
     cityApp?.setOverviewProgress(0.5);
@@ -385,6 +386,43 @@ export class ShowcaseMode {
     await this._scrollHostTo(targetScrollTop, behavior);
     this._updateActiveSection(cityIdx);
     this._updateCityProgress();
+  }
+
+  private _restoreViewingMode(idx: number): void {
+    const s = this._sections[idx];
+    if (!s) return;
+
+    s.interacting = false;
+    this._interactingIdx = -1;
+
+    this._host.style.overflow = "";
+    if (s.blocker) s.blocker.style.display = "";
+    if (s.interactBtn) s.interactBtn.style.display = "";
+
+    this._exitBtn.classList.add("showcase__exit-btn--hidden");
+    this._backBtn.classList.remove("showcase__back-btn--hidden");
+    this._inventoryUi.setHidden(false);
+  }
+
+  private _exitCityInteraction(opts?: { resetProject?: boolean; centerSection?: boolean; behavior?: ScrollBehavior }): void {
+    const cityIdx = this._resolveSectionIdx("city");
+    if (cityIdx < 0) return;
+
+    const s = this._sections[cityIdx];
+    const cityApp = s?.projectRef as CityApp | null;
+    if (!s || !s.interacting) return;
+
+    this._pendingInteractionIdx = -1;
+    this._restoreViewingMode(cityIdx);
+
+    if (opts?.resetProject !== false) {
+      cityApp?.resetToOverview(0.5);
+    }
+    cityApp?.setScrollInputEnabled(false);
+
+    if (opts?.centerSection !== false) {
+      void this._centerCitySectionInShowcase(opts?.behavior ?? "auto");
+    }
   }
 
   private _getSectionAlignScrollTop(s: SectionState): number {
@@ -695,7 +733,7 @@ export class ShowcaseMode {
       onResetToOverview: (reason) => {
         app.setScrollInputEnabled(false);
         if (reason !== "crash") return;
-        void this._centerCitySectionInShowcase("auto");
+        this._exitCityInteraction({ resetProject: false, centerSection: true, behavior: "smooth" });
       },
     });
     let started = false;
@@ -771,7 +809,11 @@ export class ShowcaseMode {
     if (!s || s.interacting || this._pendingInteractionIdx >= 0) return;
 
     this._pendingInteractionIdx = idx;
-    await this._alignSectionToViewport(idx, "smooth");
+    if (s.def.key === "city") {
+      await this._centerCitySectionInShowcase("smooth");
+    } else {
+      await this._alignSectionToViewport(idx, "smooth");
+    }
     if (this._pendingInteractionIdx !== idx) return;
 
     this._setSectionHot(idx, true);
@@ -806,28 +848,12 @@ export class ShowcaseMode {
     const s = this._sections[idx];
     if (!s) return;
 
-    s.interacting = false;
-    this._interactingIdx = -1;
-
-    // Resume page scroll
-    this._host.style.overflow = "";
-
-    // Restore gate UI
-    if (s.blocker) s.blocker.style.display = "";
-    if (s.interactBtn) s.interactBtn.style.display = "";
-
-    // Restore fixed UI
-    this._exitBtn.classList.add("showcase__exit-btn--hidden");
-    this._backBtn.classList.remove("showcase__back-btn--hidden");
-    this._inventoryUi.setHidden(false);
-
-    // Project-specific deactivation
     if (s.def.key === "city") {
-      const cityApp = s.projectRef as CityApp | null;
-      cityApp?.resetToOverview(0.5);
-      cityApp?.setScrollInputEnabled(false);
-      void this._centerCitySectionInShowcase("auto");
+      this._exitCityInteraction({ resetProject: true, centerSection: true, behavior: "smooth" });
+      return;
     }
+
+    this._restoreViewingMode(idx);
   }
 
   // ── per-frame / per-scroll updates ─────────────────────────────────────────
