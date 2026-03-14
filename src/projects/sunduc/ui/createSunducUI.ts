@@ -19,7 +19,6 @@ export type SunducUI = {
 type CreateSunducUIOptions = {
   host: HTMLElement;
   embedded: boolean;
-  onMenu: () => void;
 };
 
 export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
@@ -56,22 +55,9 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
     <div class="sunduc__viewer">
       <div class="sunduc__canvas-wrap">
         <canvas class="sunduc__canvas"></canvas>
-        <div class="sunduc__status">Загрузка…</div>
-        <div class="sunduc__gesture">Крути модель пальцем или мышкой</div>
+        <div class="sunduc__status"></div>
       </div>
     </div>
-    <aside class="sunduc__debug${SUNDUC_CONFIG.debug.showPanel ? "" : " sunduc__debug--hidden"}">
-      <div class="sunduc__debug-title">Debug Animations</div>
-      <div class="sunduc__debug-group">
-        <div class="sunduc__debug-label">Камни</div>
-        <div class="sunduc__debug-grid sunduc__debug-stones"></div>
-      </div>
-      <div class="sunduc__debug-group">
-        <div class="sunduc__debug-label">Сценарий</div>
-        <div class="sunduc__debug-grid sunduc__debug-sequence"></div>
-      </div>
-      <div class="sunduc__debug-summary">Считываю клипы…</div>
-    </aside>
   `;
 
   host.appendChild(root);
@@ -79,58 +65,24 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
   const canvas = _requireElement(root, ".sunduc__canvas") as HTMLCanvasElement;
   const canvasWrap = _requireElement(root, ".sunduc__canvas-wrap") as HTMLDivElement;
   const status = _requireElement(root, ".sunduc__status") as HTMLDivElement;
-  const debugSummary = _requireElement(root, ".sunduc__debug-summary") as HTMLDivElement;
-  const stoneButtonsWrap = _requireElement(root, ".sunduc__debug-stones") as HTMLDivElement;
-  const sequenceButtonsWrap = _requireElement(root, ".sunduc__debug-sequence") as HTMLDivElement;
-  const menuButton = root.querySelector(".sunduc__menu") as HTMLButtonElement | null;
-
-  const clipButtons = new Map<string, HTMLButtonElement>();
-  const onMenuClick = (): void => options.onMenu();
-  menuButton?.addEventListener("click", onMenuClick);
 
   return {
     canvas,
     canvasWrap,
     setStatus(text: string): void {
       status.textContent = text;
+      status.style.display = text ? "" : "none";
     },
-    setButtonsEnabled(enabled: boolean): void {
-      const buttons = root.querySelectorAll(".sunduc__debug button");
-      buttons.forEach((button) => {
-        (button as HTMLButtonElement).disabled = !enabled;
-      });
+    setButtonsEnabled(_enabled: boolean): void {
+      // Debug controls are intentionally hidden in the minimalist showcase UI.
     },
-    setClipButtonActive(clipName: string, active: boolean): void {
-      const button = clipButtons.get(clipName);
-      if (!button) return;
-
-      button.classList.toggle("btn--active", active);
-      button.setAttribute("aria-pressed", active ? "true" : "false");
+    setClipButtonActive(_clipName: string, _active: boolean): void {
+      // Debug controls are intentionally hidden in the minimalist showcase UI.
     },
-    renderAnimationControls(renderOptions): void {
-      stoneButtonsWrap.innerHTML = "";
-      sequenceButtonsWrap.innerHTML = "";
-      clipButtons.clear();
-
-      debugSummary.textContent = renderOptions.summary;
-
-      for (const clipName of renderOptions.stoneClipNames) {
-        stoneButtonsWrap.appendChild(_createClipButton(clipName, renderOptions.onToggleClip, clipButtons));
-      }
-
-      const resetButton = document.createElement("button");
-      resetButton.className = "btn sunduc__debug-btn";
-      resetButton.type = "button";
-      resetButton.textContent = "Reset all";
-      resetButton.addEventListener("click", () => renderOptions.onResetAll());
-      sequenceButtonsWrap.appendChild(resetButton);
-
-      for (const clipName of renderOptions.sequenceClipNames) {
-        sequenceButtonsWrap.appendChild(_createClipButton(clipName, renderOptions.onToggleClip, clipButtons));
-      }
+    renderAnimationControls(_renderOptions): void {
+      // Debug controls are intentionally hidden in the minimalist showcase UI.
     },
     dispose(): void {
-      menuButton?.removeEventListener("click", onMenuClick);
       root.remove();
       host.classList.remove("launcher--puzzle");
     }
@@ -141,23 +93,7 @@ function _applyCssVars(root: HTMLDivElement): void {
   root.style.setProperty("--sunduc-info-min-height", `${SUNDUC_CONFIG.layout.infoMinHeightVh}svh`);
   root.style.setProperty("--sunduc-viewer-min-height", `${SUNDUC_CONFIG.layout.viewerMinHeightVh}svh`);
   root.style.setProperty("--sunduc-info-max-width", `${SUNDUC_CONFIG.layout.infoMaxWidthPx}px`);
-  root.style.setProperty("--sunduc-debug-width", `${SUNDUC_CONFIG.layout.debugPanelWidthPx}px`);
   root.style.setProperty("--sunduc-canvas-min-height", `${SUNDUC_CONFIG.layout.canvasMinHeightPx}px`);
-}
-
-function _createClipButton(
-  clipName: string,
-  onToggleClip: (clipName: string) => void,
-  clipButtons: Map<string, HTMLButtonElement>
-): HTMLButtonElement {
-  const button = document.createElement("button");
-  button.className = "btn sunduc__debug-btn";
-  button.type = "button";
-  button.textContent = clipName;
-  button.setAttribute("aria-pressed", "false");
-  button.addEventListener("click", () => onToggleClip(clipName));
-  clipButtons.set(clipName, button);
-  return button;
 }
 
 function _requireElement(root: ParentNode, selector: string): HTMLElement {

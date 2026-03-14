@@ -776,21 +776,21 @@ canvas {
   display: grid;
   align-items: end;
   min-height: var(--sunduc-info-min-height, 16svh);
-  padding: 56px 36px 18px;
+  padding: 56px 24px 18px;
   box-sizing: border-box;
 }
 
 .sunduc__info-card {
-  width: min(100%, 920px);
+  width: 100%;
+  max-width: var(--sunduc-info-max-width, 1280px);
   display: grid;
   gap: 10px;
-  padding: 18px 20px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(180deg, rgba(18, 22, 34, 0.72), rgba(9, 12, 20, 0.52));
-  backdrop-filter: blur(16px);
-  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.22);
-  margin: 0 auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  margin: 0;
 }
 
 .sunduc__eyebrow {
@@ -820,7 +820,7 @@ canvas {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 18px;
-  max-width: 760px;
+  max-width: 900px;
 }
 
 .sunduc__paragraph {
@@ -833,15 +833,14 @@ canvas {
 .sunduc__badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 14px;
 }
 
 .sunduc__badge {
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.78);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
 }
 
@@ -855,17 +854,17 @@ canvas {
 .sunduc__viewer {
   position: relative;
   min-height: var(--sunduc-viewer-min-height, 62svh);
-  padding: 0 36px 28px;
+  padding: 0 0 28px;
   box-sizing: border-box;
   display: block;
 }
 
 .sunduc__canvas-wrap {
   position: relative;
-  width: min(100%, 1220px);
+  width: 100%;
   height: clamp(var(--sunduc-canvas-min-height, 420px), 62svh, 760px);
   min-height: var(--sunduc-canvas-min-height, 420px);
-  margin: 0 auto;
+  margin: 0;
   overflow: hidden;
   background:
     radial-gradient(540px 320px at 50% 24%, rgba(255, 242, 216, 0.14), transparent 58%),
@@ -884,15 +883,13 @@ canvas {
   cursor: grabbing;
 }
 
-.sunduc__status,
-.sunduc__gesture {
+.sunduc__status {
   position: absolute;
   left: 16px;
-  padding: 9px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(12, 16, 24, 0.44);
-  backdrop-filter: blur(12px);
+  padding: 0;
+  border: none;
+  background: transparent;
+  backdrop-filter: none;
   font-size: 12px;
   line-height: 1.5;
 }
@@ -901,64 +898,6 @@ canvas {
   top: 16px;
   max-width: min(54ch, calc(100% - 32px));
   color: rgba(255, 255, 255, 0.82);
-}
-
-.sunduc__gesture {
-  bottom: 16px;
-  color: var(--muted);
-}
-
-.sunduc__debug {
-  position: relative;
-  width: min(100%, 1220px);
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  padding: 20px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: linear-gradient(180deg, rgba(18, 22, 34, 0.56), rgba(10, 14, 22, 0.46));
-  backdrop-filter: blur(14px);
-  overflow: visible;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
-  margin: 0 auto 28px;
-}
-
-.sunduc__debug--hidden {
-  display: none;
-}
-
-.sunduc__debug-title {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.sunduc__debug-summary {
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--muted);
-}
-
-.sunduc__debug-group {
-  display: grid;
-  gap: 10px;
-}
-
-.sunduc__debug-label {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.sunduc__debug-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.sunduc__debug-btn {
-  font-size: 13px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1244,7 +1183,6 @@ canvas {
   }
 
   .sunduc__viewer {
-    padding: 0 18px 18px;
   }
 
   .sunduc__canvas-wrap {

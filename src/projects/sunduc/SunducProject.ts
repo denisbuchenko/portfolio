@@ -28,8 +28,7 @@ export class SunducProject {
   constructor(options: SunducProjectOptions) {
     this._ui = createSunducUI({
       host: options.host,
-      embedded: options.embedded ?? false,
-      onMenu: options.onMenu ?? (() => window.location.reload())
+      embedded: options.embedded ?? false
     });
 
     this._viewer = createSunducViewer({
@@ -46,7 +45,7 @@ export class SunducProject {
     this._resize();
 
     this._ui.setButtonsEnabled(false);
-    this._ui.setStatus("Загрузка модели и анимаций…");
+    this._ui.setStatus("");
 
     this._frameHandle = requestAnimationFrame(this._frame);
     void this._load();
@@ -155,7 +154,7 @@ export class SunducProject {
       this._animationController.initializeClips(this._interactiveClipNames);
 
       this._ui.setButtonsEnabled(true);
-      this._ui.setStatus("Модель готова. Включай тумблеры, чтобы ставить анимации в нужное состояние.");
+      this._ui.setStatus("");
     } catch (error) {
       if (this._disposed) return;
       this._ui.setStatus(`Ошибка загрузки: ${error instanceof Error ? error.message : String(error)}`);
