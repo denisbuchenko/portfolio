@@ -36,6 +36,7 @@ export class GnomesApp {
 
   private _getScrollY: () => number;
   private _setScrollY: (scrollY: number, behavior?: ScrollBehavior) => Promise<void> | void;
+  private _setScrollLocked: (locked: boolean) => void;
   private _pendingFocusToken = 0;
 
   private _onResize = () => this._handleResize();
@@ -51,6 +52,7 @@ export class GnomesApp {
     uiRoot: HTMLElement;
     getScrollY?: () => number;
     setScrollY?: (scrollY: number, behavior?: ScrollBehavior) => Promise<void> | void;
+    setScrollLocked?: (locked: boolean) => void;
   }) {
     this._canvas = opts.canvas;
     this._interactionEl = opts.interactionEl ?? opts.canvas;
@@ -61,11 +63,18 @@ export class GnomesApp {
       ((scrollY, behavior = "smooth") => {
         window.scrollTo({ top: scrollY, behavior });
       });
+    this._setScrollLocked = opts.setScrollLocked ?? (() => {});
 
     this._composer = new SceneComposer({ canvas: this._canvas });
     this._cameraRig = new ScrollCameraRig({ pages: GNOMES_CONFIG.pages });
     this._factory = new GnomeFactory();
-    this._dialogue = new DialogueSystem({ uiRoot: opts.uiRoot, portraitUrl: "/fr.jpg" });
+    this._dialogue = new DialogueSystem({
+      uiRoot: opts.uiRoot,
+      portraitUrl: "/fr.jpg",
+      onVisibilityChange: (isOpen) => {
+        this._setScrollLocked(isOpen);
+      },
+    });
   }
 
   async start(): Promise<void> {
@@ -133,6 +142,8 @@ export class GnomesApp {
 
   dispose(): void {
     this._disposed = true;
+    this._dialogue.close();
+    this._setScrollLocked(false);
     window.removeEventListener("resize", this._onResize);
     window.removeEventListener("scroll", this._onScroll);
     this._interactionEl.removeEventListener("click", this._onClick);

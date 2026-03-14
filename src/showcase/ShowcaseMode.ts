@@ -610,8 +610,19 @@ export class ShowcaseMode {
       await this._scrollHostTo(targetScrollTop, behavior);
       this._updateActiveSection(this._resolveSectionIdx("gnomes"));
     };
+    const setScrollLocked = (locked: boolean): void => {
+      hostEl.style.overflow = locked ? "hidden" : "";
+    };
 
-    const app = new GnomesApp({ canvas, interactionEl: wrapper, statusEl: status, uiRoot, getScrollY, setScrollY });
+    const app = new GnomesApp({
+      canvas,
+      interactionEl: wrapper,
+      statusEl: status,
+      uiRoot,
+      getScrollY,
+      setScrollY,
+      setScrollLocked,
+    });
     app.setRenderActive(s.hot);
 
     let disposed = false;

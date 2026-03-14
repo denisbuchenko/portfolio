@@ -8,13 +8,16 @@ import { DialogueProgressStore } from "./DialogueProgressStore";
 export class DialogueSystem {
   private _ui: DialogueUI;
   private _engine: DialogueEngine;
+  private _isOpen = false;
+  private _onVisibilityChange: (isOpen: boolean) => void;
 
-  constructor(opts: { uiRoot: HTMLElement; portraitUrl: string }) {
+  constructor(opts: { uiRoot: HTMLElement; portraitUrl: string; onVisibilityChange?: (isOpen: boolean) => void }) {
     const db = new DialogueDatabase(loadAllDialogues());
     const knowledge = new PlayerKnowledgeStore();
     const progress = new DialogueProgressStore();
     this._engine = new DialogueEngine({ db, knowledge, progress });
     this._ui = new DialogueUI({ root: opts.uiRoot, portraitUrl: opts.portraitUrl });
+    this._onVisibilityChange = opts.onVisibilityChange ?? (() => {});
 
     this._ui.setHandlers({
       onChoose: (opt) => {
@@ -44,14 +47,24 @@ export class DialogueSystem {
         isFinal: false,
         options: [],
       });
+      this._setOpen(true);
       return;
     }
     this._ui.show(res.state);
+    this._setOpen(true);
   }
 
   close(): void {
+    if (!this._isOpen) return;
     this._engine.end();
     this._ui.hide();
+    this._setOpen(false);
+  }
+
+  private _setOpen(isOpen: boolean): void {
+    if (this._isOpen === isOpen) return;
+    this._isOpen = isOpen;
+    this._onVisibilityChange(isOpen);
   }
 }
 

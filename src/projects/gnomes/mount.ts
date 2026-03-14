@@ -54,6 +54,13 @@ export function mountGnomesProject(host: HTMLElement): () => void {
     htmlScrollSnapType: document.documentElement.style.scrollSnapType,
     htmlOverscrollBehaviorY: document.documentElement.style.overscrollBehaviorY,
   };
+  let _scrollLocked = false;
+
+  const _setStandaloneScrollLocked = (locked: boolean): void => {
+    if (_scrollLocked === locked) return;
+    _scrollLocked = locked;
+    document.body.style.overflowY = locked ? "hidden" : "auto";
+  };
 
   // Делаем нативный scroll страницы (не div), а камеру двигаем по scrollY.
   document.body.style.overflowY = "auto";
@@ -91,6 +98,7 @@ export function mountGnomesProject(host: HTMLElement): () => void {
     setScrollY: (scrollY, behavior = "smooth") => {
       window.scrollTo({ top: scrollY, behavior });
     },
+    setScrollLocked: _setStandaloneScrollLocked,
   });
   let disposed = false;
   void app.start().catch((e) => {
