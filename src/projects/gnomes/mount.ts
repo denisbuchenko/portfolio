@@ -28,6 +28,7 @@ export function mountGnomesProject(host: HTMLElement): () => void {
   const canvas = document.createElement("canvas");
   canvas.style.width = "100%";
   canvas.style.height = "100%";
+  canvas.style.pointerEvents = "none";
   // Важно: иначе на мобильном свайп по canvas не будет скроллить страницу.
   canvas.style.touchAction = "pan-y";
   wrapper.appendChild(canvas);
@@ -82,7 +83,7 @@ export function mountGnomesProject(host: HTMLElement): () => void {
   // Всегда стартуем с первого гнома.
   window.scrollTo(0, 0);
 
-  const app = new GnomesApp({ canvas, statusEl: status, uiRoot });
+  const app = new GnomesApp({ canvas, interactionEl: wrapper, statusEl: status, uiRoot });
   let disposed = false;
   void app.start().catch((e) => {
     if (disposed) return;

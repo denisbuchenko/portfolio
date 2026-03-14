@@ -10,6 +10,7 @@ import type { GnomeAnimationProfile } from "./GnomeController";
 
 export class GnomesApp {
   private _canvas: HTMLCanvasElement;
+  private _interactionEl: HTMLElement;
   private _statusEl: HTMLElement | null;
   private _dialogue: DialogueSystem;
 
@@ -27,8 +28,6 @@ export class GnomesApp {
   private _clickTargets: THREE.Object3D[] = [];
   private _pickOffsetY = 0.8;
 
-  private _tapStart: { x: number; y: number; t: number } | null = null;
-
   private _raf = 0;
   private _lastTs = 0;
   private _started = false;
@@ -39,11 +38,17 @@ export class GnomesApp {
 
   private _onResize = () => this._handleResize();
   private _onScroll = () => this._handleScroll();
-  private _onPointerDown = (e: PointerEvent) => this._handlePointerDown(e);
-  private _onPointerUp = (e: PointerEvent) => this._handlePointerUp(e);
+  private _onClick = (e: MouseEvent) => this._handleClick(e);
 
-  constructor(opts: { canvas: HTMLCanvasElement; statusEl?: HTMLElement | null; uiRoot: HTMLElement; getScrollY?: () => number }) {
+  constructor(opts: {
+    canvas: HTMLCanvasElement;
+    interactionEl?: HTMLElement;
+    statusEl?: HTMLElement | null;
+    uiRoot: HTMLElement;
+    getScrollY?: () => number;
+  }) {
     this._canvas = opts.canvas;
+    this._interactionEl = opts.interactionEl ?? opts.canvas;
     this._statusEl = opts.statusEl ?? null;
     this._getScrollY = opts.getScrollY ?? (() => window.scrollY);
 
@@ -94,8 +99,7 @@ export class GnomesApp {
 
     window.addEventListener("resize", this._onResize);
     window.addEventListener("scroll", this._onScroll, { passive: true });
-    this._canvas.addEventListener("pointerdown", this._onPointerDown);
-    this._canvas.addEventListener("pointerup", this._onPointerUp, { passive: true });
+    this._interactionEl.addEventListener("click", this._onClick);
 
     this._lastTs = performance.now();
     this._syncSceneState();
@@ -121,8 +125,7 @@ export class GnomesApp {
     this._disposed = true;
     window.removeEventListener("resize", this._onResize);
     window.removeEventListener("scroll", this._onScroll);
-    this._canvas.removeEventListener("pointerdown", this._onPointerDown);
-    this._canvas.removeEventListener("pointerup", this._onPointerUp);
+    this._interactionEl.removeEventListener("click", this._onClick);
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
 
@@ -213,25 +216,8 @@ export class GnomesApp {
     }
   }
 
-  private _handlePointerDown(e: PointerEvent): void {
+  private _handleClick(e: MouseEvent): void {
     if (!this._renderActive) return;
-    // На мобильных pointerdown часто начинается как скролл — считаем кликом только tap (pointerup без смещения).
-    this._tapStart = { x: e.clientX, y: e.clientY, t: performance.now() };
-  }
-
-  private _handlePointerUp(e: PointerEvent): void {
-    if (!this._renderActive) return;
-    if (!this._tapStart) return;
-    const dt = performance.now() - this._tapStart.t;
-    const dx = e.clientX - this._tapStart.x;
-    const dy = e.clientY - this._tapStart.y;
-    this._tapStart = null;
-
-    // Если это был свайп/скролл — игнор.
-    const dist = Math.hypot(dx, dy);
-    if (dist > 10) return;
-    if (dt > 650) return;
-
     const id = this._pickCharacterIdAt(e.clientX, e.clientY);
     if (!id) return;
 

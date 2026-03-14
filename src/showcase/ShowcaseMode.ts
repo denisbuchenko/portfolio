@@ -495,17 +495,18 @@ export class ShowcaseMode {
   private _mountGnomes(s: SectionState): void {
     const container = s.containerEl;
     container.innerHTML = "";
+    container.style.touchAction = "pan-y";
 
     const wrapper = _el("div");
-    wrapper.style.cssText = "position:absolute;inset:0;pointer-events:auto;";
+    wrapper.style.cssText = "position:absolute;inset:0;pointer-events:auto;touch-action:pan-y;";
     container.appendChild(wrapper);
 
     const uiRoot = _el("div");
-    uiRoot.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:20;";
+    uiRoot.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:20;touch-action:pan-y;";
     wrapper.appendChild(uiRoot);
 
     const canvas = document.createElement("canvas");
-    canvas.style.cssText = "width:100%;height:100%;touch-action:pan-y;";
+    canvas.style.cssText = "width:100%;height:100%;touch-action:pan-y;pointer-events:none;";
     wrapper.appendChild(canvas);
 
     const status = _el("div");
@@ -524,7 +525,7 @@ export class ShowcaseMode {
     const hostEl = this._host;
     const getScrollY = (): number => Math.max(0, hostEl.scrollTop - sectionEl.offsetTop);
 
-    const app = new GnomesApp({ canvas, statusEl: status, uiRoot, getScrollY });
+    const app = new GnomesApp({ canvas, interactionEl: wrapper, statusEl: status, uiRoot, getScrollY });
     app.setRenderActive(s.hot);
 
     let disposed = false;
