@@ -2,13 +2,8 @@ import * as THREE from "three";
 import { enableShadowsAndSrgb, loadGltf } from "../city/three/loadGltf";
 import { OSMINOG_DUDU_CONFIG } from "./config";
 import { createDuduAudio, type DuduAudio, type DuduKeyName } from "./createDuduAudio";
-import { LottieSegmentsController, type OsminogUiMode } from "./LottieSegmentsController";
+import { LottieSegmentsController } from "./LottieSegmentsController";
 import { MelodySequenceTracker, type MelodyTrackerState } from "./MelodySequenceTracker";
-
-function _setActiveBtn(btn: HTMLButtonElement, active: boolean): void {
-  if (active) btn.classList.add("btn--active");
-  else btn.classList.remove("btn--active");
-}
 
 function _collectMeshTargets(root: THREE.Object3D | null | undefined): THREE.Mesh[] {
   if (!root) return [];
@@ -301,18 +296,6 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
   btnMenu.addEventListener("click", () => window.location.reload());
   uiRoot.appendChild(btnMenu);
 
-  const btnDudu = document.createElement("button");
-  btnDudu.className = "btn osminog__dudu-toggle";
-  btnDudu.type = "button";
-  btnDudu.textContent = "Дудка";
-  btnDudu.setAttribute("aria-label", "Показать 3D дудку");
-  btnDudu.disabled = true;
-  uiRoot.appendChild(btnDudu);
-
-  const controls = document.createElement("div");
-  controls.className = "osminog__controls";
-  uiRoot.appendChild(controls);
-
   const melodyProgress = document.createElement("div");
   melodyProgress.className = "osminog__melody-progress";
   melodyProgress.setAttribute("aria-label", "Прогресс мелодии");
@@ -322,39 +305,6 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
   melodySuccess.className = "osminog__melody-success";
   melodySuccess.textContent = "УСПЕХ";
   uiRoot.appendChild(melodySuccess);
-
-  const btn1 = document.createElement("button");
-  btn1.className = "btn osminog__seg-btn";
-  btn1.type = "button";
-  btn1.textContent = "1";
-  btn1.setAttribute("aria-label", "Анимация 1");
-  controls.appendChild(btn1);
-
-  const btn2 = document.createElement("button");
-  btn2.className = "btn osminog__seg-btn";
-  btn2.type = "button";
-  btn2.textContent = "2";
-  btn2.setAttribute("aria-label", "Переход");
-  controls.appendChild(btn2);
-
-  const btn3 = document.createElement("button");
-  btn3.className = "btn osminog__seg-btn";
-  btn3.type = "button";
-  btn3.textContent = "3";
-  btn3.setAttribute("aria-label", "Анимация 3");
-  controls.appendChild(btn3);
-
-  const btn4 = document.createElement("button");
-  btn4.className = "btn osminog__seg-btn";
-  btn4.type = "button";
-  btn4.textContent = "4";
-  btn4.setAttribute("aria-label", "Финальный кадр");
-  controls.appendChild(btn4);
-
-  btn1.disabled = true;
-  btn2.disabled = true;
-  btn3.disabled = true;
-  btn4.disabled = true;
 
   const melodyDots = Array.from({ length: OSMINOG_DUDU_CONFIG.melody.sequences.length + 1 }, (_, index) => {
     const dot = document.createElement("span");
@@ -366,7 +316,6 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
 
   let _disposed = false;
   let _renderActive = true;
-  let _unsubscribe: (() => void) | null = null;
   let _unsubscribeSuccessSequence: (() => void) | null = null;
   let _controller: LottieSegmentsController | null = null;
   let _anim: import("lottie-web").AnimationItem | null = null;
@@ -525,7 +474,6 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
   const _setDuduVisible = (visible: boolean): void => {
     _threeVisible = visible && _threeReady;
     threeCanvas.classList.toggle("osminog__three--visible", _threeVisible);
-    _setActiveBtn(btnDudu, _threeVisible);
 
     if (!_threeVisible) {
       _resetDuduInteractionState();
@@ -535,7 +483,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
   };
 
   const _triggerDuduToggle = (): boolean => {
-    if (_disposed || btnDudu.disabled) return false;
+    if (_disposed || !_threeReady) return false;
     _setDuduVisible(!_threeVisible);
     return true;
   };
@@ -921,13 +869,6 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
       });
 
       _controller = new LottieSegmentsController(_anim);
-      const updateUi = (mode: OsminogUiMode) => {
-        _setActiveBtn(btn1, mode === 1);
-        _setActiveBtn(btn2, mode === 2);
-        _setActiveBtn(btn3, mode === 3);
-        _setActiveBtn(btn4, mode === 4);
-      };
-      _unsubscribe = _controller.onUiModeChange(updateUi);
       _unsubscribeSuccessSequence = _controller.onSuccessSequenceComplete(() => {
         if (_keyRewardGranted) return;
         _keyRewardGranted = true;
@@ -938,10 +879,6 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
         }, 1500);
       });
 
-      btn1.disabled = false;
-      btn2.disabled = false;
-      btn3.disabled = false;
-      btn4.disabled = false;
       _lottieReady = true;
 
       _renderer = new THREE.WebGLRenderer({
@@ -1033,7 +970,6 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
       window.addEventListener("pointerup", _handleThreePointerEnd);
       window.addEventListener("pointercancel", _handleThreePointerEnd);
       _threeReady = true;
-      btnDudu.disabled = false;
       _setPlaybackActive(_renderActive);
       _updateLoadingState();
     } catch (e) {
@@ -1041,18 +977,9 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     }
   })();
 
-  btn1.addEventListener("click", () => _controller?.request(1));
-  btn2.addEventListener("click", () => _controller?.request(2));
-  btn3.addEventListener("click", () => _controller?.request(3));
-  btn4.addEventListener("click", () => _controller?.request(4));
-  btnDudu.addEventListener("click", () => {
-    _triggerDuduToggle();
-  });
-
   const _mounted: MountedOsminogProject = {
     dispose(): void {
     _disposed = true;
-    _unsubscribe?.();
     _unsubscribeSuccessSequence?.();
     _controller?.dispose();
     _anim?.destroy();

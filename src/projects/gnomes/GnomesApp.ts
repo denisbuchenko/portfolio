@@ -11,7 +11,6 @@ import type { GnomeAnimationProfile } from "./GnomeController";
 export class GnomesApp {
   private _canvas: HTMLCanvasElement;
   private _interactionEl: HTMLElement;
-  private _statusEl: HTMLElement | null;
   private _dialogue: DialogueSystem;
 
   private _composer: SceneComposer;
@@ -48,7 +47,6 @@ export class GnomesApp {
   constructor(opts: {
     canvas: HTMLCanvasElement;
     interactionEl?: HTMLElement;
-    statusEl?: HTMLElement | null;
     uiRoot: HTMLElement;
     getScrollY?: () => number;
     setScrollY?: (scrollY: number, behavior?: ScrollBehavior) => Promise<void> | void;
@@ -56,7 +54,6 @@ export class GnomesApp {
   }) {
     this._canvas = opts.canvas;
     this._interactionEl = opts.interactionEl ?? opts.canvas;
-    this._statusEl = opts.statusEl ?? null;
     this._getScrollY = opts.getScrollY ?? (() => window.scrollY);
     this._setScrollY =
       opts.setScrollY ??
@@ -80,7 +77,6 @@ export class GnomesApp {
   async start(): Promise<void> {
     if (this._started) return;
     this._started = true;
-    this._setStatus("Загрузка гномов…");
 
     await this._factory.load();
     if (this._disposed) return;
@@ -123,7 +119,6 @@ export class GnomesApp {
     this._lastTs = performance.now();
     this._syncSceneState();
     if (this._renderActive) this._requestNextFrame();
-    this._setStatus("Готово • Скролль вниз, чтобы перейти к следующему гному");
   }
 
   private _paletteFor(characterId: string): GnomePalette {
@@ -308,11 +303,6 @@ export class GnomesApp {
 
     if (bestId && bestDist <= thresholdPx) return bestId;
     return null;
-  }
-
-  private _setStatus(text: string): void {
-    if (!this._statusEl) return;
-    this._statusEl.textContent = text;
   }
 
   private _resolveCharacterScrollY(gnomeIdx: number): number {

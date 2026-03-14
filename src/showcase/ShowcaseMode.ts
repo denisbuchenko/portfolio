@@ -664,17 +664,6 @@ export class ShowcaseMode {
     canvas.style.cssText = "width:100%;height:100%;touch-action:pan-y;pointer-events:none;";
     wrapper.appendChild(canvas);
 
-    const status = _el("div");
-    status.style.cssText = `
-      position:absolute;left:14px;bottom:14px;z-index:6;
-      font-size:12px;color:var(--muted);padding:8px 10px;
-      border:1px solid var(--panel-border);border-radius:12px;
-      background:var(--panel);backdrop-filter:blur(10px);
-      pointer-events:none;
-    `;
-    status.textContent = "Загрузка…";
-    wrapper.appendChild(status);
-
     // getScrollY: map host scrollTop → section-local scroll
     const sectionEl = s.el;
     const hostEl = this._host;
@@ -694,7 +683,6 @@ export class ShowcaseMode {
     const app = new GnomesApp({
       canvas,
       interactionEl: wrapper,
-      statusEl: status,
       uiRoot,
       getScrollY,
       setScrollY,
@@ -705,7 +693,6 @@ export class ShowcaseMode {
     let disposed = false;
     void app.start().catch((e) => {
       if (disposed) return;
-      status.textContent = e instanceof Error ? e.message : String(e);
       // eslint-disable-next-line no-console
       console.error(e);
     });

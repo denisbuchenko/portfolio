@@ -48,8 +48,9 @@ export class CityApp {
 
   private _startBtn: StartButton | null = null;
   private _crashOverlay: CrashOverlay;
-  private _debugPanel: CityDebugPanel;
+  private _debugPanel: CityDebugPanel | null = null;
   private _showStartButton: boolean;
+  private _showDebugPanel: boolean;
   private _onResetToOverview: ((reason: "crash" | "manual") => void) | null;
 
   private _raf = 0;
@@ -91,12 +92,14 @@ export class CityApp {
     canvas: HTMLCanvasElement;
     uiRoot: HTMLDivElement;
     showStartButton?: boolean;
+    showDebugPanel?: boolean;
     onResetToOverview?: (reason: "crash" | "manual") => void;
   }) {
     this._host = opts.host;
     this._canvas = opts.canvas;
     this._uiRoot = opts.uiRoot;
     this._showStartButton = opts.showStartButton ?? true;
+    this._showDebugPanel = opts.showDebugPanel ?? false;
     this._onResetToOverview = opts.onResetToOverview ?? null;
 
     installMeshBvhRaycast();
@@ -152,14 +155,18 @@ export class CityApp {
     }
 
     this._crashOverlay = new CrashOverlay(this._uiRoot);
-    this._debugPanel = new CityDebugPanel(this._uiRoot);
-    this._debugPanel.onFocusFirstGirl(() => this._beginDebugFocusFirstGirl());
-    this._debugFocusGirlTuning = this._cloneDebugFocusGirlTuning();
-    this._debugPanel.setDebugFocusGirlTuning(this._debugFocusGirlTuning);
-    this._debugPanel.onDebugFocusGirlTuningChange((next) => {
-      this._debugFocusGirlTuning = next;
-      this._applyDebugFocusGirlTuningLive();
-    });
+    if (this._showDebugPanel) {
+      this._debugPanel = new CityDebugPanel(this._uiRoot);
+      this._debugPanel.onFocusFirstGirl(() => this._beginDebugFocusFirstGirl());
+      this._debugFocusGirlTuning = this._cloneDebugFocusGirlTuning();
+      this._debugPanel.setDebugFocusGirlTuning(this._debugFocusGirlTuning);
+      this._debugPanel.onDebugFocusGirlTuningChange((next) => {
+        this._debugFocusGirlTuning = next;
+        this._applyDebugFocusGirlTuningLive();
+      });
+    } else {
+      this._debugFocusGirlTuning = this._cloneDebugFocusGirlTuning();
+    }
 
     this._unsubScroll = this._scroll.bind(this._host);
     this._unsubTurn = this._turn.bind(this._host);
@@ -199,7 +206,7 @@ export class CityApp {
 
     this._startBtn?.dispose();
     this._crashOverlay.dispose();
-    this._debugPanel.dispose();
+    this._debugPanel?.dispose();
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
 
     this._girlsSystem.dispose();
@@ -287,7 +294,7 @@ export class CityApp {
 
     // NPC girls (явная инициализация).
     await this._girlsSystem.init({ cityRoot: this._cityRoot });
-    this._debugPanel.setGirls(this._girlsSystem.girls);
+    this._debugPanel?.setGirls(this._girlsSystem.girls);
 
     // “Пол главнее”: убираем z-fighting/конфликты при пересечениях со сплющенными домами.
     this._applyFloorPriority(this._cityRoot);
@@ -548,7 +555,7 @@ export class CityApp {
     const aspect = w / Math.max(1, h);
 
     // Debug panel visible only in overview.
-    this._debugPanel.setVisible(true);
+    this._debugPanel?.setVisible(true);
 
     // Если активен debug focus — подменяем обзорный апдейт на плавный наезд к девочке.
     if (this._debugFocus) {
@@ -688,7 +695,7 @@ export class CityApp {
     this._focusCamera.fov = this._focusFromFov;
     this._focusCamera.updateProjectionMatrix();
     this._activeCamera = this._focusCamera;
-    this._debugPanel.setVisible(false);
+    this._debugPanel?.setVisible(false);
   }
 
   private _updateFocus(dtSec: number): void {
@@ -904,7 +911,7 @@ export class CityApp {
     this._gameLogic?.reset();
     this._bikerRoot!.visible = true;
     this._crashOverlay.hide();
-    this._debugPanel.setVisible(false);
+    this._debugPanel?.setVisible(false);
     this._speedMul = 1;
     this._encounter = null;
     this._fitSunShadowToFocus(this._bikerRoot!.position, 64);
@@ -1189,7 +1196,7 @@ export class CityApp {
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
     this._crashOverlay.show();
-    this._debugPanel.setVisible(false);
+    this._debugPanel?.setVisible(false);
 
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
     this._resetTimer = window.setTimeout(() => this._resetToOverview("crash", 0.5), CITY_GAMEPLAY.crash.resetDelaySec * 1000);
@@ -1212,7 +1219,7 @@ export class CityApp {
     this._turn.setEnabled(false);
     this._crashOverlay.hide();
     this._startBtn?.setVisible(this._showStartButton);
-    this._debugPanel.setVisible(true);
+    this._debugPanel?.setVisible(true);
     this._debugFocus = null;
     this._debugFocusGirlId = null;
 

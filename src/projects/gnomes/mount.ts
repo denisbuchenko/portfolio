@@ -33,22 +33,6 @@ export function mountGnomesProject(host: HTMLElement): () => void {
   canvas.style.touchAction = "pan-y";
   wrapper.appendChild(canvas);
 
-  const status = document.createElement("div");
-  status.style.position = "absolute";
-  status.style.left = "14px";
-  status.style.bottom = "14px";
-  status.style.zIndex = "6";
-  status.style.fontSize = "12px";
-  status.style.color = "var(--muted)";
-  status.style.padding = "8px 10px";
-  status.style.border = "1px solid var(--panel-border)";
-  status.style.borderRadius = "12px";
-  status.style.background = "var(--panel)";
-  status.style.backdropFilter = "blur(10px)";
-  status.style.pointerEvents = "none";
-  status.textContent = "Инициализация…";
-  wrapper.appendChild(status);
-
   const saved: _SavedStyles = {
     bodyOverflowY: document.body.style.overflowY,
     htmlScrollSnapType: document.documentElement.style.scrollSnapType,
@@ -93,7 +77,6 @@ export function mountGnomesProject(host: HTMLElement): () => void {
   const app = new GnomesApp({
     canvas,
     interactionEl: wrapper,
-    statusEl: status,
     uiRoot,
     setScrollY: (scrollY, behavior = "smooth") => {
       window.scrollTo({ top: scrollY, behavior });
@@ -103,7 +86,6 @@ export function mountGnomesProject(host: HTMLElement): () => void {
   let disposed = false;
   void app.start().catch((e) => {
     if (disposed) return;
-    status.textContent = e instanceof Error ? e.message : String(e);
     // eslint-disable-next-line no-console
     console.error(e);
   });
