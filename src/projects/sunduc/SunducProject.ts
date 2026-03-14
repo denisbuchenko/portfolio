@@ -115,6 +115,10 @@ export class SunducProject {
     return this._sequenceController?.acceptItem(itemId) ?? { accepted: false };
   }
 
+  canAcceptInventoryItem(itemId: SunducInventoryItemId): boolean {
+    return this._sequenceController?.canAcceptItem(itemId) ?? false;
+  }
+
   private async _load(): Promise<void> {
     try {
       const gltf = await loadGltf(SUNDUC_CONFIG.assetUrl);

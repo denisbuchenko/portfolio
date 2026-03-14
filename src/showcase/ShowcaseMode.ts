@@ -563,8 +563,19 @@ export class ShowcaseMode {
     container.innerHTML = "";
 
     const project = mountSunducProject(container, { embedded: true });
+    let alignRequestedForDrag = false;
     const unsubscribeInventoryDrag = this._inventoryUi.subscribeDrag((event) => {
+      if (event.phase === "start") {
+        alignRequestedForDrag = false;
+      }
+
+      if (!alignRequestedForDrag && event.phase !== "end" && project.canAcceptInventoryItem(event.itemId)) {
+        alignRequestedForDrag = true;
+        void this.alignProject("sunduc", "smooth");
+      }
+
       if (event.phase !== "end") return;
+      alignRequestedForDrag = false;
       if (!project.hitTestInventoryDrop(event.clientX, event.clientY)) return;
 
       const dropResult = project.acceptInventoryItem(event.itemId);
