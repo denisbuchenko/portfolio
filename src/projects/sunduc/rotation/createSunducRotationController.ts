@@ -3,6 +3,7 @@ import { SUNDUC_CONFIG } from "../config";
 
 export type SunducRotationController = {
   update(deltaSeconds: number): void;
+  resetToInitialRotation(durationSec?: number): void;
   dispose(): void;
 };
 
@@ -14,13 +15,21 @@ type CreateSunducRotationControllerOptions = {
 export function createSunducRotationController(
   options: CreateSunducRotationControllerOptions
 ): SunducRotationController {
+  const _initialYaw = THREE.MathUtils.degToRad(SUNDUC_CONFIG.model.initialRotationDeg.y);
+  const _initialPitch = THREE.MathUtils.degToRad(SUNDUC_CONFIG.model.initialRotationDeg.x);
   const state = {
     _dragPointerId: null as number | null,
     _lastPointer: new THREE.Vector2(),
-    _yaw: THREE.MathUtils.degToRad(SUNDUC_CONFIG.model.initialRotationDeg.y),
-    _pitch: THREE.MathUtils.degToRad(SUNDUC_CONFIG.model.initialRotationDeg.x),
-    _targetYaw: THREE.MathUtils.degToRad(SUNDUC_CONFIG.model.initialRotationDeg.y),
-    _targetPitch: THREE.MathUtils.degToRad(SUNDUC_CONFIG.model.initialRotationDeg.x)
+    _yaw: _initialYaw,
+    _pitch: _initialPitch,
+    _targetYaw: _initialYaw,
+    _targetPitch: _initialPitch,
+    _resetElapsedSec: 0,
+    _resetDurationSec: 0,
+    _resetFromYaw: _initialYaw,
+    _resetToYaw: _initialYaw,
+    _resetFromPitch: _initialPitch,
+    _resetToPitch: _initialPitch
   };
 
   const onPointerDown = (event: PointerEvent): void => {
@@ -60,14 +69,45 @@ export function createSunducRotationController(
   options.canvas.addEventListener("pointercancel", onPointerUp);
   options.canvas.addEventListener("pointerleave", onPointerUp);
 
+  const _normalizeAngle = (angle: number): number => {
+    return Math.atan2(Math.sin(angle), Math.cos(angle));
+  };
+
+  const _shortestAngleDelta = (from: number, to: number): number => {
+    return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  };
+
   return {
     update(deltaSeconds: number): void {
-      const damping = 1 - Math.pow(1 - SUNDUC_CONFIG.model.damping, deltaSeconds * 60);
-      state._yaw = THREE.MathUtils.lerp(state._yaw, state._targetYaw, damping);
-      state._pitch = THREE.MathUtils.lerp(state._pitch, state._targetPitch, damping);
+      if (state._resetElapsedSec < state._resetDurationSec) {
+        state._resetElapsedSec = Math.min(state._resetDurationSec, state._resetElapsedSec + Math.max(0, deltaSeconds));
+        const t01 =
+          state._resetDurationSec <= 0 ? 1 : THREE.MathUtils.clamp(state._resetElapsedSec / state._resetDurationSec, 0, 1);
+        const eased = t01 * t01 * (3 - 2 * t01);
 
-      options.target.rotation.y = state._yaw;
+        state._yaw = state._resetFromYaw + (state._resetToYaw - state._resetFromYaw) * eased;
+        state._pitch = THREE.MathUtils.lerp(state._resetFromPitch, state._resetToPitch, eased);
+        state._targetYaw = state._yaw;
+        state._targetPitch = state._pitch;
+      } else {
+        const damping = 1 - Math.pow(1 - SUNDUC_CONFIG.model.damping, deltaSeconds * 60);
+        state._yaw = THREE.MathUtils.lerp(state._yaw, state._targetYaw, damping);
+        state._pitch = THREE.MathUtils.lerp(state._pitch, state._targetPitch, damping);
+      }
+
+      options.target.rotation.y = _normalizeAngle(state._yaw);
       options.target.rotation.x = state._pitch;
+    },
+    resetToInitialRotation(durationSec = 0.5): void {
+      state._dragPointerId = null;
+      state._resetElapsedSec = 0;
+      state._resetDurationSec = Math.max(0, durationSec);
+      state._resetFromYaw = _normalizeAngle(state._yaw);
+      state._resetToYaw = state._resetFromYaw + _shortestAngleDelta(state._resetFromYaw, _initialYaw);
+      state._resetFromPitch = state._pitch;
+      state._resetToPitch = _initialPitch;
+      state._targetYaw = state._resetToYaw;
+      state._targetPitch = state._resetToPitch;
     },
     dispose(): void {
       options.canvas.removeEventListener("pointerdown", onPointerDown);

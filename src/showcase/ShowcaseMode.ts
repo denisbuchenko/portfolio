@@ -571,6 +571,7 @@ export class ShowcaseMode {
 
       if (!alignRequestedForDrag && event.phase !== "end" && project.canAcceptInventoryItem(event.itemId)) {
         alignRequestedForDrag = true;
+        project.resetRotationToInitial(0.5);
         void this.alignProject("sunduc", "smooth");
       }
 

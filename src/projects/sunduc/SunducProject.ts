@@ -119,6 +119,11 @@ export class SunducProject {
     return this._sequenceController?.canAcceptItem(itemId) ?? false;
   }
 
+  resetRotationToInitial(durationSec = 0.5): void {
+    this._rotationController.resetToInitialRotation(durationSec);
+    if (this._renderActive) this._requestFrame();
+  }
+
   private async _load(): Promise<void> {
     try {
       const gltf = await loadGltf(SUNDUC_CONFIG.assetUrl);
