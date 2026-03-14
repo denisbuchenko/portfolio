@@ -6,7 +6,7 @@ export class StartButton {
     this._btn = document.createElement("button");
     this._btn.className = "btn";
     this._btn.type = "button";
-    this._btn.textContent = "Start";
+    this._btn.textContent = "Играть";
     this._btn.style.position = "absolute";
     this._btn.style.zIndex = "35";
     this._btn.style.transform = "translate(-50%, -50%)";

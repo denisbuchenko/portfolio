@@ -365,6 +365,28 @@ export class ShowcaseMode {
     this._updateCityProgress();
   }
 
+  private _getSectionMiddleScrollTop(idx: number): number {
+    const s = this._sections[idx];
+    if (!s) return this._host.scrollTop;
+
+    const localMaxScroll = Math.max(0, s.el.offsetHeight - this._host.clientHeight);
+    return s.el.offsetTop + localMaxScroll * 0.5;
+  }
+
+  private async _centerCitySectionInShowcase(behavior: ScrollBehavior): Promise<void> {
+    const cityIdx = this._resolveSectionIdx("city");
+    if (cityIdx < 0) return;
+
+    const citySection = this._sections[cityIdx];
+    const cityApp = citySection?.projectRef as CityApp | null;
+    cityApp?.setOverviewProgress(0.5);
+
+    const targetScrollTop = this._getSectionMiddleScrollTop(cityIdx);
+    await this._scrollHostTo(targetScrollTop, behavior);
+    this._updateActiveSection(cityIdx);
+    this._updateCityProgress();
+  }
+
   private _getSectionAlignScrollTop(s: SectionState): number {
     const hostRect = this._host.getBoundingClientRect();
     const sectionRect = s.el.getBoundingClientRect();
@@ -665,7 +687,17 @@ export class ShowcaseMode {
     canvas.style.cssText = "width:100%;height:100%;touch-action:none;";
     wrapper.appendChild(canvas);
 
-    const app = new CityApp({ host: wrapper, canvas, uiRoot });
+    const app = new CityApp({
+      host: wrapper,
+      canvas,
+      uiRoot,
+      showStartButton: false,
+      onResetToOverview: (reason) => {
+        app.setScrollInputEnabled(false);
+        if (reason !== "crash") return;
+        void this._centerCitySectionInShowcase("auto");
+      },
+    });
     let started = false;
     const _ensureStarted = (): void => {
       if (started) return;
@@ -761,7 +793,9 @@ export class ShowcaseMode {
 
     // Project-specific activation
     if (s.def.key === "city") {
-      (s.projectRef as CityApp)?.setScrollInputEnabled(true);
+      const cityApp = s.projectRef as CityApp | null;
+      cityApp?.setScrollInputEnabled(false);
+      cityApp?.startGame();
     }
   }
 
@@ -789,7 +823,10 @@ export class ShowcaseMode {
 
     // Project-specific deactivation
     if (s.def.key === "city") {
-      (s.projectRef as CityApp)?.setScrollInputEnabled(false);
+      const cityApp = s.projectRef as CityApp | null;
+      cityApp?.resetToOverview(0.5);
+      cityApp?.setScrollInputEnabled(false);
+      void this._centerCitySectionInShowcase("auto");
     }
   }
 

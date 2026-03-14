@@ -39,7 +39,7 @@ export function mountCityProject(host: HTMLElement): void {
   btnMenu.addEventListener("click", () => window.location.reload());
   uiRoot.appendChild(btnMenu);
 
-  const app = new CityApp({ host: wrapper, canvas, uiRoot });
+  const app = new CityApp({ host: wrapper, canvas, uiRoot, showStartButton: true });
   void app.start();
 }
 

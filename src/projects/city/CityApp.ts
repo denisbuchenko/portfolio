@@ -46,9 +46,11 @@ export class CityApp {
   private _unsubScroll: (() => void) | null = null;
   private _unsubTurn: (() => void) | null = null;
 
-  private _startBtn: StartButton;
+  private _startBtn: StartButton | null = null;
   private _crashOverlay: CrashOverlay;
   private _debugPanel: CityDebugPanel;
+  private _showStartButton: boolean;
+  private _onResetToOverview: ((reason: "crash" | "manual") => void) | null;
 
   private _raf = 0;
   private _lastT = performance.now();
@@ -70,6 +72,8 @@ export class CityApp {
   );
 
   private _resetTimer: number | null = null;
+  private _loaded = false;
+  private _pendingStartGame = false;
 
   // World data
   private _mapBox = new THREE.Box3();
@@ -82,10 +86,18 @@ export class CityApp {
 
   // NOTE: город/дома/окклюзия/коллизии — в `CityWorldController`.
 
-  constructor(opts: { host: HTMLElement; canvas: HTMLCanvasElement; uiRoot: HTMLDivElement }) {
+  constructor(opts: {
+    host: HTMLElement;
+    canvas: HTMLCanvasElement;
+    uiRoot: HTMLDivElement;
+    showStartButton?: boolean;
+    onResetToOverview?: (reason: "crash" | "manual") => void;
+  }) {
     this._host = opts.host;
     this._canvas = opts.canvas;
     this._uiRoot = opts.uiRoot;
+    this._showStartButton = opts.showStartButton ?? true;
+    this._onResetToOverview = opts.onResetToOverview ?? null;
 
     installMeshBvhRaycast();
 
@@ -134,9 +146,11 @@ export class CityApp {
     this._activeCamera = this._overviewCamera;
 
     this._setupLights();
+    if (this._showStartButton) {
+      this._startBtn = new StartButton(this._uiRoot);
+      this._startBtn.onClick(() => this.startGame());
+    }
 
-    this._startBtn = new StartButton(this._uiRoot);
-    this._startBtn.onClick(() => this._beginFocusToStart());
     this._crashOverlay = new CrashOverlay(this._uiRoot);
     this._debugPanel = new CityDebugPanel(this._uiRoot);
     this._debugPanel.onFocusFirstGirl(() => this._beginDebugFocusFirstGirl());
@@ -165,10 +179,16 @@ export class CityApp {
       this._crashOverlay.show();
       return;
     }
+    this._loaded = true;
     this._onResize();
     window.addEventListener("resize", this._onResize);
     this._lastT = performance.now();
     this._raf = requestAnimationFrame(this._frame);
+
+    if (this._pendingStartGame) {
+      this._pendingStartGame = false;
+      this.startGame();
+    }
   }
 
   dispose(): void {
@@ -177,7 +197,7 @@ export class CityApp {
     this._unsubScroll?.();
     this._unsubTurn?.();
 
-    this._startBtn.dispose();
+    this._startBtn?.dispose();
     this._crashOverlay.dispose();
     this._debugPanel.dispose();
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
@@ -193,6 +213,20 @@ export class CityApp {
     this._world.dispose();
 
     this._renderer.dispose();
+  }
+
+  startGame(): void {
+    if (!this._loaded || !this._cityRoot) {
+      this._pendingStartGame = true;
+      return;
+    }
+    if (this._mode !== "overview") return;
+    this._pendingStartGame = false;
+    this._beginFocusToStart();
+  }
+
+  resetToOverview(overviewProgress01 = 0.5): void {
+    this._resetToOverview("manual", overviewProgress01);
   }
 
   private _setupLights(): void {
@@ -566,7 +600,7 @@ export class CityApp {
     const edgeInsetNdc = (2 * edgePx) / Math.max(1, h);
     this._world.updateOverviewVisibility(cam, edgeInsetNdc, _dtSec);
 
-    // Start кнопка — в центре карты.
+    if (!this._showStartButton || !this._startBtn) return;
     const p = projectToScreen(this._startWorldPos, w, h, cam);
     if (p) {
       this._startBtn.setVisible(true);
@@ -633,7 +667,7 @@ export class CityApp {
     this._mode = "focusStart";
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
-    this._startBtn.setVisible(false);
+    this._startBtn?.setVisible(false);
     this._focusT = 0;
     const overviewCam = (CITY_CAMERA.overview.usePerspective ?? false) ? this._overviewPerspectiveCamera : this._overviewCamera;
 
@@ -1158,19 +1192,26 @@ export class CityApp {
     this._debugPanel.setVisible(false);
 
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
-    this._resetTimer = window.setTimeout(() => this._resetToOverview(), CITY_GAMEPLAY.crash.resetDelaySec * 1000);
+    this._resetTimer = window.setTimeout(() => this._resetToOverview("crash", 0.5), CITY_GAMEPLAY.crash.resetDelaySec * 1000);
   }
 
-  private _resetToOverview(): void {
+  private _resetToOverview(reason: "crash" | "manual", overviewProgress01: number): void {
     if (!this._bikerRoot) return;
+    if (this._resetTimer !== null) {
+      window.clearTimeout(this._resetTimer);
+      this._resetTimer = null;
+    }
+
     this._mode = "overview";
     this._encounter = null;
     this._speedMul = 1;
+    this._proximityDistanceMul = 1;
     this._girlsSystem.resetToHome("resetToOverview");
+    this._scroll.setProgress01(Math.max(0, Math.min(1, overviewProgress01)));
     this._scroll.setEnabled(true);
     this._turn.setEnabled(false);
     this._crashOverlay.hide();
-    this._startBtn.setVisible(true);
+    this._startBtn?.setVisible(this._showStartButton);
     this._debugPanel.setVisible(true);
     this._debugFocus = null;
     this._debugFocusGirlId = null;
@@ -1182,6 +1223,7 @@ export class CityApp {
 
     // Сбрасываем активные коллайдеры.
     this._world.resetCollisionState(this._bikerRoot);
+    this._onResetToOverview?.(reason);
   }
 
   /** Showcase: установить прогресс обзорного скролла извне (0..1). */
