@@ -74,11 +74,9 @@ const SECTION_DEFS: SectionDef[] = [
 
 export class ShowcaseMode {
   private _host: HTMLElement;
-  private _onBack: () => void;
   private _showcaseEl: HTMLElement;
   private _sections: SectionState[] = [];
   private _inventoryUi: ShowcaseInventory;
-  private _backBtn: HTMLElement;
   private _exitBtn: HTMLElement;
   private _raf = 0;
   private _interactingIdx = -1;
@@ -90,7 +88,7 @@ export class ShowcaseMode {
 
   constructor(opts: ShowcaseOpts) {
     this._host = opts.host;
-    this._onBack = opts.onBack;
+    void opts.onBack;
 
     this._hideExistingUI();
 
@@ -103,9 +101,8 @@ export class ShowcaseMode {
     this._buildSections();
 
     // Fixed UI
-    this._backBtn = this._buildBackBtn();
     this._exitBtn = this._buildExitBtn();
-    this._inventoryUi = new ShowcaseInventory({ host: this._host, initialSectionTitle: SECTION_DEFS[0]?.title ?? "" });
+    this._inventoryUi = new ShowcaseInventory({ host: this._host });
 
     // Observers:
     // warm  — заранее подготавливает проект в памяти;
@@ -150,7 +147,6 @@ export class ShowcaseMode {
     }
 
     this._showcaseEl.remove();
-    this._backBtn.remove();
     this._exitBtn.remove();
     this._inventoryUi.dispose();
 
@@ -201,12 +197,6 @@ export class ShowcaseMode {
       loader.textContent = "Загрузка…";
       containerEl.appendChild(loader);
 
-      // Section header
-      const header = _el("div", "showcase__section-header");
-      header.innerHTML = `<span class="showcase__section-num">${String(i + 1).padStart(2, "0")}</span>
-        <span class="showcase__section-title-text">${def.title}</span>`;
-      stickyEl.appendChild(header);
-
       let blocker: HTMLElement | null = null;
       let interactBtn: HTMLElement | null = null;
 
@@ -248,16 +238,6 @@ export class ShowcaseMode {
   }
 
   // ── DOM: fixed UI ──────────────────────────────────────────────────────────
-
-  private _buildBackBtn(): HTMLElement {
-    const btn = document.createElement("button");
-    btn.className = "btn showcase__back-btn";
-    btn.type = "button";
-    btn.textContent = "← В меню";
-    btn.addEventListener("click", () => this._onBack());
-    this._host.appendChild(btn);
-    return btn;
-  }
 
   private _buildExitBtn(): HTMLElement {
     const btn = document.createElement("button");
@@ -316,8 +296,7 @@ export class ShowcaseMode {
   }
 
   private _updateActiveSection(idx: number): void {
-    const sectionTitle = this._sections[idx]?.def.title ?? SECTION_DEFS[idx]?.title ?? "";
-    this._inventoryUi.setActiveSectionTitle(sectionTitle);
+    void idx;
   }
 
   private _ensureSectionWarm(idx: number): void {
@@ -401,7 +380,6 @@ export class ShowcaseMode {
     if (s.interactBtn) s.interactBtn.style.display = "";
 
     this._exitBtn.classList.add("showcase__exit-btn--hidden");
-    this._backBtn.classList.remove("showcase__back-btn--hidden");
     this._inventoryUi.setHidden(false);
   }
 
@@ -874,9 +852,8 @@ export class ShowcaseMode {
     if (s.blocker) s.blocker.style.display = "none";
     if (s.interactBtn) s.interactBtn.style.display = "none";
 
-    // Show exit, hide back & nav
+    // Show exit and hide inventory while the project is in full interaction mode.
     this._exitBtn.classList.remove("showcase__exit-btn--hidden");
-    this._backBtn.classList.add("showcase__back-btn--hidden");
     this._inventoryUi.setHidden(true);
 
     // Project-specific activation

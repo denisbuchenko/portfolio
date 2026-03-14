@@ -22,7 +22,6 @@ export interface InventoryDragSnapshot {
 
 export interface ShowcaseInventoryOptions {
   host: HTMLElement;
-  initialSectionTitle?: string;
 }
 
 export type InventoryDragListener = (snapshot: InventoryDragSnapshot) => void;
@@ -77,7 +76,6 @@ interface ActiveDragState {
 
 export class ShowcaseInventory {
   private _rootEl: HTMLDivElement;
-  private _sectionValueEl: HTMLSpanElement;
   private _slots: HTMLDivElement[] = [];
   private _items: InventoryItemId[] = [];
   private _subscribers = new Set<InventoryDragListener>();
@@ -105,19 +103,16 @@ export class ShowcaseInventory {
     panelEl.innerHTML = `
       <div class="showcase-inventory__header">
         <span class="showcase-inventory__title">Инвентарь</span>
-        <span class="showcase-inventory__screen-label">Экран: <span class="showcase-inventory__screen-value"></span></span>
       </div>
       <div class="showcase-inventory__grid"></div>
       <p class="showcase-inventory__hint">Тяни предмет пальцем или мышкой.</p>
     `;
     this._rootEl.appendChild(panelEl);
 
-    const sectionValueEl = panelEl.querySelector(".showcase-inventory__screen-value");
     const gridEl = panelEl.querySelector(".showcase-inventory__grid");
-    if (!(sectionValueEl instanceof HTMLSpanElement) || !(gridEl instanceof HTMLDivElement)) {
+    if (!(gridEl instanceof HTMLDivElement)) {
       throw new Error("Inventory UI mount failed");
     }
-    this._sectionValueEl = sectionValueEl;
 
     for (let i = 0; i < INVENTORY_SLOT_COUNT; i++) {
       const slotEl = document.createElement("div");
@@ -127,7 +122,6 @@ export class ShowcaseInventory {
     }
 
     opts.host.appendChild(this._rootEl);
-    this.setActiveSectionTitle(opts.initialSectionTitle ?? "");
     this._render();
 
     this._consoleApi = this._createConsoleApi();
@@ -140,10 +134,6 @@ export class ShowcaseInventory {
     this._rewardOverlay.dispose();
     this._rootEl.remove();
     this._subscribers.clear();
-  }
-
-  setActiveSectionTitle(title: string): void {
-    this._sectionValueEl.textContent = title || "Не выбран";
   }
 
   setHidden(hidden: boolean): void {
@@ -452,16 +442,6 @@ function _ensureInventoryStyles(): void {
       font-size: 11px;
       font-weight: 700;
       color: #fff;
-    }
-
-    .showcase-inventory__screen-label {
-      font-size: 9px;
-      line-height: 1.2;
-      color: rgba(255, 255, 255, 0.6);
-    }
-
-    .showcase-inventory__screen-value {
-      color: rgba(255, 255, 255, 0.86);
     }
 
     .showcase-inventory__grid {
