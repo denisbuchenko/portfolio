@@ -4,6 +4,7 @@ import { SUNDUC_CONFIG } from "../config";
 
 export type SunducViewer = {
   readonly rotationRoot: THREE.Group;
+  hitTestModelAtClientPoint(clientX: number, clientY: number): boolean;
   resize(width: number, height: number): void;
   setModel(model: THREE.Object3D): void;
   render(): void;
@@ -49,9 +50,36 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
   _setupLights(scene);
 
   let modelRoot: THREE.Object3D | null = null;
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
 
   return {
     rotationRoot,
+    hitTestModelAtClientPoint(clientX: number, clientY: number): boolean {
+      if (!modelRoot) return false;
+
+      const rect = options.canvas.getBoundingClientRect();
+      if (
+        clientX < rect.left ||
+        clientX > rect.right ||
+        clientY < rect.top ||
+        clientY > rect.bottom ||
+        rect.width <= 0 ||
+        rect.height <= 0
+      ) {
+        return false;
+      }
+
+      pointerNdc.set(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+      raycaster.setFromCamera(pointerNdc, camera);
+
+      return raycaster.intersectObject(modelGroup, true).some((intersection) => {
+        return intersection.object.visible;
+      });
+    },
     resize(width: number, height: number): void {
       camera.aspect = width / height;
       camera.updateProjectionMatrix();

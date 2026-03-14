@@ -877,6 +877,7 @@ canvas {
   height: 100%;
   display: block;
   cursor: grab;
+  touch-action: auto !important;
 }
 
 .sunduc__canvas:active {
@@ -1180,9 +1181,6 @@ canvas {
 
   .sunduc__menu {
     left: 18px;
-  }
-
-  .sunduc__viewer {
   }
 
   .sunduc__canvas-wrap {

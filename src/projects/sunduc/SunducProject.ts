@@ -37,7 +37,8 @@ export class SunducProject {
 
     this._rotationController = createSunducRotationController({
       canvas: this._ui.canvas,
-      target: this._viewer.rotationRoot
+      target: this._viewer.rotationRoot,
+      canStartDrag: (clientX, clientY) => this._viewer.hitTestModelAtClientPoint(clientX, clientY)
     });
 
     this._resizeObserver = new ResizeObserver(() => this._resize());
