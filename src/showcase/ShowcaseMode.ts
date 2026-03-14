@@ -82,6 +82,7 @@ export class ShowcaseMode {
   private _exitBtn: HTMLElement;
   private _raf = 0;
   private _interactingIdx = -1;
+  private _pendingInteractionIdx = -1;
   private _warmObserver: IntersectionObserver;
   private _hotObserver: IntersectionObserver;
   private _activeObserver: IntersectionObserver;
@@ -122,6 +123,14 @@ export class ShowcaseMode {
 
     // Animation loop (for per-frame updates)
     this._raf = requestAnimationFrame(this._tick);
+  }
+
+  public async alignProject(projectKeyOrIdx: string | number, behavior: ScrollBehavior = "smooth"): Promise<boolean> {
+    const idx = this._resolveSectionIdx(projectKeyOrIdx);
+    if (idx < 0) return false;
+
+    await this._alignSectionToViewport(idx, behavior);
+    return true;
   }
 
   // ── cleanup ────────────────────────────────────────────────────────────────
@@ -211,7 +220,9 @@ export class ShowcaseMode {
         stickyEl.appendChild(interactBtn);
 
         const idx = i;
-        interactBtn.addEventListener("click", () => this._startInteraction(idx));
+        interactBtn.addEventListener("click", () => {
+          void this._startInteraction(idx);
+        });
       }
 
       this._showcaseEl.appendChild(sectionEl);
@@ -330,6 +341,73 @@ export class ShowcaseMode {
       return;
     }
     s.deactivateProject?.();
+  }
+
+  private _resolveSectionIdx(projectKeyOrIdx: string | number): number {
+    if (typeof projectKeyOrIdx === "number") {
+      return projectKeyOrIdx >= 0 && projectKeyOrIdx < this._sections.length ? projectKeyOrIdx : -1;
+    }
+
+    return this._sections.findIndex((section) => section.def.key === projectKeyOrIdx);
+  }
+
+  private async _alignSectionToViewport(idx: number, behavior: ScrollBehavior): Promise<void> {
+    const s = this._sections[idx];
+    if (!s) return;
+
+    const sectionTop = this._getSectionAlignScrollTop(s);
+    const viewportHeight = this._host.clientHeight;
+    const maxScrollTop = Math.max(0, this._host.scrollHeight - viewportHeight);
+    this._ensureSectionWarm(idx);
+    const nextScrollTop = Math.max(0, Math.min(sectionTop, maxScrollTop));
+    await this._scrollHostTo(nextScrollTop, behavior);
+    this._updateActiveSection(idx);
+    this._updateCityProgress();
+  }
+
+  private _getSectionAlignScrollTop(s: SectionState): number {
+    const hostRect = this._host.getBoundingClientRect();
+    const sectionRect = s.el.getBoundingClientRect();
+    return this._host.scrollTop + (sectionRect.top - hostRect.top);
+  }
+
+  private async _scrollHostTo(top: number, behavior: ScrollBehavior): Promise<void> {
+    const thresholdPx = 2;
+    const currentTop = this._host.scrollTop;
+    if (Math.abs(currentTop - top) <= thresholdPx) {
+      this._host.scrollTop = top;
+      return;
+    }
+
+    if (behavior === "auto") {
+      this._host.scrollTop = top;
+      return;
+    }
+
+    this._host.scrollTo({ top, behavior });
+
+    await new Promise<void>((resolve) => {
+      const startedAt = performance.now();
+      const maxWaitMs = 1200;
+
+      const _waitForScrollEnd = (): void => {
+        if (Math.abs(this._host.scrollTop - top) <= thresholdPx) {
+          this._host.scrollTop = top;
+          resolve();
+          return;
+        }
+
+        if (performance.now() - startedAt >= maxWaitMs) {
+          this._host.scrollTop = top;
+          resolve();
+          return;
+        }
+
+        requestAnimationFrame(_waitForScrollEnd);
+      };
+
+      requestAnimationFrame(_waitForScrollEnd);
+    });
   }
 
   private _callProjectMethod(
@@ -637,12 +715,18 @@ export class ShowcaseMode {
 
   // ── interaction gate ───────────────────────────────────────────────────────
 
-  private _startInteraction(idx: number): void {
+  private async _startInteraction(idx: number): Promise<void> {
     const s = this._sections[idx];
-    if (!s || s.interacting) return;
+    if (!s || s.interacting || this._pendingInteractionIdx >= 0) return;
+
+    this._pendingInteractionIdx = idx;
+    await this._alignSectionToViewport(idx, "smooth");
+    if (this._pendingInteractionIdx !== idx) return;
+
     this._setSectionHot(idx, true);
     s.interacting = true;
     this._interactingIdx = idx;
+    this._pendingInteractionIdx = -1;
 
     // Block page scroll
     this._host.style.overflow = "hidden";
@@ -663,6 +747,7 @@ export class ShowcaseMode {
   }
 
   private _stopInteraction(): void {
+    this._pendingInteractionIdx = -1;
     const idx = this._interactingIdx;
     if (idx < 0) return;
     const s = this._sections[idx];
