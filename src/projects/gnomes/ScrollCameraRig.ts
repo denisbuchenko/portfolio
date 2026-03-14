@@ -25,6 +25,10 @@ export class ScrollCameraRig {
     return this._pageWorldHeight;
   }
 
+  get viewportHeightPx(): number {
+    return this._viewportHeightPx;
+  }
+
   setFocusOffsetY(y: number): void {
     this._focusOffsetY = y;
   }

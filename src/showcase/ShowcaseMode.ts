@@ -602,8 +602,16 @@ export class ShowcaseMode {
     const sectionEl = s.el;
     const hostEl = this._host;
     const getScrollY = (): number => Math.max(0, hostEl.scrollTop - sectionEl.offsetTop);
+    const setScrollY = async (scrollY: number, behavior: ScrollBehavior = "smooth"): Promise<void> => {
+      const maxLocalScrollY = Math.max(0, sectionEl.clientHeight - hostEl.clientHeight);
+      const clampedLocalScrollY = Math.max(0, Math.min(scrollY, maxLocalScrollY));
+      const targetScrollTop = sectionEl.offsetTop + clampedLocalScrollY;
 
-    const app = new GnomesApp({ canvas, interactionEl: wrapper, statusEl: status, uiRoot, getScrollY });
+      await this._scrollHostTo(targetScrollTop, behavior);
+      this._updateActiveSection(this._resolveSectionIdx("gnomes"));
+    };
+
+    const app = new GnomesApp({ canvas, interactionEl: wrapper, statusEl: status, uiRoot, getScrollY, setScrollY });
     app.setRenderActive(s.hot);
 
     let disposed = false;

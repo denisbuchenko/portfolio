@@ -35,10 +35,14 @@ export class GnomesApp {
   private _renderActive = true;
 
   private _getScrollY: () => number;
+  private _setScrollY: (scrollY: number, behavior?: ScrollBehavior) => Promise<void> | void;
+  private _pendingFocusToken = 0;
 
   private _onResize = () => this._handleResize();
   private _onScroll = () => this._handleScroll();
-  private _onClick = (e: MouseEvent) => this._handleClick(e);
+  private _onClick = (e: MouseEvent) => {
+    void this._handleClick(e);
+  };
 
   constructor(opts: {
     canvas: HTMLCanvasElement;
@@ -46,11 +50,17 @@ export class GnomesApp {
     statusEl?: HTMLElement | null;
     uiRoot: HTMLElement;
     getScrollY?: () => number;
+    setScrollY?: (scrollY: number, behavior?: ScrollBehavior) => Promise<void> | void;
   }) {
     this._canvas = opts.canvas;
     this._interactionEl = opts.interactionEl ?? opts.canvas;
     this._statusEl = opts.statusEl ?? null;
     this._getScrollY = opts.getScrollY ?? (() => window.scrollY);
+    this._setScrollY =
+      opts.setScrollY ??
+      ((scrollY, behavior = "smooth") => {
+        window.scrollTo({ top: scrollY, behavior });
+      });
 
     this._composer = new SceneComposer({ canvas: this._canvas });
     this._cameraRig = new ScrollCameraRig({ pages: GNOMES_CONFIG.pages });
@@ -156,6 +166,16 @@ export class GnomesApp {
     this._raf = 0;
   }
 
+  async focusCharacter(characterId: string, behavior: ScrollBehavior = "smooth"): Promise<boolean> {
+    const gnomeIdx = this._gnomeDefs.findIndex((gnomeDef) => gnomeDef.id === characterId);
+    if (gnomeIdx < 0) return false;
+
+    const targetScrollY = this._resolveCharacterScrollY(gnomeIdx);
+    await this._setScrollY(targetScrollY, behavior);
+    this._syncSceneState();
+    return true;
+  }
+
   private _frame(ts: number): void {
     if (!this._renderActive || this._disposed) {
       this._raf = 0;
@@ -216,10 +236,14 @@ export class GnomesApp {
     }
   }
 
-  private _handleClick(e: MouseEvent): void {
+  private async _handleClick(e: MouseEvent): Promise<void> {
     if (!this._renderActive) return;
     const id = this._pickCharacterIdAt(e.clientX, e.clientY);
     if (!id) return;
+
+    const focusToken = ++this._pendingFocusToken;
+    await this.focusCharacter(id, "smooth");
+    if (focusToken !== this._pendingFocusToken) return;
 
     // При входе в диалог — проигрываем hello один раз.
     const gnome = this._gnomes.find((g) => g.root.userData.characterId === id);
@@ -278,6 +302,11 @@ export class GnomesApp {
   private _setStatus(text: string): void {
     if (!this._statusEl) return;
     this._statusEl.textContent = text;
+  }
+
+  private _resolveCharacterScrollY(gnomeIdx: number): number {
+    const viewportHeightPx = Math.max(1, this._cameraRig.viewportHeightPx);
+    return gnomeIdx * viewportHeightPx;
   }
 
   private _requestNextFrame(): void {

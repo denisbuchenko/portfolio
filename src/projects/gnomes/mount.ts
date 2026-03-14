@@ -83,7 +83,15 @@ export function mountGnomesProject(host: HTMLElement): () => void {
   // Всегда стартуем с первого гнома.
   window.scrollTo(0, 0);
 
-  const app = new GnomesApp({ canvas, interactionEl: wrapper, statusEl: status, uiRoot });
+  const app = new GnomesApp({
+    canvas,
+    interactionEl: wrapper,
+    statusEl: status,
+    uiRoot,
+    setScrollY: (scrollY, behavior = "smooth") => {
+      window.scrollTo({ top: scrollY, behavior });
+    },
+  });
   let disposed = false;
   void app.start().catch((e) => {
     if (disposed) return;
