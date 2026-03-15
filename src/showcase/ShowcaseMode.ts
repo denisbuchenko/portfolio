@@ -735,15 +735,20 @@ export class ShowcaseMode {
     canvas.style.cssText = "width:100%;height:100%;touch-action:none;";
     wrapper.appendChild(canvas);
 
-    const app = new CityApp({
+    let app: CityApp | null = null;
+    app = new CityApp({
       host: wrapper,
       canvas,
       uiRoot,
       showStartButton: false,
       onResetToOverview: (reason) => {
-        app.setScrollInputEnabled(false);
+        app?.setScrollInputEnabled(false);
         if (reason !== "crash") return;
         this._exitCityInteraction({ resetProject: false, centerSection: true, behavior: "smooth" });
+      },
+      onGameComplete: () => {
+        this._exitCityInteraction({ resetProject: true, centerSection: true, behavior: "smooth" });
+        this._inventoryUi.addItem("stone4");
       },
     });
     let started = false;
@@ -751,19 +756,21 @@ export class ShowcaseMode {
       if (started) return;
       started = true;
       // Отключаем внутренний скролл: в витрине прогресс задается извне.
-      app.setScrollInputEnabled(false);
-      void app.start();
+      app?.setScrollInputEnabled(false);
+      void app?.start();
     };
 
     s.projectRef = app;
-    s.disposeProject = () => app.dispose();
+    s.disposeProject = () => app?.dispose();
     s.activateProject = () => {
       _ensureStarted();
+      if (!app) return;
       this._callProjectMethod(app, ["resume", "wake"]);
       this._callProjectMethod(app, ["setRenderActive", "setAnimationActive"], ["setRenderActive", "setAnimationActive"], true);
       if (!s.interacting) app.setScrollInputEnabled(false);
     };
     s.deactivateProject = () => {
+      if (!app) return;
       app.setScrollInputEnabled(false);
       this._callProjectMethod(app, ["pause", "sleep", "suspend"]);
       this._callProjectMethod(app, ["setRenderActive", "setAnimationActive"], ["setRenderActive", "setAnimationActive"], false);

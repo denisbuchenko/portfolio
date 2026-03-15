@@ -54,6 +54,7 @@ export class CityApp {
   private _showStartButton: boolean;
   private _showDebugPanel: boolean;
   private _onResetToOverview: ((reason: "crash" | "manual") => void) | null;
+  private _onGameComplete: (() => void) | null;
 
   private _raf = 0;
   private _lastT = performance.now();
@@ -89,6 +90,8 @@ export class CityApp {
   private _goalsReached = 0;
   private _goalTotal: number = CITY_GIRLS.markerNames.length;
   private _countedGoalGirlIds = new Set<string>();
+  private _gameCompleteTriggered = false;
+  private _gameCompleteTimer: number | null = null;
 
   // NOTE: город/дома/окклюзия/коллизии — в `CityWorldController`.
 
@@ -99,6 +102,7 @@ export class CityApp {
     showStartButton?: boolean;
     showDebugPanel?: boolean;
     onResetToOverview?: (reason: "crash" | "manual") => void;
+    onGameComplete?: () => void;
   }) {
     this._host = opts.host;
     this._canvas = opts.canvas;
@@ -106,6 +110,7 @@ export class CityApp {
     this._showStartButton = opts.showStartButton ?? true;
     this._showDebugPanel = opts.showDebugPanel ?? false;
     this._onResetToOverview = opts.onResetToOverview ?? null;
+    this._onGameComplete = opts.onGameComplete ?? null;
 
     installMeshBvhRaycast();
 
@@ -215,6 +220,7 @@ export class CityApp {
     this._goalCounterOverlay.dispose();
     this._debugPanel?.dispose();
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
+    this._clearGameCompleteTimer();
 
     this._girlsSystem.dispose();
 
@@ -921,8 +927,10 @@ export class CityApp {
     this._scroll.setEnabled(false);
     this._turn.setEnabled(true);
     this._gameLogic?.reset();
+    this._clearGameCompleteTimer();
     this._goalsReached = 0;
     this._countedGoalGirlIds.clear();
+    this._gameCompleteTriggered = false;
     this._goalCounterOverlay.reset(0, this._goalTotal);
     this._goalCounterOverlay.setVisible(true);
     this._bikerRoot!.visible = true;
@@ -1208,6 +1216,7 @@ export class CityApp {
     this._mode = "crashed";
     this._encounter = null;
     this._speedMul = 1;
+    this._clearGameCompleteTimer();
     this._goalCounterOverlay.setVisible(false);
     this._girlsSystem.resetToHome("crash");
     this._scroll.setEnabled(false);
@@ -1230,8 +1239,10 @@ export class CityApp {
     this._encounter = null;
     this._speedMul = 1;
     this._proximityDistanceMul = 1;
+    this._clearGameCompleteTimer();
     this._goalsReached = 0;
     this._countedGoalGirlIds.clear();
+    this._gameCompleteTriggered = false;
     this._goalCounterOverlay.reset(0, this._goalTotal);
     this._goalCounterOverlay.setVisible(false);
     this._girlsSystem.resetToHome("resetToOverview");
@@ -1270,7 +1281,32 @@ export class CityApp {
       this._goalsReached += 1;
       this._goalCounterOverlay.setProgress(this._goalsReached, this._goalTotal);
       this._goalCounterOverlay.showScore(this._goalsReached);
+
+      if (this._goalsReached >= this._goalTotal) {
+        this._scheduleGameComplete();
+      }
     }
+  }
+
+  private _scheduleGameComplete(): void {
+    if (this._gameCompleteTriggered) return;
+    if (this._goalTotal <= 0) return;
+
+    this._gameCompleteTriggered = true;
+    if (!this._onGameComplete) return;
+
+    const popupCfg = CITY_GAMEPLAY.goalCounterUi.popup;
+    const delayMs = Math.max(0, (popupCfg.fadeInSec + popupCfg.holdSec + popupCfg.fadeOutSec) * 1000);
+    this._gameCompleteTimer = window.setTimeout(() => {
+      this._gameCompleteTimer = null;
+      this._onGameComplete?.();
+    }, delayMs);
+  }
+
+  private _clearGameCompleteTimer(): void {
+    if (this._gameCompleteTimer === null) return;
+    window.clearTimeout(this._gameCompleteTimer);
+    this._gameCompleteTimer = null;
   }
 
   /** Showcase: включить/выключить внутренний scroll input. */
