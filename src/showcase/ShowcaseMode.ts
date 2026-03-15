@@ -609,7 +609,27 @@ export class ShowcaseMode {
       },
     };
 
-    const app = new ParticleApp({ canvas, gl, overlay: dummyOverlay });
+    let _stoneRewardTimeoutId: number | null = null;
+    const _scheduleStoneReward = (): void => {
+      if (_stoneRewardTimeoutId !== null) return;
+      if (this._inventoryUi.hasItem("stone1")) return;
+      _stoneRewardTimeoutId = window.setTimeout(() => {
+        _stoneRewardTimeoutId = null;
+        this._inventoryUi.addItem("stone1");
+      }, 3000);
+    };
+    const _clearStoneRewardTimer = (): void => {
+      if (_stoneRewardTimeoutId === null) return;
+      window.clearTimeout(_stoneRewardTimeoutId);
+      _stoneRewardTimeoutId = null;
+    };
+
+    const app = new ParticleApp({
+      canvas,
+      gl,
+      overlay: dummyOverlay,
+      onTraceComplete: _scheduleStoneReward,
+    });
     // ParticleApp appends canvas to #app — move it into our section
     s.containerEl.appendChild(canvas);
     canvas.style.width = "100%";
@@ -617,7 +637,10 @@ export class ShowcaseMode {
     app.setRenderActive(s.hot);
 
     s.projectRef = app;
-    s.disposeProject = () => app.dispose();
+    s.disposeProject = () => {
+      _clearStoneRewardTimer();
+      app.dispose();
+    };
     s.activateProject = () => {
       app.resume();
     };

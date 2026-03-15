@@ -14,6 +14,13 @@ import { PaintLayer } from "./PaintLayer";
 import { PaintInput } from "./PaintInput";
 import { TraceSplineGame } from "./TraceSplineGame";
 
+interface ParticleAppOptions {
+  canvas: HTMLCanvasElement;
+  gl: WebGL2RenderingContext;
+  overlay: Overlay;
+  onTraceComplete?: () => void;
+}
+
 export class ParticleApp {
   private _renderer: THREE.WebGLRenderer;
   private _scene: THREE.Scene;
@@ -55,14 +62,16 @@ export class ParticleApp {
   ];
 
   private _overlay: Overlay;
+  private _onTraceComplete?: () => void;
   private _onWindowResize = () => this._onResize();
   private _onCanvasPointerMove = (e: PointerEvent) => this._onPointerMove(e);
   private _onCanvasPointerDown = (e: PointerEvent) => this._onPointerDown(e);
   private _onCanvasPointerUp = (e: PointerEvent) => this._onPointerUp(e);
   private _onWebglContextLost = (e: Event) => this._onContextLost(e);
 
-  constructor(opts: { canvas: HTMLCanvasElement; gl: WebGL2RenderingContext; overlay: Overlay }) {
+  constructor(opts: ParticleAppOptions) {
     this._overlay = opts.overlay;
+    this._onTraceComplete = opts.onTraceComplete;
     this._renderer = this._createRenderer(opts.canvas, opts.gl);
     this._scene = new THREE.Scene();
     this._camera = this._createCamera();
@@ -224,12 +233,7 @@ export class ParticleApp {
       this._traceGame.onPointerMove(e, this._renderer.domElement, this._pointer.mouseWorld);
       if (this._traceGame.isInPath) this._paintInput.onMove(e, this._renderer.domElement);
       const end = this._traceGame.consumeEndEvent();
-      if (end) {
-        this._pointer.forceRelease(this._renderer.domElement);
-        this._paintInput.forceRelease(this._renderer.domElement);
-        const mul = end.outcome === "completed" ? CONFIG.traceGame.paintFadeOutCompleteMul : 1.0;
-        this._startPaintFadeOut(CONFIG.traceGame.paintFadeOutSec * mul);
-      }
+      if (end) this._handleTraceEnd(end);
     }
   }
 
@@ -254,10 +258,7 @@ export class ParticleApp {
     this._paintInput.release(e, this._renderer.domElement);
     this._traceGame.onPointerUp(e, this._renderer.domElement);
     const end = this._traceGame.consumeEndEvent();
-    if (end) {
-      const mul = end.outcome === "completed" ? CONFIG.traceGame.paintFadeOutCompleteMul : 1.0;
-      this._startPaintFadeOut(CONFIG.traceGame.paintFadeOutSec * mul);
-    }
+    if (end) this._handleTraceEnd(end);
   }
 
   private _onResize(): void {
@@ -347,6 +348,16 @@ export class ParticleApp {
     this._paintFadeActive = true;
     this._paintFadeStart = this._time;
     this._paintFadeDuration = Math.max(1e-3, durationSec);
+  }
+
+  private _handleTraceEnd(end: { outcome: "failed" | "completed"; reason?: string }): void {
+    this._pointer.forceRelease(this._renderer.domElement);
+    this._paintInput.forceRelease(this._renderer.domElement);
+    if (end.outcome === "completed") {
+      this._onTraceComplete?.();
+    }
+    const mul = end.outcome === "completed" ? CONFIG.traceGame.paintFadeOutCompleteMul : 1.0;
+    this._startPaintFadeOut(CONFIG.traceGame.paintFadeOutSec * mul);
   }
 
   private _updateHud(attractorHeld: boolean): void {
