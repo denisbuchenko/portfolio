@@ -13,6 +13,9 @@ export type PaintSystemGL = {
   clear(): void;
   clearColor(color: ColorKey): void;
   addPoint(color: ColorKey, x: number, y: number): void;
+  beginFinalFill(centerX: number, centerY: number): void;
+  setFinalFillProgress(progress01: number): void;
+  clearFinalFill(): void;
   /**
    * Возвращает bits (0..7) по текущей маске (для drag/hit-test).
    * Важно: должен совпадать с семантикой bitsFromMask в шейдерах пазла.
@@ -29,6 +32,12 @@ const CHANNEL_BY_COLOR: Record<ColorKey, THREE.Vector3> = {
 };
 
 type _Stamp = { xPx: number; yPx: number; radiusPx: number };
+type _FinalFillState = {
+  active: boolean;
+  centerXPx: number;
+  centerYPx: number;
+  progress01: number;
+};
 
 export function createPaintSystemGL(opts: {
   config: typeof CONFIG;
@@ -67,6 +76,53 @@ export function createPaintSystemGL(opts: {
     vertexShader: maskStampVert,
     fragmentShader: maskStampFrag,
   });
+  const _finalFillMat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uCenterUv: { value: new THREE.Vector2(0.5, 0.5) },
+      uRadiusPx: { value: 0 },
+      uFeatherPx: { value: 32 },
+      uResolution: { value: new THREE.Vector2(1, 1) },
+    },
+    vertexShader: `
+      precision highp float;
+
+      in vec3 position;
+      out vec2 vUv;
+
+      void main() {
+        vUv = position.xy * 0.5 + 0.5;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+
+      uniform vec2 uCenterUv;
+      uniform float uRadiusPx;
+      uniform float uFeatherPx;
+      uniform vec2 uResolution;
+
+      in vec2 vUv;
+      out vec4 outColor;
+
+      void main() {
+        vec2 deltaPx = (vUv - uCenterUv) * uResolution;
+        float distPx = length(deltaPx);
+        float featherPx = max(1.0, uFeatherPx);
+        float alpha = 1.0 - smoothstep(uRadiusPx - featherPx, uRadiusPx + featherPx, distPx);
+        outColor = vec4(vec3(alpha), alpha);
+      }
+    `,
+  });
+  const _finalFillMesh = new THREE.Mesh(_geom, _finalFillMat);
+  _finalFillMesh.frustumCulled = false;
+  _finalFillMesh.visible = false;
+  _scene.add(_finalFillMesh);
 
   // 3 штуки, по цвету — чтобы не менять blending/материал на каждый stamp.
   const _meshByColor: Record<ColorKey, THREE.InstancedMesh> = {
@@ -86,6 +142,12 @@ export function createPaintSystemGL(opts: {
   let _lastBitsCache:
     | { x: number; y: number; viewW: number; viewH: number; bits: number }
     | null = null;
+  let _finalFill: _FinalFillState = {
+    active: false,
+    centerXPx: 0,
+    centerYPx: 0,
+    progress01: 0,
+  };
 
   function _maxTrailLengthPx(): number {
     return config.puzzle.paint.maxTrailLengthCssPx * getDpr();
@@ -112,6 +174,35 @@ export function createPaintSystemGL(opts: {
       magFilter: THREE.LinearFilter,
     });
     _rt.texture.generateMipmaps = false;
+  }
+
+  function _getFinalFillMaxRadiusPx(): number {
+    const corners = [
+      { x: 0, y: 0 },
+      { x: _w, y: 0 },
+      { x: 0, y: _h },
+      { x: _w, y: _h },
+    ];
+    let maxRadius = 0;
+    for (const corner of corners) {
+      const dist = Math.hypot(corner.x - _finalFill.centerXPx, corner.y - _finalFill.centerYPx);
+      if (dist > maxRadius) maxRadius = dist;
+    }
+    return maxRadius;
+  }
+
+  function _syncFinalFillUniforms(): void {
+    const mat = _finalFillMat;
+    const centerUv = mat.uniforms.uCenterUv.value as THREE.Vector2;
+    centerUv.set(
+      _finalFill.centerXPx / Math.max(1, _w),
+      1.0 - _finalFill.centerYPx / Math.max(1, _h),
+    );
+    const maxRadius = _getFinalFillMaxRadiusPx();
+    mat.uniforms.uRadiusPx.value = maxRadius * THREE.MathUtils.clamp(_finalFill.progress01, 0, 1);
+    mat.uniforms.uFeatherPx.value = Math.max(24, Math.min(_w, _h) * 0.035);
+    (mat.uniforms.uResolution.value as THREE.Vector2).set(_w, _h);
+    _finalFillMesh.visible = _finalFill.active;
   }
 
   function _computeStamps(points: Array<{ x: number; y: number }>, radiusPx: number): _Stamp[] {
@@ -205,6 +296,7 @@ export function createPaintSystemGL(opts: {
     for (const c of ["r", "g", "b"] as const) {
       _setInstancedStamps(c, stampsByColor[c]);
     }
+    _syncFinalFillUniforms();
 
     const prevRT = _renderer.getRenderTarget();
     const prevAutoClear = _renderer.autoClear;
@@ -270,6 +362,8 @@ export function createPaintSystemGL(opts: {
       trails[c].points = [];
       trails[c].lengthPx = 0;
     }
+    _finalFill.active = false;
+    _finalFill.progress01 = 0;
     _redraw();
   }
 
@@ -282,6 +376,31 @@ export function createPaintSystemGL(opts: {
   function addPoint(color: ColorKey, x: number, y: number): void {
     const changed = _addPointToTrail(trails[color], x, y, _maxTrailLengthPx(), getDpr());
     if (changed) _redraw();
+  }
+
+  function beginFinalFill(centerX: number, centerY: number): void {
+    _finalFill = {
+      active: true,
+      centerXPx: centerX,
+      centerYPx: centerY,
+      progress01: 0,
+    };
+    _redraw();
+  }
+
+  function setFinalFillProgress(progress01: number): void {
+    if (!_finalFill.active) return;
+    const nextProgress = THREE.MathUtils.clamp(progress01, 0, 1);
+    if (Math.abs(nextProgress - _finalFill.progress01) < 1e-4) return;
+    _finalFill.progress01 = nextProgress;
+    _redraw();
+  }
+
+  function clearFinalFill(): void {
+    if (!_finalFill.active && _finalFill.progress01 === 0) return;
+    _finalFill.active = false;
+    _finalFill.progress01 = 0;
+    _redraw();
   }
 
   function maskBitsAt(x: number, y: number, viewW: number, viewH: number): number {
@@ -323,6 +442,9 @@ export function createPaintSystemGL(opts: {
     clear,
     clearColor,
     addPoint,
+    beginFinalFill,
+    setFinalFillProgress,
+    clearFinalFill,
     maskBitsAt,
   };
 }

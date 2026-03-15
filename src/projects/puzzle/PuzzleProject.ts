@@ -13,6 +13,26 @@ import { PuzzleManager } from "./app/puzzleManager";
 import { XorShift32 } from "./rng";
 import { getDpr, loadImage } from "./app/utils";
 
+const PUZZLE_FINAL_FILL_DURATION_SEC = 1.6;
+const PUZZLE_REWARD_DELAY_MS = 1000;
+
+export interface PuzzleProjectOptions {
+  onGameComplete?: () => void;
+}
+
+export interface PuzzleConsoleApi {
+  complete: () => boolean;
+  getGroupCount: () => number;
+  isCompleting: () => boolean;
+  isCompleted: () => boolean;
+}
+
+declare global {
+  interface Window {
+    puzzleGame?: PuzzleConsoleApi;
+  }
+}
+
 export class PuzzleProject {
   private _ui: ReturnType<typeof mountPuzzleUI>;
   private _paint: ReturnType<typeof createPaintSystemGL>;
@@ -27,6 +47,11 @@ export class PuzzleProject {
   private _resizeRaf = 0;
   private _disposed = false;
   private _renderActive = true;
+  private _finalFillPhase: "idle" | "animating" | "completed" = "idle";
+  private _finalFillStartTimeSec = 0;
+  private _rewardTimer: number | null = null;
+  private _onGameComplete?: () => void;
+  private _consoleApi: PuzzleConsoleApi;
 
   private _onCanvasPointerDown = (e: PointerEvent) => this._onPointerDown(e);
   private _onCanvasPointerMove = (e: PointerEvent) => this._onPointerMove(e);
@@ -34,7 +59,8 @@ export class PuzzleProject {
   private _onCanvasPointerUpOrCancel = (e: PointerEvent) => this._onPointerUpOrCancel(e);
   private _onWindowResize = () => this._scheduleRebuild();
 
-  constructor(host: HTMLElement) {
+  constructor(host: HTMLElement, opts: PuzzleProjectOptions = {}) {
+    this._onGameComplete = opts.onGameComplete;
     this._ui = mountPuzzleUI({ 
       host, 
       config: CONFIG,
@@ -61,8 +87,10 @@ export class PuzzleProject {
       background3d: CONFIG.puzzle.background3d,
       shaders: { vert: puzzleVert, bgFrag: puzzleBgFrag, pieceFrag: puzzlePieceMaskFrag }
     });
+    this._consoleApi = this._createConsoleApi();
 
     this._setupEventListeners();
+    window.puzzleGame = this._consoleApi;
     this._init();
   }
 
@@ -115,6 +143,7 @@ export class PuzzleProject {
 
   private _onPointerDown(e: PointerEvent): void {
     if (!this._renderActive) return;
+    if (this._finalFillPhase !== "idle") return;
     if (!this._manager.geom) return;
     if (this._manager.drag || this._manager.draw) return;
 
@@ -139,6 +168,7 @@ export class PuzzleProject {
 
   private _onPointerMove(e: PointerEvent): void {
     if (!this._renderActive) return;
+    if (this._finalFillPhase !== "idle") return;
     this._input.handlePointerMove(e, this._ui.canvas, this._manager.drag, this._groupSys, (x, y) =>
       this._maskBitsAt(x, y)
     );
@@ -146,6 +176,7 @@ export class PuzzleProject {
 
   private _onPointerMoveDraw(e: PointerEvent): void {
     if (!this._renderActive) return;
+    if (this._finalFillPhase !== "idle") return;
     this._input.handlePointerMoveDraw(e, this._ui.canvas, this._manager.draw, this._paint);
   }
 
@@ -160,6 +191,7 @@ export class PuzzleProject {
         this._manager.setDrag(null);
         if (this._manager.geom && drag) {
           this._manager.trySnapGroup(drag.groupId, this._groupSys);
+          this._tryStartCompletion();
         }
       },
       () => {
@@ -171,6 +203,7 @@ export class PuzzleProject {
   private async _rebuild(): Promise<void> {
     if (!this._sourceImg) return;
     if (!this._renderer) return;
+    this._resetCompletionState();
     await this._manager.rebuild(
       this._sourceImg,
       this._ui.canvas,
@@ -192,8 +225,13 @@ export class PuzzleProject {
       cancelAnimationFrame(this._resizeRaf);
       this._resizeRaf = 0;
     }
+    if (this._rewardTimer !== null) {
+      window.clearTimeout(this._rewardTimer);
+      this._rewardTimer = null;
+    }
     this._resetInteractions();
     this._removeEventListeners();
+    if (window.puzzleGame === this._consoleApi) delete window.puzzleGame;
     this._ui.destroy();
   }
 
@@ -240,7 +278,9 @@ export class PuzzleProject {
 
   private _renderOnce(): void {
     const dpr = getDpr();
-    this._renderer?.render(this._manager.pieces, performance.now() * 0.001, dpr);
+    const timeSec = performance.now() * 0.001;
+    this._updateFinalFill(timeSec);
+    this._renderer?.render(this._manager.pieces, timeSec, dpr);
     this._manager.updateStatus(this._ui, this._groupSys);
   }
 
@@ -267,8 +307,61 @@ export class PuzzleProject {
       this._manager.setDraw(null);
     }
   }
+
+  completeGame(): boolean {
+    return this._tryStartCompletion(true);
+  }
+
+  private _createConsoleApi(): PuzzleConsoleApi {
+    return {
+      complete: () => this.completeGame(),
+      getGroupCount: () => this._groupSys.groups.size,
+      isCompleting: () => this._finalFillPhase === "animating",
+      isCompleted: () => this._finalFillPhase === "completed",
+    };
+  }
+
+  private _tryStartCompletion(force = false): boolean {
+    if (this._disposed) return false;
+    if (this._finalFillPhase !== "idle") return false;
+    if (!force && this._groupSys.groups.size !== 1) return false;
+
+    this._resetInteractions();
+    this._finalFillPhase = "animating";
+    this._finalFillStartTimeSec = performance.now() * 0.001;
+    this._paint.beginFinalFill(this._ui.canvas.width * 0.5, this._ui.canvas.height * 0.5);
+    this._paint.setFinalFillProgress(0);
+    return true;
+  }
+
+  private _updateFinalFill(timeSec: number): void {
+    if (this._finalFillPhase !== "animating") return;
+    const t = Math.max(0, (timeSec - this._finalFillStartTimeSec) / PUZZLE_FINAL_FILL_DURATION_SEC);
+    const progress01 = Math.min(1, t);
+    this._paint.setFinalFillProgress(progress01 * progress01 * (3 - 2 * progress01));
+    if (progress01 < 1) return;
+
+    this._finalFillPhase = "completed";
+    this._paint.setFinalFillProgress(1);
+    if (this._rewardTimer !== null) return;
+    this._rewardTimer = window.setTimeout(() => {
+      this._rewardTimer = null;
+      if (this._disposed) return;
+      this._onGameComplete?.();
+    }, PUZZLE_REWARD_DELAY_MS);
+  }
+
+  private _resetCompletionState(): void {
+    this._finalFillPhase = "idle";
+    this._finalFillStartTimeSec = 0;
+    if (this._rewardTimer !== null) {
+      window.clearTimeout(this._rewardTimer);
+      this._rewardTimer = null;
+    }
+    this._paint.clearFinalFill();
+  }
 }
 
-export function mountPuzzleProject(host: HTMLElement): void {
-  new PuzzleProject(host);
+export function mountPuzzleProject(host: HTMLElement, opts: PuzzleProjectOptions = {}): PuzzleProject {
+  return new PuzzleProject(host, opts);
 }

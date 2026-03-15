@@ -656,7 +656,11 @@ export class ShowcaseMode {
     host.style.display = "grid";
     host.classList.add("launcher", "launcher--puzzle");
 
-    const project = new PuzzleProject(host);
+    const project = new PuzzleProject(host, {
+      onGameComplete: () => {
+        this._inventoryUi.addItem("stone2");
+      },
+    });
     project.setRenderActive(s.hot);
     s.projectRef = project;
     s.disposeProject = () => project.dispose();
