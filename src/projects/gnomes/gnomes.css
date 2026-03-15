@@ -159,9 +159,11 @@ body.gnomes-project-scroll-locked {
   overflow-y: auto;
   padding: 14px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #050505;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: linear-gradient(180deg, rgba(19, 30, 41, 0.96), rgba(22, 33, 44, 0.98));
+  color: #e9f1f8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 10px 30px rgba(2, 8, 15, 0.28);
 }
 
 .gnomes-dialogue__bubble-wrap {
@@ -180,16 +182,16 @@ body.gnomes-project-scroll-locked {
   max-width: 94%;
   padding: 11px 13px;
   border-radius: 8px;
-  color: #090909;
-  box-shadow: 0 8px 20px rgba(12, 18, 38, 0.08);
+  color: #edf4fb;
+  box-shadow: 0 8px 20px rgba(2, 8, 16, 0.2);
 }
 
 .gnomes-dialogue__bubble--left {
-  background: #ffffff;
+  background: linear-gradient(180deg, rgba(31, 44, 57, 0.98), rgba(28, 39, 51, 0.98));
 }
 
 .gnomes-dialogue__bubble--right {
-  background: linear-gradient(135deg, #eef4ff, #dcecff);
+  background: linear-gradient(180deg, rgba(43, 82, 120, 0.96), rgba(51, 97, 141, 0.98));
 }
 
 .gnomes-dialogue__bubble-name {
@@ -198,7 +200,7 @@ body.gnomes-project-scroll-locked {
   font-weight: 800;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.55);
+  color: rgba(171, 197, 221, 0.72);
 }
 
 .gnomes-dialogue__bubble-text {
@@ -214,6 +216,18 @@ body.gnomes-project-scroll-locked {
 }
 
 .gnomes-dialogue__option {
+  position: relative;
+  isolation: isolate;
+  --_option-base-a: rgba(39, 69, 103, 0.98);
+  --_option-base-b: rgba(32, 57, 84, 0.98);
+  --_option-base-c: rgba(48, 88, 129, 0.96);
+  --_option-glow-a: rgba(255, 255, 255, 0.16);
+  --_option-glow-b: rgba(255, 255, 255, 0.05);
+  --_option-glow-c: rgba(255, 255, 255, 0.12);
+  --_option-orb-a: rgba(255, 255, 255, 0.2);
+  --_option-orb-b: rgba(255, 255, 255, 0.08);
+  --_option-animation-duration: 10s;
+  --_option-animation-delay: 0s;
   width: 100%;
   padding: 13px 15px;
   border-radius: 8px;
@@ -221,21 +235,93 @@ body.gnomes-project-scroll-locked {
   white-space: normal;
   line-height: 1.38;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.9);
-  color: #0a0a0a;
-  box-shadow: 0 10px 24px rgba(4, 7, 18, 0.16);
-  transition: transform 180ms ease, box-shadow 180ms ease, opacity 180ms ease, background 180ms ease;
+  overflow: hidden;
+  background:
+    linear-gradient(130deg, var(--_option-glow-a), var(--_option-glow-b) 34%, var(--_option-glow-c) 58%, rgba(255, 255, 255, 0.03)),
+    linear-gradient(135deg, var(--_option-base-a), var(--_option-base-b), var(--_option-base-c));
+  background-size: 260% 260%, 160% 160%;
+  background-position: 0% 50%, 0% 50%;
+  color: #f5f9fd;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 24px rgba(4, 10, 20, 0.28);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease,
+    background 220ms ease;
+  animation:
+    gnomes-dialogue-option-gradient var(--_option-animation-duration) ease-in-out infinite,
+    gnomes-dialogue-option-depth calc(var(--_option-animation-duration) * 1.15) ease-in-out infinite;
+  animation-delay: var(--_option-animation-delay), var(--_option-animation-delay);
+}
+
+.gnomes-dialogue__option::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 18% 28%, var(--_option-orb-a), transparent 24%),
+    radial-gradient(circle at 78% 70%, var(--_option-orb-b), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 38%, rgba(255, 255, 255, 0.02));
+  background-size: 150% 150%, 160% 160%, 100% 100%;
+  background-position: 0% 0%, 100% 100%, 50% 50%;
+  opacity: 0.92;
+  animation: gnomes-dialogue-option-shimmer calc(var(--_option-animation-duration) * 1.2) ease-in-out infinite;
+  animation-delay: var(--_option-animation-delay);
+}
+
+.gnomes-dialogue__option:nth-child(3n + 1) {
+  --_option-base-a: rgba(43, 76, 116, 0.98);
+  --_option-base-b: rgba(31, 56, 85, 0.98);
+  --_option-base-c: rgba(56, 97, 141, 0.96);
+  --_option-glow-a: rgba(255, 255, 255, 0.17);
+  --_option-glow-b: rgba(255, 255, 255, 0.05);
+  --_option-glow-c: rgba(184, 217, 255, 0.14);
+  --_option-orb-a: rgba(255, 255, 255, 0.18);
+  --_option-orb-b: rgba(148, 206, 255, 0.12);
+  --_option-animation-duration: 9.8s;
+  --_option-animation-delay: -0.8s;
+}
+
+.gnomes-dialogue__option:nth-child(3n + 2) {
+  --_option-base-a: rgba(61, 73, 126, 0.97);
+  --_option-base-b: rgba(40, 54, 100, 0.98);
+  --_option-base-c: rgba(74, 101, 153, 0.95);
+  --_option-glow-a: rgba(255, 255, 255, 0.15);
+  --_option-glow-b: rgba(255, 255, 255, 0.04);
+  --_option-glow-c: rgba(224, 228, 255, 0.12);
+  --_option-orb-a: rgba(255, 255, 255, 0.16);
+  --_option-orb-b: rgba(196, 206, 255, 0.11);
+  --_option-animation-duration: 11.4s;
+  --_option-animation-delay: -3.2s;
+}
+
+.gnomes-dialogue__option:nth-child(3n) {
+  --_option-base-a: rgba(38, 88, 112, 0.97);
+  --_option-base-b: rgba(28, 65, 85, 0.98);
+  --_option-base-c: rgba(53, 111, 136, 0.95);
+  --_option-glow-a: rgba(255, 255, 255, 0.16);
+  --_option-glow-b: rgba(255, 255, 255, 0.05);
+  --_option-glow-c: rgba(204, 245, 255, 0.12);
+  --_option-orb-a: rgba(255, 255, 255, 0.18);
+  --_option-orb-b: rgba(165, 232, 246, 0.1);
+  --_option-animation-duration: 10.6s;
+  --_option-animation-delay: -5.1s;
 }
 
 .gnomes-dialogue__option:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 14px 28px rgba(4, 7, 18, 0.2);
-  background: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 16px 32px rgba(4, 10, 20, 0.34);
 }
 
 .gnomes-dialogue__option:disabled {
-  opacity: 0.6;
+  opacity: 0.56;
   cursor: not-allowed;
+  animation-play-state: paused;
 }
 
 .gnomes-dialogue__option-text {
@@ -247,7 +333,7 @@ body.gnomes-project-scroll-locked {
   margin-top: 6px;
   font-size: 12px;
   line-height: 1.3;
-  color: rgba(0, 0, 0, 0.58);
+  color: rgba(210, 227, 244, 0.7);
 }
 
 @media (max-width: 640px) {
@@ -285,5 +371,56 @@ body.gnomes-project-scroll-locked {
 
   100% {
     background-position: 0% 0%, 100% 10%, 40% 100%, 0% 50%;
+  }
+}
+
+@keyframes gnomes-dialogue-option-gradient {
+  0% {
+    background-position: 0% 50%, 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%, 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%, 0% 50%;
+  }
+}
+
+@keyframes gnomes-dialogue-option-shimmer {
+  0% {
+    background-position: 0% 0%, 100% 100%, 50% 50%;
+    opacity: 0.8;
+  }
+
+  50% {
+    background-position: 100% 18%, 0% 82%, 50% 50%;
+    opacity: 1;
+  }
+
+  100% {
+    background-position: 0% 0%, 100% 100%, 50% 50%;
+    opacity: 0.8;
+  }
+}
+
+@keyframes gnomes-dialogue-option-depth {
+  0% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 10px 24px rgba(4, 10, 20, 0.28);
+  }
+
+  50% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.11),
+      0 14px 30px rgba(4, 10, 20, 0.32);
+  }
+
+  100% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 10px 24px rgba(4, 10, 20, 0.28);
   }
 }
