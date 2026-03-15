@@ -4,7 +4,6 @@ const HIDE_ANIMATION_MS = 380;
 const OPTIONS_HIDE_MS = 180;
 const LOG_EXPAND_MS = 180;
 const MESSAGE_ENTER_MS = 260;
-const MESSAGE_GAP_MS = 500;
 const OPTIONS_SHOW_MS = 220;
 
 type DialogueChooseResult = { state: DialogueViewState } | { ended: true };
@@ -28,6 +27,8 @@ export class DialogueUI {
   private _isTransitioning = false;
   private _hideTimer = 0;
   private _sequenceId = 0;
+  private _pendingState: DialogueViewState | null = null;
+  private _pendingMessages: DialogueViewMessage[] = [];
 
   constructor(opts: { root: HTMLElement; portraitUrls: Record<string, string>; defaultPortraitUrl?: string }) {
     this._portraitUrls = opts.portraitUrls;
@@ -90,6 +91,8 @@ export class DialogueUI {
     this._portrait.src = this._portraitUrls[state.characterId] ?? this._defaultPortraitUrl;
     this._title.textContent = state.characterName;
     this._isVisible = true;
+    this._pendingState = null;
+    this._pendingMessages = [];
 
     this._content.classList.remove("is-options-hidden", "is-log-expanded");
 
@@ -109,6 +112,7 @@ export class DialogueUI {
     }
 
     this._renderOptions(state.options.filter((o) => o.isVisible));
+    this._setOptionsInset(this._options.scrollHeight);
     const _animateIn = () => {
       requestAnimationFrame(() => {
         this._panel.classList.remove("is-hiding");
@@ -194,10 +198,7 @@ export class DialogueUI {
       await this._expandLog(sequenceId);
       if (!this._isSequenceCurrent(sequenceId)) return;
 
-      await this._appendBubbleSequence(
-        [{ who: "Ты", text: opt.text, side: "right", kind: "speech" }, ...("state" in result ? this._getMessages(result.state) : [])],
-        sequenceId
-      );
+      await this._appendBubble({ who: "Ты", text: opt.text, side: "right", kind: "speech" }, true, sequenceId);
       if (!this._isSequenceCurrent(sequenceId)) return;
 
       if ("ended" in result) {
@@ -207,9 +208,17 @@ export class DialogueUI {
 
       this._lastReplyId = result.state.replyId;
       this._title.textContent = result.state.characterName;
-      this._renderOptions(result.state.options.filter((option) => option.isVisible));
+      this._pendingState = result.state;
+      this._pendingMessages = this._getMessages(result.state);
 
-      await this._showOptions(sequenceId);
+      if (this._pendingMessages.length === 0) {
+        this._renderOptions(result.state.options.filter((option) => option.isVisible));
+        await this._showOptions(sequenceId);
+        return;
+      }
+
+      this._renderContinueButton();
+      await this._showContinueButton(sequenceId);
     } finally {
       if (this._isSequenceCurrent(sequenceId)) {
         this._isTransitioning = false;
@@ -227,18 +236,19 @@ export class DialogueUI {
 
   private async _hideOptions(sequenceId: number): Promise<void> {
     this._content.classList.add("is-options-hidden");
+    this._setOptionsInset(0);
     this._smoothScrollToBottom("smooth");
     await this._delay(OPTIONS_HIDE_MS, sequenceId);
   }
 
   private async _expandLog(sequenceId: number): Promise<void> {
-    this._content.classList.add("is-log-expanded");
     this._smoothScrollToBottom("smooth");
     await this._delay(LOG_EXPAND_MS, sequenceId);
   }
 
-  private async _showOptions(sequenceId: number): Promise<void> {
+  private async _showContinueButton(sequenceId: number): Promise<void> {
     this._options.classList.add("is-entering");
+    const targetInset = this._options.scrollHeight;
     const releasePin = this._pinLogToBottom(OPTIONS_SHOW_MS + 220, sequenceId);
 
     await this._nextFrame();
@@ -247,7 +257,35 @@ export class DialogueUI {
       return;
     }
 
-    this._content.classList.remove("is-log-expanded", "is-options-hidden");
+    this._setOptionsInset(targetInset);
+    this._content.classList.remove("is-options-hidden");
+    this._smoothScrollToBottom("auto");
+
+    await this._nextFrame();
+    if (!this._isSequenceCurrent(sequenceId)) {
+      releasePin();
+      return;
+    }
+
+    this._options.classList.remove("is-entering");
+    this._smoothScrollToBottom("auto");
+    await this._delay(OPTIONS_SHOW_MS, sequenceId);
+    releasePin();
+  }
+
+  private async _showOptions(sequenceId: number): Promise<void> {
+    this._options.classList.add("is-entering");
+    const releasePin = this._pinLogToBottom(OPTIONS_SHOW_MS + 220, sequenceId);
+    const targetInset = this._options.scrollHeight;
+
+    await this._nextFrame();
+    if (!this._isSequenceCurrent(sequenceId)) {
+      releasePin();
+      return;
+    }
+
+    this._setOptionsInset(targetInset);
+    this._content.classList.remove("is-options-hidden");
     this._smoothScrollToBottom("auto");
 
     await this._nextFrame();
@@ -261,18 +299,6 @@ export class DialogueUI {
     await this._delay(OPTIONS_SHOW_MS, sequenceId);
     releasePin();
     this._smoothScrollToBottom("auto");
-  }
-
-  private async _appendBubbleSequence(messages: DialogueViewMessage[], sequenceId: number): Promise<void> {
-    for (let i = 0; i < messages.length; i += 1) {
-      const message = messages[i];
-      await this._appendBubble(message, true, sequenceId);
-      if (!this._isSequenceCurrent(sequenceId)) return;
-      if (i < messages.length - 1) {
-        await this._delay(MESSAGE_GAP_MS, sequenceId);
-        if (!this._isSequenceCurrent(sequenceId)) return;
-      }
-    }
   }
 
   private async _appendBubble(opts: DialogueViewMessage, animated: boolean, sequenceId?: number): Promise<void> {
@@ -307,8 +333,54 @@ export class DialogueUI {
     await this._delay(MESSAGE_ENTER_MS, sequenceId);
   }
 
+  private _renderContinueButton(): void {
+    this._options.innerHTML = "";
+
+    const btn = document.createElement("button");
+    btn.className = "gnomes-dialogue__option gnomes-dialogue__option--continue";
+    btn.type = "button";
+    btn.textContent = "Далее";
+    btn.addEventListener("click", () => {
+      void this._showNextPendingMessage();
+    });
+
+    this._options.appendChild(btn);
+  }
+
+  private async _showNextPendingMessage(): Promise<void> {
+    if (this._isTransitioning || !this._pendingState || this._pendingMessages.length === 0) return;
+
+    this._isTransitioning = true;
+    const sequenceId = ++this._sequenceId;
+    this._options.classList.add("is-busy");
+
+    try {
+      const message = this._pendingMessages.shift();
+      if (!message) return;
+
+      await this._appendBubble(message, true, sequenceId);
+      if (!this._isSequenceCurrent(sequenceId)) return;
+
+      if (this._pendingMessages.length > 0) return;
+
+      const state = this._pendingState;
+      this._pendingState = null;
+      this._renderOptions(state.options.filter((option) => option.isVisible));
+      await this._showOptions(sequenceId);
+    } finally {
+      if (this._isSequenceCurrent(sequenceId)) {
+        this._isTransitioning = false;
+        this._options.classList.remove("is-busy");
+      }
+    }
+  }
+
   private _smoothScrollToBottom(behavior: ScrollBehavior): void {
     this._log.scrollTo({ top: this._log.scrollHeight, behavior });
+  }
+
+  private _setOptionsInset(height: number): void {
+    this._content.style.setProperty("--gnomes-dialogue-options-offset", `${Math.max(0, Math.ceil(height))}px`);
   }
 
   private _pinLogToBottom(durationMs: number, sequenceId?: number): () => void {
@@ -361,11 +433,14 @@ export class DialogueUI {
 
   private _resetForFreshSession(): void {
     this._content.classList.remove("is-options-hidden", "is-log-expanded");
+    this._content.style.removeProperty("--gnomes-dialogue-options-offset");
     this._options.classList.remove("is-busy");
     this._options.classList.remove("is-entering");
     this._options.innerHTML = "";
     this._log.innerHTML = "";
     this._lastReplyId = null;
+    this._pendingState = null;
+    this._pendingMessages = [];
   }
 }
 

@@ -108,8 +108,10 @@ body.gnomes-project-scroll-locked {
 
 .gnomes-dialogue__content {
   min-width: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
+  --gnomes-dialogue-options-offset: 0px;
 }
 
 .gnomes-dialogue__head {
@@ -162,6 +164,8 @@ body.gnomes-project-scroll-locked {
   overflow-y: auto;
   scroll-behavior: smooth;
   padding: 14px;
+  padding-bottom: calc(14px + var(--gnomes-dialogue-options-offset));
+  scroll-padding-bottom: calc(18px + var(--gnomes-dialogue-options-offset));
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(19, 30, 41, 0.96), rgba(22, 33, 44, 0.98));
   color: #e9f1f8;
@@ -169,14 +173,8 @@ body.gnomes-project-scroll-locked {
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 10px 30px rgba(2, 8, 15, 0.28);
   transition:
-    min-height 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    max-height 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding-bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
     margin-top 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.gnomes-dialogue__content.is-log-expanded .gnomes-dialogue__log {
-  min-height: 250px;
-  max-height: 52vh;
 }
 
 .gnomes-dialogue__bubble-wrap {
@@ -248,25 +246,25 @@ body.gnomes-project-scroll-locked {
 }
 
 .gnomes-dialogue__options {
-  margin-top: 10px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: grid;
   gap: 10px;
   overflow: hidden;
-  max-height: 320px;
+  padding-top: 10px;
   opacity: 1;
   transform: translateY(0);
+  z-index: 2;
   transition:
-    max-height 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 180ms ease,
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    margin-top 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .gnomes-dialogue__content.is-options-hidden .gnomes-dialogue__options {
-  max-height: 0;
   opacity: 0;
-  transform: translateY(14px);
-  margin-top: 0;
+  transform: translateY(18px);
   pointer-events: none;
 }
 
@@ -393,6 +391,17 @@ body.gnomes-project-scroll-locked {
   --_option-orb-b: rgba(165, 232, 246, 0.1);
   --_option-animation-duration: 10.6s;
   --_option-animation-delay: -5.1s;
+}
+
+.gnomes-dialogue__option.gnomes-dialogue__option--continue {
+  --_option-base-a: rgba(38, 124, 78, 0.98);
+  --_option-base-b: rgba(28, 97, 60, 0.98);
+  --_option-base-c: rgba(57, 148, 96, 0.96);
+  --_option-glow-a: rgba(255, 255, 255, 0.18);
+  --_option-glow-b: rgba(255, 255, 255, 0.06);
+  --_option-glow-c: rgba(200, 255, 220, 0.14);
+  --_option-orb-a: rgba(255, 255, 255, 0.2);
+  --_option-orb-b: rgba(164, 255, 194, 0.12);
 }
 
 .gnomes-dialogue__option:hover:not(:disabled) {
