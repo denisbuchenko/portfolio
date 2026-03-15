@@ -15,7 +15,7 @@ export const CITY_GIRLS = {
    */
   scale: {
     mode: "targetHeight" as "source" | "targetHeight",
-    multiplier: 1.0,
+    multiplier: 1.5,
     targetHeight: 1.65
   },
 
@@ -87,9 +87,9 @@ export const CITY_GIRLS = {
     /** Визуально показывать цилиндры-цели. */
     showGoalCylinders: true,
     /** Показать оси в точке NPC (помогает понять: NPC заспавнился или нет). */
-    showAxes: true,
+    showAxes: false,
     /** Показать bounds-box helper вокруг модели (если материалы не видны). */
-    showBounds: true,
+    showBounds: false,
     /** Рисовать синее кольцо вокруг NPC, обозначающее `hello.distance`. */
     showHelloRadiusRing: true,
     helloRadiusRing: {
