@@ -102,7 +102,7 @@ export class InputHandler {
 		const newY = y - drag.offsetY;
 		const dx = newX - drag.piece.x;
 		const dy = newY - drag.piece.y;
-		groupSys.moveGroup(drag.groupId, dx, dy);
+		groupSys.moveGroupWithinVisibility(drag.groupId, dx, dy, canvas.width, canvas.height);
 	}
 
 	handlePointerMoveDraw(

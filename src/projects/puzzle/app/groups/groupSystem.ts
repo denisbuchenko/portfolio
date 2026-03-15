@@ -1,5 +1,8 @@
 import type { RuntimePiece } from "../runtimeTypes";
 
+const GROUP_MAX_HIDDEN_RATIO = 0.6;
+const GROUP_MIN_VISIBLE_RATIO = 1 - GROUP_MAX_HIDDEN_RATIO;
+
 export function createGroupSystem(): GroupSystem {
     return new GroupSystem();
 }
@@ -46,6 +49,27 @@ export class GroupSystem implements GroupSystem {
             piece.y += dy;
           }
       }
+    }
+
+    public moveGroupWithinVisibility(groupId: number, dx: number, dy: number, viewW: number, viewH: number): void {
+      const bounds = this._getGroupBounds(groupId);
+      if (!bounds) return;
+
+      const allowedDx = this._clampAxisDelta(
+        dx,
+        bounds.minX,
+        bounds.maxX,
+        Math.max(1, viewW)
+      );
+      const allowedDy = this._clampAxisDelta(
+        dy,
+        bounds.minY,
+        bounds.maxY,
+        Math.max(1, viewH)
+      );
+
+      if (allowedDx === 0 && allowedDy === 0) return;
+      this.moveGroup(groupId, allowedDx, allowedDy);
     }
 
     public mergeGroups(targetGroupId: number, sourceGroupId: number): void {
@@ -97,5 +121,48 @@ export class GroupSystem implements GroupSystem {
 
     private _getPiece(pieceId: number): RuntimePiece | null {
       return this.pieceById.get(pieceId) ?? null;
+    }
+
+    private _getGroupBounds(groupId: number): { minX: number; maxX: number; minY: number; maxY: number } | null {
+      const pieceIds = this._getGroupPieceIds(groupId);
+      if (!pieceIds || pieceIds.length === 0) return null;
+
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+
+      for (const pieceId of pieceIds) {
+        const piece = this._getPiece(pieceId);
+        if (!piece) continue;
+
+        const pad = piece.img.geom.padPx;
+        const left = piece.x - pad;
+        const top = piece.y - pad;
+        const right = left + piece.img.bitmap.width;
+        const bottom = top + piece.img.bitmap.height;
+
+        if (left < minX) minX = left;
+        if (top < minY) minY = top;
+        if (right > maxX) maxX = right;
+        if (bottom > maxY) maxY = bottom;
+      }
+
+      if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+        return null;
+      }
+
+      return { minX, maxX, minY, maxY };
+    }
+
+    private _clampAxisDelta(delta: number, minEdge: number, maxEdge: number, viewportSize: number): number {
+      if (delta === 0) return 0;
+
+      const groupSize = Math.max(1, maxEdge - minEdge);
+      const minVisibleSize = Math.min(viewportSize, groupSize * GROUP_MIN_VISIBLE_RATIO);
+      const minDelta = minVisibleSize - maxEdge;
+      const maxDelta = viewportSize - minVisibleSize - minEdge;
+
+      return Math.max(minDelta, Math.min(maxDelta, delta));
     }
 }
