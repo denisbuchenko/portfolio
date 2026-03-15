@@ -690,6 +690,9 @@ export class ShowcaseMode {
       onDialogueVisibilityChange: (isOpen) => {
         this._inventoryUi.setDialogueShifted(isOpen);
       },
+      onGameComplete: () => {
+        this._inventoryUi.addItem("stone3");
+      },
     });
     app.setRenderActive(s.hot);
 

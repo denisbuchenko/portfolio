@@ -52,6 +52,7 @@ export class GnomesApp {
     setScrollY?: (scrollY: number, behavior?: ScrollBehavior) => Promise<void> | void;
     setScrollLocked?: (locked: boolean) => void;
     onDialogueVisibilityChange?: (isOpen: boolean) => void;
+    onGameComplete?: () => void;
   }) {
     this._canvas = opts.canvas;
     this._interactionEl = opts.interactionEl ?? opts.canvas;
@@ -77,6 +78,9 @@ export class GnomesApp {
       onVisibilityChange: (isOpen) => {
         this._setScrollLocked(isOpen);
         opts.onDialogueVisibilityChange?.(isOpen);
+      },
+      onGameComplete: () => {
+        opts.onGameComplete?.();
       },
     });
   }

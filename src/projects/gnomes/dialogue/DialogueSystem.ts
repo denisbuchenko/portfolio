@@ -8,18 +8,23 @@ import { DialogueProgressStore } from "./DialogueProgressStore";
 export class DialogueSystem {
   private _ui: DialogueUI;
   private _engine: DialogueEngine;
+  private _knowledge: PlayerKnowledgeStore;
   private _isOpen = false;
+  private _gameCompleteNotified = false;
   private _onVisibilityChange: (isOpen: boolean) => void;
+  private _onGameComplete: () => void;
 
   constructor(opts: {
     uiRoot: HTMLElement;
     portraitUrls: Record<string, string>;
     defaultPortraitUrl?: string;
     onVisibilityChange?: (isOpen: boolean) => void;
+    onGameComplete?: () => void;
   }) {
     const db = new DialogueDatabase(loadAllDialogues());
     const knowledge = new PlayerKnowledgeStore();
     const progress = new DialogueProgressStore();
+    this._knowledge = knowledge;
     this._engine = new DialogueEngine({ db, knowledge, progress });
     this._ui = new DialogueUI({
       root: opts.uiRoot,
@@ -27,6 +32,7 @@ export class DialogueSystem {
       defaultPortraitUrl: opts.defaultPortraitUrl,
     });
     this._onVisibilityChange = opts.onVisibilityChange ?? (() => {});
+    this._onGameComplete = opts.onGameComplete ?? (() => {});
 
     this._ui.setHandlers({
       onChoose: (opt) => {
@@ -61,6 +67,7 @@ export class DialogueSystem {
 
   close(): void {
     if (!this._isOpen) return;
+    this._notifyGameCompleteIfNeeded();
     this._engine.end();
     this._ui.hide();
     this._setOpen(false);
@@ -70,6 +77,13 @@ export class DialogueSystem {
     if (this._isOpen === isOpen) return;
     this._isOpen = isOpen;
     this._onVisibilityChange(isOpen);
+  }
+
+  private _notifyGameCompleteIfNeeded(): void {
+    if (this._gameCompleteNotified) return;
+    if (!this._knowledge.has("gnomes_game_complete")) return;
+    this._gameCompleteNotified = true;
+    this._onGameComplete();
   }
 }
 
