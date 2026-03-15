@@ -178,7 +178,7 @@ export class ShowcaseMode {
       const sectionEl = _el("section", "showcase__section");
       const layout = def.layout ?? "sticky";
       if (layout === "sticky") {
-        sectionEl.style.height = `${def.heightVh ?? 100}vh`;
+        sectionEl.style.height = `calc(var(--app-visible-height) * ${(def.heightVh ?? 100) / 100})`;
       } else {
         sectionEl.classList.add("showcase__section--flow");
       }
@@ -891,7 +891,7 @@ export class ShowcaseMode {
 
     const sectionTop = s.el.offsetTop;
     const sectionHeight = s.el.clientHeight;
-    const vh = window.innerHeight;
+    const vh = this._host.clientHeight;
     const maxScroll = Math.max(1, sectionHeight - vh);
     const localScroll = Math.max(0, this._host.scrollTop - sectionTop);
     const progress = Math.min(1, localScroll / maxScroll);

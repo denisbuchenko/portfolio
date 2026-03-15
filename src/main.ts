@@ -14,6 +14,11 @@ import { ShowcaseMode } from "./showcase/ShowcaseMode";
 const overlay = createOverlay();
 let showcaseInstance: ShowcaseMode | null = null;
 
+function _syncAppVisibleViewport(): void {
+  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+  document.documentElement.style.setProperty("--app-visible-height", `${Math.round(viewportHeight)}px`);
+}
+
 function _blockTextSelectionUi(): void {
   const _preventDefault = (event: Event): void => {
     event.preventDefault();
@@ -198,6 +203,11 @@ function startShowcase(): void {
 }
 
 _blockTextSelectionUi();
+_syncAppVisibleViewport();
+window.addEventListener("resize", _syncAppVisibleViewport, { passive: true });
+window.addEventListener("orientationchange", _syncAppVisibleViewport, { passive: true });
+window.visualViewport?.addEventListener("resize", _syncAppVisibleViewport, { passive: true });
+window.visualViewport?.addEventListener("scroll", _syncAppVisibleViewport, { passive: true });
 showPicker();
 
 
