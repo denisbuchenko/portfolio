@@ -108,6 +108,8 @@ body.gnomes-project-scroll-locked {
 
 .gnomes-dialogue__content {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .gnomes-dialogue__head {
@@ -155,8 +157,10 @@ body.gnomes-project-scroll-locked {
   margin-top: 10px;
   display: grid;
   gap: 10px;
+  min-height: 164px;
   max-height: 38vh;
   overflow-y: auto;
+  scroll-behavior: smooth;
   padding: 14px;
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(19, 30, 41, 0.96), rgba(22, 33, 44, 0.98));
@@ -164,10 +168,34 @@ body.gnomes-project-scroll-locked {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 10px 30px rgba(2, 8, 15, 0.28);
+  transition:
+    min-height 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    max-height 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    margin-top 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.gnomes-dialogue__content.is-log-expanded .gnomes-dialogue__log {
+  min-height: 250px;
+  max-height: 52vh;
 }
 
 .gnomes-dialogue__bubble-wrap {
   display: flex;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 260ms ease,
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.gnomes-dialogue__bubble-wrap.is-entering {
+  opacity: 0;
+  transform: translateY(12px) scale(0.985);
+}
+
+.gnomes-dialogue__bubble-wrap.is-entering.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .gnomes-dialogue__bubble-wrap--left {
@@ -223,6 +251,32 @@ body.gnomes-project-scroll-locked {
   margin-top: 10px;
   display: grid;
   gap: 10px;
+  overflow: hidden;
+  max-height: 320px;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    max-height 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 180ms ease,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    margin-top 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.gnomes-dialogue__content.is-options-hidden .gnomes-dialogue__options {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(14px);
+  margin-top: 0;
+  pointer-events: none;
+}
+
+.gnomes-dialogue__options.is-busy {
+  pointer-events: none;
+}
+
+.gnomes-dialogue__options.is-entering .gnomes-dialogue__option {
+  opacity: 0;
+  transform: translateY(18px);
 }
 
 .gnomes-dialogue__option {
@@ -264,6 +318,26 @@ body.gnomes-project-scroll-locked {
     gnomes-dialogue-option-gradient var(--_option-animation-duration) ease-in-out infinite,
     gnomes-dialogue-option-depth calc(var(--_option-animation-duration) * 1.15) ease-in-out infinite;
   animation-delay: var(--_option-animation-delay), var(--_option-animation-delay);
+}
+
+.gnomes-dialogue__option {
+  will-change: transform, opacity;
+}
+
+.gnomes-dialogue__options.is-entering .gnomes-dialogue__option:nth-child(1) {
+  transition-delay: 0ms;
+}
+
+.gnomes-dialogue__options.is-entering .gnomes-dialogue__option:nth-child(2) {
+  transition-delay: 30ms;
+}
+
+.gnomes-dialogue__options.is-entering .gnomes-dialogue__option:nth-child(3) {
+  transition-delay: 60ms;
+}
+
+.gnomes-dialogue__options.is-entering .gnomes-dialogue__option:nth-child(4) {
+  transition-delay: 90ms;
 }
 
 .gnomes-dialogue__option::before {

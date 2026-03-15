@@ -30,12 +30,7 @@ export class DialogueSystem {
 
     this._ui.setHandlers({
       onChoose: (opt) => {
-        const res = this._engine.choose(opt);
-        if ("ended" in res) {
-          this.close();
-          return;
-        }
-        this._ui.show(res.state);
+        return this._engine.choose(opt);
       },
       onClose: () => this.close(),
     });
