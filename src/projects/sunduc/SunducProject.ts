@@ -142,7 +142,8 @@ export class SunducProject {
       this._sequenceController = new SunducSequenceController({
         animationCatalog,
         animationController: this._animationController,
-        onStatusChange: (text) => this._ui.setStatus(text)
+        onStatusChange: (text) => this._ui.setStatus(text),
+        onOpen2Complete: () => this._viewer.scheduleTitleReveal()
       });
 
       this._ui.renderAnimationControls({
@@ -150,7 +151,10 @@ export class SunducProject {
         sequenceClipNames: animationCatalog.sequenceClipNames,
         summary: animationCatalog.summary,
         onToggleClip: (clipName) => this._animationController?.toggleClip(clipName),
-        onResetAll: () => this._animationController?.resetClips(this._interactiveClipNames)
+        onResetAll: () => {
+          this._viewer.resetTitleReveal();
+          this._animationController?.resetClips(this._interactiveClipNames);
+        }
       });
       this._animationController.initializeClips(this._interactiveClipNames);
 
@@ -190,6 +194,7 @@ export class SunducProject {
   private _renderOnce(deltaSeconds: number): void {
     this._rotationController.update(deltaSeconds);
     this._animationController?.update(deltaSeconds);
+    this._viewer.update(deltaSeconds);
     this._viewer.render();
   }
 }

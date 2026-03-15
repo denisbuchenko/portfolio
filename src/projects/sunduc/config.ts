@@ -38,6 +38,35 @@ export const SUNDUC_CONFIG = {
     lightDistance: 3.6,
     offset: { x: 0.15, y: -0.1, z: 0 }
   },
+  titlePlane: {
+    enabled: true,
+    targetNodeName: "L",
+    color: "#ffffff",
+    opacity: 0.96,
+    fontFamily: "Inter, Arial, sans-serif",
+    fontWeight: 800,
+    fontSizePx: 115,
+    minFontSizePx: 24,
+    lineHeight: 1.16,
+    paragraphGapFactor: 0.48,
+    textureWidthPx: 1024,
+    maxTextureHeightPx: 4096,
+    paddingPx: { x: 52, y: 42 },
+    glowBlurPx: 7,
+    glowColor: "#000000",
+    dimensions: {
+      width: 0.9,
+      heightScale: 1,
+      minHeight: 0.7,
+      maxHeight: 4.2
+    },
+    offset: { x: 0.15, y: -0.1, z: 0.08 },
+    animation: {
+      startDelayMs: 1000,
+      riseSpeed: 0.07,
+      maxOffsetY: 5.25
+    }
+  },
   model: {
     scale: 1,
     initialRotationDeg: { x: -8, y: 28, z: 0 },

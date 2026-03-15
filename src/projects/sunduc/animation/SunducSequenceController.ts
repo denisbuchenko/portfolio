@@ -19,12 +19,14 @@ interface SunducSequenceControllerOptions {
   animationCatalog: SunducAnimationCatalog;
   animationController: SunducAnimationController;
   onStatusChange: (text: string) => void;
+  onOpen2Complete?: () => void;
 }
 
 export class SunducSequenceController {
   private readonly _animationCatalog: SunducAnimationCatalog;
   private readonly _animationController: SunducAnimationController;
   private readonly _onStatusChange: (text: string) => void;
+  private readonly _onOpen2Complete?: () => void;
   private readonly _insertedStones = new Set<SunducStoneItemId>();
 
   private _busy = false;
@@ -36,6 +38,7 @@ export class SunducSequenceController {
     this._animationCatalog = options.animationCatalog;
     this._animationController = options.animationController;
     this._onStatusChange = options.onStatusChange;
+    this._onOpen2Complete = options.onOpen2Complete;
   }
 
   canAcceptItem(itemId: SunducInventoryItemId): boolean {
@@ -118,6 +121,7 @@ export class SunducSequenceController {
 
       if (this._animationCatalog.open2ClipName) {
         await this._animationController.playClip(this._animationCatalog.open2ClipName);
+        this._onOpen2Complete?.();
       }
 
       this._awaitingKey = false;

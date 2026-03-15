@@ -1,12 +1,16 @@
 import * as THREE from "three";
 import { enableShadowsAndSrgb } from "../../city/three/loadGltf";
 import { SUNDUC_CONFIG } from "../config";
+import { SUNDUC_TITLE_PLANE_CONTENT } from "../content";
 
 export type SunducViewer = {
   readonly rotationRoot: THREE.Group;
   hitTestModelAtClientPoint(clientX: number, clientY: number): boolean;
   resize(width: number, height: number): void;
   setModel(model: THREE.Object3D): void;
+  update(deltaSeconds: number): void;
+  scheduleTitleReveal(): void;
+  resetTitleReveal(): void;
   render(): void;
   dispose(): void;
 };
@@ -28,6 +32,7 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
   renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.localClippingEnabled = true;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(
@@ -50,6 +55,7 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
   _setupLights(scene);
 
   let modelRoot: THREE.Object3D | null = null;
+  let titlePlaneController: _SunducTitlePlaneController | null = null;
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
 
@@ -87,6 +93,9 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
       renderer.setSize(width, height, false);
     },
     setModel(model: THREE.Object3D): void {
+      titlePlaneController?.dispose();
+      titlePlaneController = null;
+
       if (modelRoot) {
         modelGroup.remove(modelRoot);
       }
@@ -94,16 +103,27 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
       modelRoot = model;
       enableShadowsAndSrgb(model);
       _fitModel(model);
+      titlePlaneController = _createTitlePlaneController(model);
       const glowRoot = _createGlowRoot(model);
       if (glowRoot) {
         model.add(glowRoot);
       }
       modelGroup.add(model);
     },
+    update(deltaSeconds: number): void {
+      titlePlaneController?.update(deltaSeconds);
+    },
+    scheduleTitleReveal(): void {
+      titlePlaneController?.scheduleReveal();
+    },
+    resetTitleReveal(): void {
+      titlePlaneController?.reset();
+    },
     render(): void {
       renderer.render(scene, camera);
     },
     dispose(): void {
+      titlePlaneController?.dispose();
       renderer.dispose();
     }
   };
@@ -142,11 +162,165 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
   }
 }
 
+type _SunducTitlePlaneController = {
+  scheduleReveal(): void;
+  reset(): void;
+  update(deltaSeconds: number): void;
+  dispose(): void;
+};
+
+type _ResolvedSunducAnchor = {
+  target: THREE.Object3D;
+  position: THREE.Vector3;
+  baseSize: number;
+};
+
 function _createGlowRoot(model: THREE.Object3D): THREE.Group | null {
   const glowConfig = SUNDUC_CONFIG.glow;
   if (!glowConfig.enabled) return null;
 
-  const target = model.getObjectByName(glowConfig.targetNodeName);
+  const anchor = _resolveSunducAnchor(model, glowConfig.targetNodeName);
+  if (!anchor) return null;
+
+  const glowPosition = anchor.position.clone();
+
+  glowPosition.x += glowConfig.offset.x;
+  glowPosition.y += glowConfig.offset.y;
+  glowPosition.z += glowConfig.offset.z;
+
+  anchor.target.visible = false;
+
+  const glowRoot = new THREE.Group();
+  glowRoot.name = `${glowConfig.targetNodeName}_glow`;
+  glowRoot.position.copy(glowPosition);
+
+  const glowColor = new THREE.Color(glowConfig.color);
+  const glowTexture = _createGlowTexture();
+  const coreOpacity = Math.min(1, 0.46 + glowConfig.intensity * 0.04);
+  const haloOpacity = Math.min(0.8, 0.24 + glowConfig.intensity * 0.022);
+  const outerOpacity = Math.min(0.48, 0.11 + glowConfig.intensity * 0.014);
+
+  glowRoot.add(_createGlowSprite(glowTexture, glowColor, anchor.baseSize * 1.8, coreOpacity));
+  glowRoot.add(_createGlowSprite(glowTexture, glowColor, anchor.baseSize * 3.2, haloOpacity));
+  glowRoot.add(_createGlowSprite(glowTexture, glowColor, anchor.baseSize * 4.8, outerOpacity));
+
+  const coreLight = new THREE.PointLight(glowColor, glowConfig.intensity, glowConfig.lightDistance, 1.2);
+  const haloLight = new THREE.PointLight(0xfff0a8, glowConfig.intensity * 0.65, glowConfig.lightDistance * 1.7, 1.6);
+  glowRoot.add(coreLight);
+  glowRoot.add(haloLight);
+
+  return glowRoot;
+}
+
+function _createTitlePlaneController(model: THREE.Object3D): _SunducTitlePlaneController | null {
+  const titlePlaneConfig = SUNDUC_CONFIG.titlePlane;
+  if (!titlePlaneConfig.enabled) return null;
+
+  const anchor = _resolveSunducAnchor(model, titlePlaneConfig.targetNodeName);
+  if (!anchor) return null;
+
+  const textureData = _createTitlePlaneTexture();
+  const planeHeight = THREE.MathUtils.clamp(
+    titlePlaneConfig.dimensions.width * textureData.aspectRatio * titlePlaneConfig.dimensions.heightScale,
+    titlePlaneConfig.dimensions.minHeight,
+    titlePlaneConfig.dimensions.maxHeight
+  );
+  const geometry = new THREE.PlaneGeometry(titlePlaneConfig.dimensions.width, planeHeight);
+  geometry.translate(0, -planeHeight / 2, 0);
+
+  const clipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const material = new THREE.MeshBasicMaterial({
+    map: textureData.texture,
+    transparent: true,
+    opacity: titlePlaneConfig.opacity,
+    alphaTest: 0.02,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    toneMapped: false,
+    clippingPlanes: [clipPlane]
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = `${titlePlaneConfig.targetNodeName}_titlePlane`;
+  mesh.renderOrder = 10;
+  mesh.visible = false;
+
+  const anchorPosition = anchor.position.clone().add(
+    new THREE.Vector3(
+      titlePlaneConfig.offset.x,
+      titlePlaneConfig.offset.y,
+      titlePlaneConfig.offset.z
+    )
+  );
+  let currentOffsetY = 0;
+  let delayRemainingSec = 0;
+  let revealScheduled = false;
+  let revealStarted = false;
+
+  _syncMeshPosition();
+  _syncClipPlane();
+  model.add(mesh);
+
+  return {
+    scheduleReveal(): void {
+      currentOffsetY = 0;
+      delayRemainingSec = titlePlaneConfig.animation.startDelayMs / 1000;
+      revealScheduled = true;
+      revealStarted = false;
+      mesh.visible = false;
+      _syncMeshPosition();
+    },
+    reset(): void {
+      currentOffsetY = 0;
+      delayRemainingSec = 0;
+      revealScheduled = false;
+      revealStarted = false;
+      mesh.visible = false;
+      _syncMeshPosition();
+    },
+    update(deltaSeconds: number): void {
+      _syncClipPlane();
+
+      if (revealScheduled && !revealStarted) {
+        delayRemainingSec = Math.max(0, delayRemainingSec - deltaSeconds);
+        if (delayRemainingSec === 0) {
+          revealStarted = true;
+          mesh.visible = true;
+        }
+      }
+
+      if (!revealStarted) return;
+
+      currentOffsetY = Math.min(
+        titlePlaneConfig.animation.maxOffsetY,
+        currentOffsetY + titlePlaneConfig.animation.riseSpeed * deltaSeconds
+      );
+      _syncMeshPosition();
+    },
+    dispose(): void {
+      model.remove(mesh);
+      geometry.dispose();
+      textureData.texture.dispose();
+      material.dispose();
+    }
+  };
+
+  function _syncMeshPosition(): void {
+    mesh.position.set(anchorPosition.x, anchorPosition.y + currentOffsetY, anchorPosition.z);
+  }
+
+  function _syncClipPlane(): void {
+    model.updateWorldMatrix(true, false);
+
+    const clipPointWorld = model.localToWorld(anchorPosition.clone());
+    const clipNormalWorld = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(model.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+    clipPlane.setFromNormalAndCoplanarPoint(clipNormalWorld, clipPointWorld);
+  }
+}
+
+function _resolveSunducAnchor(model: THREE.Object3D, targetNodeName: string): _ResolvedSunducAnchor | null {
+  const target = model.getObjectByName(targetNodeName);
   if (!target) return null;
 
   model.updateWorldMatrix(true, true);
@@ -159,35 +333,12 @@ function _createGlowRoot(model: THREE.Object3D): THREE.Group | null {
   const modelScale = model.getWorldScale(new THREE.Vector3());
   const scaleFactor = Math.max(modelScale.x, modelScale.y, modelScale.z, 0.0001);
   const targetSizeWorld = targetBounds.getSize(new THREE.Vector3());
-  const baseSize = Math.max(targetSizeWorld.length() / scaleFactor, 0.18);
-  const glowPosition = model.worldToLocal(targetCenterWorld.clone());
 
-  glowPosition.x += glowConfig.offset.x;
-  glowPosition.y += glowConfig.offset.y;
-  glowPosition.z += glowConfig.offset.z;
-
-  target.visible = false;
-
-  const glowRoot = new THREE.Group();
-  glowRoot.name = `${glowConfig.targetNodeName}_glow`;
-  glowRoot.position.copy(glowPosition);
-
-  const glowColor = new THREE.Color(glowConfig.color);
-  const glowTexture = _createGlowTexture();
-  const coreOpacity = Math.min(1, 0.46 + glowConfig.intensity * 0.04);
-  const haloOpacity = Math.min(0.8, 0.24 + glowConfig.intensity * 0.022);
-  const outerOpacity = Math.min(0.48, 0.11 + glowConfig.intensity * 0.014);
-
-  glowRoot.add(_createGlowSprite(glowTexture, glowColor, baseSize * 1.8, coreOpacity));
-  glowRoot.add(_createGlowSprite(glowTexture, glowColor, baseSize * 3.2, haloOpacity));
-  glowRoot.add(_createGlowSprite(glowTexture, glowColor, baseSize * 4.8, outerOpacity));
-
-  const coreLight = new THREE.PointLight(glowColor, glowConfig.intensity, glowConfig.lightDistance, 1.2);
-  const haloLight = new THREE.PointLight(0xfff0a8, glowConfig.intensity * 0.65, glowConfig.lightDistance * 1.7, 1.6);
-  glowRoot.add(coreLight);
-  glowRoot.add(haloLight);
-
-  return glowRoot;
+  return {
+    target,
+    position: model.worldToLocal(targetCenterWorld.clone()),
+    baseSize: Math.max(targetSizeWorld.length() / scaleFactor, 0.18)
+  };
 }
 
 function _getBoundsByNodeNames(root: THREE.Object3D, nodeNames: readonly string[]): THREE.Box3 | null {
@@ -283,4 +434,177 @@ function _createGlowTexture(): THREE.CanvasTexture {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true;
   return texture;
+}
+
+function _createTitlePlaneTexture(): { texture: THREE.CanvasTexture; aspectRatio: number } {
+  const titlePlaneConfig = SUNDUC_CONFIG.titlePlane;
+  const contentParagraphs = _normalizeTitlePlaneParagraphs(SUNDUC_TITLE_PLANE_CONTENT);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    canvas.width = 2;
+    canvas.height = 2;
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return { texture, aspectRatio: 1 };
+  }
+
+  const layout = _buildTitlePlaneLayout(context, contentParagraphs);
+
+  canvas.width = layout.canvasWidth;
+  canvas.height = layout.canvasHeight;
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.font = `${titlePlaneConfig.fontWeight} ${layout.fontSize}px ${titlePlaneConfig.fontFamily}`;
+  context.textAlign = "left";
+  context.textBaseline = "top";
+  context.fillStyle = titlePlaneConfig.color;
+  context.shadowColor = titlePlaneConfig.glowColor;
+  context.shadowBlur = titlePlaneConfig.glowBlurPx;
+
+  for (const line of layout.lines) {
+    context.fillText(line.text, layout.textStartX, line.y);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+
+  return {
+    texture,
+    aspectRatio: canvas.height / canvas.width
+  };
+}
+
+function _normalizeTitlePlaneParagraphs(content: string): string[] {
+  return content
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+}
+
+function _buildTitlePlaneLayout(
+  context: CanvasRenderingContext2D,
+  contentParagraphs: string[]
+): {
+  canvasWidth: number;
+  canvasHeight: number;
+  fontSize: number;
+  textStartX: number;
+  lines: Array<{ text: string; y: number }>;
+} {
+  const titlePlaneConfig = SUNDUC_CONFIG.titlePlane;
+  const canvasWidth = titlePlaneConfig.textureWidthPx;
+  const textWidth = canvasWidth - titlePlaneConfig.paddingPx.x * 2;
+  let fontSize = titlePlaneConfig.fontSizePx;
+  let bestLayout: {
+    canvasHeight: number;
+    fontSize: number;
+    lines: Array<{ text: string; y: number }>;
+  } | null = null;
+
+  while (fontSize >= titlePlaneConfig.minFontSizePx) {
+    const font = `${titlePlaneConfig.fontWeight} ${fontSize}px ${titlePlaneConfig.fontFamily}`;
+    context.font = font;
+
+    const lineAdvance = fontSize * titlePlaneConfig.lineHeight;
+    const paragraphGap = fontSize * titlePlaneConfig.paragraphGapFactor;
+    const lines: Array<{ text: string; y: number }> = [];
+    let y = titlePlaneConfig.paddingPx.y;
+
+    for (let paragraphIndex = 0; paragraphIndex < contentParagraphs.length; paragraphIndex += 1) {
+      const paragraphLines = _wrapTitlePlaneParagraph(context, contentParagraphs[paragraphIndex], textWidth);
+
+      for (const line of paragraphLines) {
+        lines.push({ text: line, y });
+        y += lineAdvance;
+      }
+
+      if (paragraphIndex < contentParagraphs.length - 1) {
+        y += paragraphGap;
+      }
+    }
+
+    const canvasHeight = Math.ceil(y + titlePlaneConfig.paddingPx.y);
+    bestLayout = {
+      canvasHeight,
+      fontSize,
+      lines
+    };
+
+    if (canvasHeight <= titlePlaneConfig.maxTextureHeightPx) {
+      break;
+    }
+
+    fontSize -= 2;
+  }
+
+  return {
+    canvasWidth,
+    canvasHeight: Math.max(2, bestLayout?.canvasHeight ?? 2),
+    fontSize: bestLayout?.fontSize ?? titlePlaneConfig.minFontSizePx,
+    textStartX: titlePlaneConfig.paddingPx.x,
+    lines: bestLayout?.lines ?? []
+  };
+}
+
+function _wrapTitlePlaneParagraph(
+  context: CanvasRenderingContext2D,
+  paragraph: string,
+  maxWidth: number
+): string[] {
+  const words = paragraph
+    .split(/\s+/)
+    .filter((word) => word.length > 0)
+    .flatMap((word) => _splitTitlePlaneWord(context, word, maxWidth));
+  if (words.length === 0) return [];
+
+  const lines: string[] = [];
+  let currentLine = words[0];
+
+  for (let index = 1; index < words.length; index += 1) {
+    const nextLine = `${currentLine} ${words[index]}`;
+    if (context.measureText(nextLine).width <= maxWidth) {
+      currentLine = nextLine;
+      continue;
+    }
+
+    lines.push(currentLine);
+    currentLine = words[index];
+  }
+
+  lines.push(currentLine);
+  return lines;
+}
+
+function _splitTitlePlaneWord(
+  context: CanvasRenderingContext2D,
+  word: string,
+  maxWidth: number
+): string[] {
+  if (context.measureText(word).width <= maxWidth) {
+    return [word];
+  }
+
+  const parts: string[] = [];
+  let currentPart = "";
+
+  for (const character of word) {
+    const nextPart = `${currentPart}${character}`;
+    if (currentPart.length > 0 && context.measureText(nextPart).width > maxWidth) {
+      parts.push(currentPart);
+      currentPart = character;
+      continue;
+    }
+
+    currentPart = nextPart;
+  }
+
+  if (currentPart.length > 0) {
+    parts.push(currentPart);
+  }
+
+  return parts;
 }
