@@ -687,6 +687,9 @@ export class ShowcaseMode {
       getScrollY,
       setScrollY,
       setScrollLocked,
+      onDialogueVisibilityChange: (isOpen) => {
+        this._inventoryUi.setDialogueShifted(isOpen);
+      },
     });
     app.setRenderActive(s.hot);
 

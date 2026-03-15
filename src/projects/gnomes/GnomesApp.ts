@@ -51,6 +51,7 @@ export class GnomesApp {
     getScrollY?: () => number;
     setScrollY?: (scrollY: number, behavior?: ScrollBehavior) => Promise<void> | void;
     setScrollLocked?: (locked: boolean) => void;
+    onDialogueVisibilityChange?: (isOpen: boolean) => void;
   }) {
     this._canvas = opts.canvas;
     this._interactionEl = opts.interactionEl ?? opts.canvas;
@@ -75,6 +76,7 @@ export class GnomesApp {
       defaultPortraitUrl: "/gnomes/hor.jpg",
       onVisibilityChange: (isOpen) => {
         this._setScrollLocked(isOpen);
+        opts.onDialogueVisibilityChange?.(isOpen);
       },
     });
   }

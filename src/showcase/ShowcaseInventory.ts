@@ -140,6 +140,13 @@ export class ShowcaseInventory {
     this._rootEl.classList.toggle("showcase-inventory--hidden", hidden);
   }
 
+  setDialogueShifted(shifted: boolean): void {
+    this._rootEl.classList.toggle("showcase-inventory--dialogue-shifted", shifted);
+    if (shifted) {
+      this.close();
+    }
+  }
+
   open(): void {
     this._expanded = true;
     this._syncExpandedState();
@@ -356,16 +363,22 @@ function _ensureInventoryStyles(): void {
       position: fixed;
       top: 50%;
       right: 0;
-      transform: translateY(-50%);
+      transform: translateY(-50%) translateX(0);
       z-index: 150;
       pointer-events: auto;
       width: 0;
       height: 0;
       overflow: visible;
+      transition: transform 280ms ease, opacity 180ms ease;
     }
 
     .showcase-inventory--hidden {
       opacity: 0;
+      pointer-events: none;
+    }
+
+    .showcase-inventory--dialogue-shifted {
+      transform: translateY(-50%) translateX(196px);
       pointer-events: none;
     }
 
@@ -532,6 +545,10 @@ function _ensureInventoryStyles(): void {
     }
 
     @media (max-width: 900px) {
+      .showcase-inventory--dialogue-shifted {
+        transform: translateY(-50%) translateX(172px);
+      }
+
       .showcase-inventory__panel {
         width: 84px;
         padding: 7px;
