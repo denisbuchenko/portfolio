@@ -8,6 +8,7 @@ import { ScrollInput } from "./input/ScrollInput";
 import { TurnInput } from "./input/TurnInput";
 import { StartButton } from "./ui/StartButton";
 import { CrashOverlay } from "./ui/CrashOverlay";
+import { GoalCounterOverlay } from "./ui/GoalCounterOverlay";
 import { CityDebugPanel, type DebugFocusGirlTuning } from "./ui/CityDebugPanel";
 import { CityGirlsSystem, type CityGirlRuntime } from "./girls/CityGirlsSystem";
 import { CITY_GIRLS } from "./girls/girlsConfig";
@@ -48,6 +49,7 @@ export class CityApp {
 
   private _startBtn: StartButton | null = null;
   private _crashOverlay: CrashOverlay;
+  private _goalCounterOverlay: GoalCounterOverlay;
   private _debugPanel: CityDebugPanel | null = null;
   private _showStartButton: boolean;
   private _showDebugPanel: boolean;
@@ -84,6 +86,9 @@ export class CityApp {
 
   // Gameplay state
   private _cruiseSpeed = CITY_GAMEPLAY.bikerMotion.speed.cruiseSpeed;
+  private _goalsReached = 0;
+  private _goalTotal: number = CITY_GIRLS.markerNames.length;
+  private _countedGoalGirlIds = new Set<string>();
 
   // NOTE: город/дома/окклюзия/коллизии — в `CityWorldController`.
 
@@ -155,6 +160,7 @@ export class CityApp {
     }
 
     this._crashOverlay = new CrashOverlay(this._uiRoot);
+    this._goalCounterOverlay = new GoalCounterOverlay(this._uiRoot, CITY_GAMEPLAY.goalCounterUi);
     if (this._showDebugPanel) {
       this._debugPanel = new CityDebugPanel(this._uiRoot);
       this._debugPanel.onFocusFirstGirl(() => this._beginDebugFocusFirstGirl());
@@ -206,6 +212,7 @@ export class CityApp {
 
     this._startBtn?.dispose();
     this._crashOverlay.dispose();
+    this._goalCounterOverlay.dispose();
     this._debugPanel?.dispose();
     if (this._resetTimer !== null) window.clearTimeout(this._resetTimer);
 
@@ -294,6 +301,8 @@ export class CityApp {
 
     // NPC girls (явная инициализация).
     await this._girlsSystem.init({ cityRoot: this._cityRoot });
+    this._goalTotal = this._girlsSystem.girls.length;
+    this._goalCounterOverlay.reset(0, this._goalTotal);
     this._debugPanel?.setGirls(this._girlsSystem.girls);
 
     // “Пол главнее”: убираем z-fighting/конфликты при пересечениях со сплющенными домами.
@@ -544,6 +553,8 @@ export class CityApp {
     // Девочки: миксеры обновляем всегда, логика реакций — в `CityGameLogic` внутри `_updatePlaying`.
     this._girlsSystem.updateAlways(dtSec);
 
+    this._syncGoalProgressFromState();
+    this._goalCounterOverlay.update(dtSec);
     this._bikerAnim?.update(dtSec);
     this._renderer.render(this._scene, this._activeCamera);
   };
@@ -671,6 +682,7 @@ export class CityApp {
   private _beginFocusToStart(): void {
     if (!this._cityRoot) return;
     this._girlsSystem.resetToHome("focusStart");
+    this._goalCounterOverlay.setVisible(false);
     this._mode = "focusStart";
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
@@ -909,6 +921,10 @@ export class CityApp {
     this._scroll.setEnabled(false);
     this._turn.setEnabled(true);
     this._gameLogic?.reset();
+    this._goalsReached = 0;
+    this._countedGoalGirlIds.clear();
+    this._goalCounterOverlay.reset(0, this._goalTotal);
+    this._goalCounterOverlay.setVisible(true);
     this._bikerRoot!.visible = true;
     this._crashOverlay.hide();
     this._debugPanel?.setVisible(false);
@@ -1192,6 +1208,7 @@ export class CityApp {
     this._mode = "crashed";
     this._encounter = null;
     this._speedMul = 1;
+    this._goalCounterOverlay.setVisible(false);
     this._girlsSystem.resetToHome("crash");
     this._scroll.setEnabled(false);
     this._turn.setEnabled(false);
@@ -1213,6 +1230,10 @@ export class CityApp {
     this._encounter = null;
     this._speedMul = 1;
     this._proximityDistanceMul = 1;
+    this._goalsReached = 0;
+    this._countedGoalGirlIds.clear();
+    this._goalCounterOverlay.reset(0, this._goalTotal);
+    this._goalCounterOverlay.setVisible(false);
     this._girlsSystem.resetToHome("resetToOverview");
     this._scroll.setProgress01(Math.max(0, Math.min(1, overviewProgress01)));
     this._scroll.setEnabled(true);
@@ -1236,6 +1257,20 @@ export class CityApp {
   /** Showcase: установить прогресс обзорного скролла извне (0..1). */
   setOverviewProgress(progress01: number): void {
     this._scroll.setProgress01(Math.max(0, Math.min(1, progress01)));
+  }
+
+  private _syncGoalProgressFromState(): void {
+    if (this._mode !== "playing" && this._mode !== "encounter") return;
+
+    for (const girl of this._girlsSystem.girls) {
+      if (!girl.state.goalReached) continue;
+      if (this._countedGoalGirlIds.has(girl.id)) continue;
+
+      this._countedGoalGirlIds.add(girl.id);
+      this._goalsReached += 1;
+      this._goalCounterOverlay.setProgress(this._goalsReached, this._goalTotal);
+      this._goalCounterOverlay.showScore(this._goalsReached);
+    }
   }
 
   /** Showcase: включить/выключить внутренний scroll input. */

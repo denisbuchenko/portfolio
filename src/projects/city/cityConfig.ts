@@ -126,6 +126,43 @@ export const CITY_GAMEPLAY = {
       /** Плавность набора скорости после катсцены (сек). */
       easeSec: 0.9
     }
+  },
+
+  goalCounterUi: {
+    hud: {
+      topPx: 20,
+      rightPx: 24,
+      minWidthPx: 56,
+      paddingX: 10,
+      paddingY: 6,
+      borderRadiusPx: 10,
+      fontSizePx: 16,
+      fontWeight: 800,
+      color: "#f6fbff",
+      background: "rgba(9, 16, 28, 0.72)",
+      border: "1px solid rgba(255, 255, 255, 0.12)",
+      boxShadow: "0 12px 28px rgba(0, 0, 0, 0.28)"
+    },
+    popup: {
+      anchorXPercent: 50,
+      anchorYPercent: 50,
+      offsetXPx: 0,
+      offsetYPx: -120,
+      travelYPx: -26,
+      fontSizePx: 96,
+      fontWeight: 900,
+      color: "#ffffff",
+      textShadow: "0 12px 40px rgba(0, 0, 0, 0.35)",
+      startScale: 0.72,
+      peakScale: 1.16,
+      endScale: 1.04,
+      startOpacity: 0,
+      peakOpacity: 1,
+      endOpacity: 0,
+      fadeInSec: 0.16,
+      holdSec: 0.24,
+      fadeOutSec: 0.42
+    }
   }
 } as const;
 
