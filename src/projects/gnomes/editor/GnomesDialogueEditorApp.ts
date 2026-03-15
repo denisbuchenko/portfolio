@@ -1011,11 +1011,26 @@ export class GnomesDialogueEditorApp {
     const graphId = this._isAllMode() ? `${characterId}::${reply.id}` : reply.id;
     const n = cy.getElementById(graphId);
     if (!n || n.empty()) return;
-    const text = (reply.text ?? "").trim().replace(/\s+/g, " ");
+    const text = this._replyPreviewText(reply);
     const cut = text.length > 44 ? `${text.slice(0, 44)}…` : text;
     const flags = [reply.isFinal ? "FINAL" : "", reply.isSilent ? "SILENT" : ""].filter(Boolean).join(" ");
     const label = flags ? `${reply.id}\n${flags}\n${cut}` : `${reply.id}\n${cut}`;
     n.data("label", label);
+  }
+
+  private _replyPreviewText(reply: DialogueReply): string {
+    if (reply.parts && reply.parts.length > 0) {
+      return reply.parts
+        .map((part) => part.text.trim())
+        .filter((part) => part.length > 0)
+        .join(" ")
+        .replace(/\s+/g, " ");
+    }
+
+    return [reply.narration ?? "", reply.text ?? ""]
+      .join(" ")
+      .trim()
+      .replace(/\s+/g, " ");
   }
 
   private _layout(): void {

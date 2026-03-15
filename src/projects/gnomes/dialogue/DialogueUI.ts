@@ -1,4 +1,4 @@
-import type { DialogueViewState, DialogueViewOption } from "./DialogueEngine";
+import type { DialogueViewState, DialogueViewOption, DialogueViewMessage } from "./DialogueEngine";
 
 const HIDE_ANIMATION_MS = 380;
 
@@ -83,8 +83,15 @@ export class DialogueUI {
     // Добавляем новую реплику гнома в лог, если это реально новая реплика.
     if (this._lastReplyId !== state.replyId) {
       this._lastReplyId = state.replyId;
-      if (!state.isSilent && state.text.trim().length > 0) {
-        this._appendBubble({ who: state.characterName, text: state.text, side: "left" });
+      if (!state.isSilent) {
+        const messages = state.messages.filter((message) => message.text.trim().length > 0);
+        if (messages.length > 0) {
+          for (const message of messages) {
+            this._appendBubble(message);
+          }
+        } else if (state.text.trim().length > 0) {
+          this._appendBubble({ who: state.characterName, text: state.text, side: "left", kind: "speech" });
+        }
       }
     }
 
@@ -131,7 +138,7 @@ export class DialogueUI {
       if (opt.isEnabled) {
         btn.addEventListener("click", () => {
           // В стиле ММО: добавляем в лог реплику игрока, затем просим движок выдать следующую реплику гнома.
-          this._appendBubble({ who: "Ты", text: opt.text, side: "right" });
+          this._appendBubble({ who: "Ты", text: opt.text, side: "right", kind: "speech" });
           this._onChoose?.(opt);
         });
       }
@@ -157,16 +164,17 @@ export class DialogueUI {
     }, HIDE_ANIMATION_MS);
   }
 
-  private _appendBubble(opts: { who: string; text: string; side: "left" | "right" }): void {
+  private _appendBubble(opts: DialogueViewMessage): void {
     const wrap = document.createElement("div");
     wrap.className = `gnomes-dialogue__bubble-wrap gnomes-dialogue__bubble-wrap--${opts.side}`;
 
     const bubble = document.createElement("div");
     bubble.className = `gnomes-dialogue__bubble gnomes-dialogue__bubble--${opts.side}`;
+    if (opts.kind === "narration") bubble.classList.add("gnomes-dialogue__bubble--narration");
 
     const name = document.createElement("div");
     name.className = "gnomes-dialogue__bubble-name";
-    name.textContent = opts.who;
+    name.textContent = opts.kind === "narration" ? "***" : opts.who;
     bubble.appendChild(name);
 
     const txt = document.createElement("div");

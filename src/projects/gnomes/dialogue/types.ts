@@ -26,11 +26,26 @@ export type DialogueNode = {
   replies: DialogueReply[];
 };
 
+export type DialogueReplyPart = {
+  kind: "speech" | "narration";
+  text: string;
+  /**
+   * Кто является источником этой части.
+   * Для описательных частей можно явно указать "Ты" или имя гнома.
+   */
+  author?: string;
+};
+
 export type DialogueReply = {
   id: string;
   /** Авторское описание/ремарка (может быть показана в редакторе/в будущем в UI). */
   narration?: string;
   text?: string;
+  /**
+   * Явно заданные части реплики в порядке показа.
+   * Нужны, когда в одном ответе чередуются описания и прямая речь.
+   */
+  parts?: DialogueReplyPart[];
   playerOptions?: DialoguePlayerOption[];
   /**
    * Ключи, которые игрок получает за сам факт "дошёл до этой реплики" (прочитал/увидел).

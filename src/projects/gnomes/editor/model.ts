@@ -272,7 +272,7 @@ export function buildAllGraphElements(
 }
 
 function _replyLabel(r: DialogueReply): string {
-  const text = (r.text ?? "").trim().replace(/\s+/g, " ");
+  const text = _replyPreviewText(r);
   const cut = text.length > 44 ? `${text.slice(0, 44)}…` : text;
   const flags = [r.isFinal ? "FINAL" : "", r.isSilent ? "SILENT" : ""].filter(Boolean).join(" ");
   return flags ? `${r.id}\n${flags}\n${cut}` : `${r.id}\n${cut}`;
@@ -284,6 +284,21 @@ function _optionLabel(text: string, requiredCount: number, grantsCount: number):
   if (requiredCount > 0) meta.push(`req:${requiredCount}`);
   if (grantsCount > 0) meta.push(`grant:${grantsCount}`);
   return meta.length > 0 ? `${t}\n[${meta.join(" ")}]` : t;
+}
+
+function _replyPreviewText(reply: DialogueReply): string {
+  if (reply.parts && reply.parts.length > 0) {
+    return reply.parts
+      .map((part) => part.text.trim())
+      .filter((part) => part.length > 0)
+      .join(" ")
+      .replace(/\s+/g, " ");
+  }
+
+  return [reply.narration ?? "", reply.text ?? ""]
+    .join(" ")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 export function parseList(raw: string): string[] | undefined {

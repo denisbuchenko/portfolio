@@ -194,6 +194,11 @@ body.gnomes-project-scroll-locked {
   background: linear-gradient(180deg, rgba(43, 82, 120, 0.96), rgba(51, 97, 141, 0.98));
 }
 
+.gnomes-dialogue__bubble--narration {
+  background: linear-gradient(180deg, rgba(70, 71, 85, 0.9), rgba(47, 50, 61, 0.94));
+  border: 1px solid rgba(235, 240, 249, 0.12);
+}
+
 .gnomes-dialogue__bubble-name {
   margin-bottom: 5px;
   font-size: 12px;
@@ -207,6 +212,11 @@ body.gnomes-project-scroll-locked {
   white-space: pre-wrap;
   font-size: 15px;
   line-height: 1.48;
+}
+
+.gnomes-dialogue__bubble--narration .gnomes-dialogue__bubble-text {
+  color: rgba(238, 243, 250, 0.92);
+  font-style: italic;
 }
 
 .gnomes-dialogue__options {

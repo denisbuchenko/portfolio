@@ -52,6 +52,7 @@ export class DialogueSystem {
         act: 0,
         replyId: "locked",
         text: res.lockedReason,
+        messages: [{ who: displayName, text: res.lockedReason, side: "left", kind: "speech" }],
         isSilent: false,
         isFinal: false,
         options: [],

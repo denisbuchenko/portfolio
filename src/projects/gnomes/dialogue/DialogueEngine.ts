@@ -1,4 +1,4 @@
-import type { DialoguePlayerOption, DialogueReply } from "./types";
+import type { DialoguePlayerOption, DialogueReply, DialogueReplyPart } from "./types";
 import { DialogueDatabase } from "./DialogueDatabase";
 import { PlayerKnowledgeStore } from "./PlayerKnowledgeStore";
 import { DialogueProgressStore } from "./DialogueProgressStore";
@@ -18,9 +18,17 @@ export type DialogueViewState = {
   act: number;
   replyId: string;
   text: string;
+  messages: DialogueViewMessage[];
   isSilent: boolean;
   isFinal: boolean;
   options: DialogueViewOption[];
+};
+
+export type DialogueViewMessage = {
+  who: string;
+  text: string;
+  side: "left" | "right";
+  kind: "speech" | "narration";
 };
 
 export class DialogueEngine {
@@ -140,6 +148,8 @@ export class DialogueEngine {
     act: number,
     reply: DialogueReply
   ): DialogueViewState {
+    const messages = this._buildReplyMessages(idx.data.characterInfo.name, reply);
+
     const options = (reply.playerOptions ?? []).map((opt) => {
       const required = opt.requiredKnowledge ?? [];
       const missingKnowledge = required.filter((k) => !this._knowledge.has(k));
@@ -174,9 +184,152 @@ export class DialogueEngine {
       act,
       replyId: reply.id,
       text: reply.text ?? "",
+      messages,
       isSilent: Boolean(reply.isSilent),
       isFinal: Boolean(reply.isFinal),
       options,
+    };
+  }
+
+  private _buildReplyMessages(characterName: string, reply: DialogueReply): DialogueViewMessage[] {
+    const parts = reply.parts && reply.parts.length > 0 ? reply.parts : this._parseLegacyReplyParts(characterName, reply);
+    return parts
+      .map((part) => this._partToMessage(characterName, part))
+      .filter((part): part is DialogueViewMessage => part !== null);
+  }
+
+  private _parseLegacyReplyParts(characterName: string, reply: DialogueReply): DialogueReplyPart[] {
+    const parts: DialogueReplyPart[] = [];
+
+    if (reply.narration && reply.narration.trim().length > 0) {
+      parts.push({
+        kind: "narration",
+        text: reply.narration.trim(),
+        author: this._inferNarrationAuthor(reply.narration, characterName, characterName),
+      });
+    }
+
+    const rawText = reply.text?.trim();
+    if (!rawText) return parts;
+
+    let currentSpeaker = characterName;
+    const blocks = rawText
+      .split(/\n\s*\n/g)
+      .map((block) => block.trim())
+      .filter((block) => block.length > 0);
+
+    for (const block of blocks) {
+      const speakerMatch = block.match(/^(Ты|[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё-]{1,40}):\s*([\s\S]*)$/);
+      if (speakerMatch) {
+        currentSpeaker = speakerMatch[1].trim();
+        const speakerText = speakerMatch[2]?.trim() ?? "";
+        parts.push(...this._splitInlineParts(speakerText, currentSpeaker, currentSpeaker));
+        continue;
+      }
+
+      const narrationAuthor = this._inferNarrationAuthor(block, currentSpeaker, characterName);
+      parts.push(...this._splitInlineParts(block, currentSpeaker, narrationAuthor, true));
+    }
+
+    return parts;
+  }
+
+  private _splitInlineParts(
+    rawText: string,
+    speechAuthor: string,
+    narrationAuthor: string,
+    forceNarration = false
+  ): DialogueReplyPart[] {
+    const parts: DialogueReplyPart[] = [];
+    const text = rawText.trim();
+    if (!text) return parts;
+
+    const starRe = /\*{1,2}([^*]+?)\*{1,2}/g;
+    let lastIndex = 0;
+
+    for (const match of text.matchAll(starRe)) {
+      const matchIndex = match.index ?? 0;
+      const before = text.slice(lastIndex, matchIndex).trim();
+      if (before.length > 0) {
+        parts.push({
+          kind: forceNarration ? "narration" : "speech",
+          text: before,
+          author: forceNarration ? narrationAuthor : speechAuthor,
+        });
+      }
+
+      const narrationText = (match[1] ?? "").trim();
+      if (narrationText.length > 0) {
+        parts.push({
+          kind: "narration",
+          text: narrationText,
+          author: narrationAuthor,
+        });
+      }
+
+      lastIndex = matchIndex + match[0].length;
+    }
+
+    const tail = text.slice(lastIndex).trim();
+    if (tail.length > 0) {
+      parts.push({
+        kind: forceNarration ? "narration" : "speech",
+        text: tail,
+        author: forceNarration ? narrationAuthor : speechAuthor,
+      });
+    }
+
+    if (parts.length === 0) {
+      parts.push({
+        kind: forceNarration ? "narration" : "speech",
+        text,
+        author: forceNarration ? narrationAuthor : speechAuthor,
+      });
+    }
+
+    return parts;
+  }
+
+  private _inferNarrationAuthor(text: string, fallbackAuthor: string, characterName: string): string {
+    const normalized = text.trim().toLowerCase();
+    if (!normalized) return fallbackAuthor;
+
+    if (
+      normalized.startsWith("ты ") ||
+      normalized.startsWith("ты.") ||
+      normalized.startsWith("ты,") ||
+      normalized.startsWith("сначала ты") ||
+      normalized.startsWith("потом ты") ||
+      normalized.startsWith("и наконец") ||
+      normalized.startsWith("достаёшь") ||
+      normalized.startsWith("достаешь") ||
+      normalized.startsWith("подходишь") ||
+      normalized.startsWith("приходишь") ||
+      normalized.startsWith("кладёшь") ||
+      normalized.startsWith("кладешь") ||
+      normalized.startsWith("чувствуешь") ||
+      normalized.startsWith("замечаешь")
+    ) {
+      return "Ты";
+    }
+
+    if (normalized.startsWith(characterName.toLowerCase())) {
+      return characterName;
+    }
+
+    return fallbackAuthor;
+  }
+
+  private _partToMessage(characterName: string, part: DialogueReplyPart): DialogueViewMessage | null {
+    const text = part.text.trim();
+    if (text.length === 0) return null;
+
+    const who = (part.author ?? (part.kind === "speech" ? characterName : characterName)).trim() || characterName;
+    return {
+      who,
+      text,
+      side: who === "Ты" ? "right" : "left",
+      kind: part.kind,
     };
   }
 
