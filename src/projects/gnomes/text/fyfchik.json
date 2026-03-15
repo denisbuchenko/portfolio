@@ -108,7 +108,7 @@
                   "nextReplyId": "fy_3_1",
                   "requiredKnowledge": ["unlock_fyf_after2"],
                   "lockMode": "disable",
-                  "lockHint": "Нужно, чтобы Хорогран дошёл до #3 и открыл этот тупик."
+                  "lockHint": "Нужно узнать что-то важное у другого гнома"
                 }
               ]
             },
@@ -155,7 +155,7 @@
                   "nextReplyId": "fy_5_1",
                   "requiredKnowledge": ["unlock_fyf_after4"],
                   "lockMode": "disable",
-                  "lockHint": "Нужно, чтобы Хорогран дошёл до #5 и открыл этот тупик."
+                  "lockHint": "Нужно узнать что-то важное у другого гнома"
                 }
               ]
             },

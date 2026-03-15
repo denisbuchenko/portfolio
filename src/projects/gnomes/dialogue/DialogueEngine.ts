@@ -174,7 +174,7 @@ export class DialogueEngine {
 
       const lockMode = opt.lockMode ?? "hide";
       const isVisible = lockMode === "disable";
-      const lockHint = opt.lockHint ?? "Нужно узнать кое-что ещё. Поговори с другими гномами.";
+      const lockHint = opt.lockHint ?? "Нужно узнать что-то важное у другого гнома";
       return {
         text: opt.text,
         option: opt,
