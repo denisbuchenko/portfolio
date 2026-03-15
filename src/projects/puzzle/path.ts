@@ -6,79 +6,180 @@ export type PieceGeometry = {
   padPx: number;
 };
 
-function connectorSign(edge: EdgeDef): number {
+// ── helpers ──────────────────────────────────────────────────────────
+
+function _connectorSign(edge: EdgeDef): number {
   if (edge.type === "tab") return 1;
   if (edge.type === "blank") return -1;
   return 0;
 }
 
-function clamp01(x: number): number {
+function _clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
 }
 
-function edgeProfile(edge: EdgeDef, cell: number, tab: number) {
-  // ширина "шляпки" и глубина — слегка варьируем
-  const w = cell * (0.46 + 0.10 * (clamp01(edge.v0) - 0.5)); // ~0.41..0.51
-  const depth = tab * (0.9 + 0.25 * (clamp01(edge.v1) - 0.5)); // ~0.84..0.96
-  const neck = w * 0.22;
-  return { w, depth, neck };
+// ── connector profile (with slight per-edge variation) ──────────────
+
+type _ConnectorProfile = {
+  /** Half-width of the connector base on the edge (px) */
+  baseHW: number;
+  /** Half-width of the narrow neck (px) */
+  neckHW: number;
+  /** Half-width of the rounded head (px) */
+  headHW: number;
+  /** Total outward depth of the connector (px) */
+  depth: number;
+  /** Fraction of depth that is neck (0–1) */
+  neckRatio: number;
+  /** Fraction of depth for concave shoulder indent (0–1) */
+  shoulderDip: number;
+};
+
+function _connectorProfile(edge: EdgeDef, cell: number, tab: number): _ConnectorProfile {
+  const v0 = _clamp01(edge.v0);
+  const v1 = _clamp01(edge.v1);
+
+  return {
+    baseHW:      cell * (0.190 + 0.010 * (v0 - 0.5)),
+    neckHW:      cell * (0.085 + 0.008 * (v1 - 0.5)),
+    headHW:      cell * (0.155 + 0.010 * (v0 - 0.5)),
+    depth:       tab  * (0.90  + 0.15  * (v1 - 0.5)),
+    neckRatio:   0.30 + 0.04 * (v0 - 0.5),
+    shoulderDip: 0.06,
+  };
 }
 
-function addHorizontalEdge(params: {
-  path: Path2D;
-  x0: number;
-  y: number;
-  x1: number;
-  edge: EdgeDef;
-  outwardNormalY: number; // top: -1, bottom: +1
-  cell: number;
-  tab: number;
-}): void {
-  const { path, x0, y, x1, edge, outwardNormalY, cell, tab } = params;
-  const s = connectorSign(edge);
-  const { w, depth, neck } = edgeProfile(edge, cell, tab);
-  const mid = (x0 + x1) * 0.5;
-  const a = mid - w * 0.5;
-  const b = mid + w * 0.5;
+// ── jigsaw connector shape (6 cubic Béziers) ────────────────────────
+//
+//  The shape is defined in a local coordinate system:
+//    "along"  — pixels along the edge direction (−left, +right)
+//    "perp"   — normalised perpendicular: 0 = edge, 1 = full depth outward
+//
+//  Transform functions (tx, ty) convert (along, perp) → (worldX, worldY).
+//
+//             ___________
+//            /           \          ← head top   (perp ≈ 1.0)
+//           /             \
+//          |               |        ← head side  (perp ≈ 0.60)
+//           \_           _/
+//             |         |           ← neck       (perp ≈ 0.30)
+//             |         |
+//        _____|         |_____      ← shoulder   (perp ≈ −0.06 … 0)
+//
 
-  path.lineTo(a, y);
-  if (s !== 0) {
-    const out = s * outwardNormalY * depth;
-    const peakX = mid;
-    const peakY = y + out;
-    path.bezierCurveTo(a + neck, y, peakX - neck, peakY, peakX, peakY);
-    path.bezierCurveTo(peakX + neck, peakY, b - neck, y, b, y);
-  }
+function _addConnectorCurves(
+  path: Path2D,
+  tx: (along: number, perp: number) => number,
+  ty: (along: number, perp: number) => number,
+  pr: _ConnectorProfile,
+): void {
+  const { baseHW, neckHW, headHW, neckRatio: nH, shoulderDip: dip } = pr;
+  const hH = 1 - nH; // head portion fraction
+
+  const lt = (a: number, p: number) => path.lineTo(tx(a, p), ty(a, p));
+
+  const ct = (
+    a1: number, p1: number,
+    a2: number, p2: number,
+    a3: number, p3: number,
+  ) =>
+    path.bezierCurveTo(
+      tx(a1, p1), ty(a1, p1),
+      tx(a2, p2), ty(a2, p2),
+      tx(a3, p3), ty(a3, p3),
+    );
+
+  // Approach connector on the edge
+  lt(-baseHW, 0);
+
+  // 1 — Left shoulder (concave indent) → narrow into neck
+  ct(-baseHW, -dip, -neckHW, -dip, -neckHW, nH);
+
+  // 2 — Left head underside: flare from narrow neck to wide head
+  ct(
+    -neckHW, nH + hH * 0.35,
+    -headHW, nH + hH * 0.12,
+    -headHW, nH + hH * 0.60,
+  );
+
+  // 3 — Top-left of head (rounded)
+  ct(
+    -headHW,       nH + hH * 0.95,
+    -headHW * 0.5, 1.0,
+     0,            1.0,
+  );
+
+  // 4 — Top-right of head (mirror of 3)
+  ct(
+    headHW * 0.5, 1.0,
+    headHW,       nH + hH * 0.95,
+    headHW,       nH + hH * 0.60,
+  );
+
+  // 5 — Right head underside (mirror of 2)
+  ct(
+    headHW,  nH + hH * 0.12,
+    neckHW,  nH + hH * 0.35,
+    neckHW,  nH,
+  );
+
+  // 6 — Right neck → right shoulder (mirror of 1)
+  ct(neckHW, -dip, baseHW, -dip, baseHW, 0);
+}
+
+// ── edge builders ───────────────────────────────────────────────────
+
+function _addHorizontalEdge(
+  path: Path2D,
+  x0: number, y: number, x1: number,
+  edge: EdgeDef,
+  outwardY: number,
+  cell: number, tab: number,
+): void {
+  const s = _connectorSign(edge);
+  if (s === 0) { path.lineTo(x1, y); return; }
+
+  const pr  = _connectorProfile(edge, cell, tab);
+  const mid = (x0 + x1) * 0.5;
+  const dir = Math.sign(x1 - x0); // +1 left→right, −1 right→left
+  const out = s * outwardY;
+
+  _addConnectorCurves(
+    path,
+    (a, _p) => mid + a * dir,
+    (_a, p) => y + p * pr.depth * out,
+    pr,
+  );
+
   path.lineTo(x1, y);
 }
 
-function addVerticalEdge(params: {
-  path: Path2D;
-  x: number;
-  y0: number;
-  y1: number;
-  edge: EdgeDef;
-  outwardNormalX: number; // left: -1, right: +1
-  cell: number;
-  tab: number;
-}): void {
-  const { path, x, y0, y1, edge, outwardNormalX, cell, tab } = params;
-  const s = connectorSign(edge);
-  const { w, depth, neck } = edgeProfile(edge, cell, tab);
-  const mid = (y0 + y1) * 0.5;
-  const a = mid - w * 0.5;
-  const b = mid + w * 0.5;
+function _addVerticalEdge(
+  path: Path2D,
+  x: number, y0: number, y1: number,
+  edge: EdgeDef,
+  outwardX: number,
+  cell: number, tab: number,
+): void {
+  const s = _connectorSign(edge);
+  if (s === 0) { path.lineTo(x, y1); return; }
 
-  path.lineTo(x, a);
-  if (s !== 0) {
-    const out = s * outwardNormalX * depth;
-    const peakX = x + out;
-    const peakY = mid;
-    path.bezierCurveTo(x, a + neck, peakX, peakY - neck, peakX, peakY);
-    path.bezierCurveTo(peakX, peakY + neck, x, b - neck, x, b);
-  }
+  const pr  = _connectorProfile(edge, cell, tab);
+  const mid = (y0 + y1) * 0.5;
+  const dir = Math.sign(y1 - y0); // +1 top→bottom, −1 bottom→top
+  const out = s * outwardX;
+
+  _addConnectorCurves(
+    path,
+    (_a, p) => x + p * pr.depth * out,
+    (a, _p) => mid + a * dir,
+    pr,
+  );
+
   path.lineTo(x, y1);
 }
+
+// ── main export ─────────────────────────────────────────────────────
 
 export function createPiecePath(piece: PuzzlePieceModel, geom: PieceGeometry): Path2D {
   const { cellPx: cell, padPx: pad, tabPx: tab } = geom;
@@ -90,72 +191,18 @@ export function createPiecePath(piece: PuzzlePieceModel, geom: PieceGeometry): P
   const p = new Path2D();
   p.moveTo(x0, y0);
 
-  // top: left -> right, outward normal = -Y
-  addHorizontalEdge({
-    path: p,
-    x0,
-    y: y0,
-    x1,
-    edge: piece.edges.top,
-    outwardNormalY: -1,
-    cell,
-    tab
-  });
+  // Top: left → right, outward normal = −Y
+  _addHorizontalEdge(p, x0, y0, x1, piece.edges.top, -1, cell, tab);
 
-  // right: top -> bottom, outward normal = +X
-  addVerticalEdge({
-    path: p,
-    x: x1,
-    y0,
-    y1,
-    edge: piece.edges.right,
-    outwardNormalX: +1,
-    cell,
-    tab
-  });
+  // Right: top → bottom, outward normal = +X
+  _addVerticalEdge(p, x1, y0, y1, piece.edges.right, +1, cell, tab);
 
-  // bottom: right -> left, outward normal = +Y
-  // идём назад по X, поэтому разворачиваем параметризацию: строим от x1 к x0 через перевёрнутую Path2D нельзя,
-  // но можно просто вести линию в обратную сторону — bezier по сути симметричен.
-  // Чтобы не дублировать код, «притворимся» что идём слева направо, но используем локальную систему: зеркалим по X.
-  // Проще: добавим сегменты вручную.
-  {
-    const s = connectorSign(piece.edges.bottom);
-    const { w, depth, neck } = edgeProfile(piece.edges.bottom, cell, tab);
-    const mid = (x0 + x1) * 0.5;
-    const a = mid + w * 0.5; // при движении справа налево "a" ближе к правой части
-    const b = mid - w * 0.5;
-    p.lineTo(a, y1);
-    if (s !== 0) {
-      const out = s * +1 * depth; // outward +Y
-      const peakX = mid;
-      const peakY = y1 + out;
-      p.bezierCurveTo(a - neck, y1, peakX + neck, peakY, peakX, peakY);
-      p.bezierCurveTo(peakX - neck, peakY, b + neck, y1, b, y1);
-    }
-    p.lineTo(x0, y1);
-  }
+  // Bottom: right → left, outward normal = +Y
+  _addHorizontalEdge(p, x1, y1, x0, piece.edges.bottom, +1, cell, tab);
 
-  // left: bottom -> top, outward normal = -X
-  {
-    const s = connectorSign(piece.edges.left);
-    const { w, depth, neck } = edgeProfile(piece.edges.left, cell, tab);
-    const mid = (y0 + y1) * 0.5;
-    const a = mid + w * 0.5;
-    const b = mid - w * 0.5;
-    p.lineTo(x0, a);
-    if (s !== 0) {
-      const out = s * -1 * depth; // outward -X
-      const peakX = x0 + out;
-      const peakY = mid;
-      p.bezierCurveTo(x0, a - neck, peakX, peakY + neck, peakX, peakY);
-      p.bezierCurveTo(peakX, peakY - neck, x0, b + neck, x0, b);
-    }
-    p.lineTo(x0, y0);
-  }
+  // Left: bottom → top, outward normal = −X
+  _addVerticalEdge(p, x0, y1, y0, piece.edges.left, -1, cell, tab);
 
   p.closePath();
   return p;
 }
-
-
