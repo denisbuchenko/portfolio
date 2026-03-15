@@ -1,5 +1,7 @@
 export class CrashOverlay {
   private _root: HTMLDivElement;
+  private _card: HTMLDivElement;
+  private _cardAnimation: Animation | null = null;
 
   constructor(host: HTMLElement) {
     this._root = document.createElement("div");
@@ -17,18 +19,40 @@ export class CrashOverlay {
         <p class="overlay__text">Столкновение</p>
       </div>
     `;
+    const card = this._root.querySelector(".overlay__card");
+    if (!(card instanceof HTMLDivElement)) {
+      throw new Error("Crash overlay card mount failed");
+    }
+    this._card = card;
+    this._card.style.transformOrigin = "center center";
     host.appendChild(this._root);
   }
 
   show(): void {
     this._root.style.display = "flex";
+    this._cardAnimation?.cancel();
+    this._card.style.transform = "scale(0) rotate(0turn)";
+    this._cardAnimation = this._card.animate(
+      [
+        { transform: "scale(0) rotate(0turn)" },
+        { transform: "scale(1) rotate(2turn)" }
+      ],
+      {
+        duration: 500,
+        easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+        fill: "forwards"
+      }
+    );
   }
 
   hide(): void {
+    this._cardAnimation?.cancel();
+    this._cardAnimation = null;
     this._root.style.display = "none";
   }
 
   dispose(): void {
+    this._cardAnimation?.cancel();
     this._root.remove();
   }
 }
