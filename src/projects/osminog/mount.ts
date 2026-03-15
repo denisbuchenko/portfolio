@@ -248,6 +248,17 @@ export interface MountOsminogProjectOptions {
   onDuduHit?: () => void;
 }
 
+const _OSMINOG_PHRASES = [
+  "Никто меня не поздравил",
+  "А ведь у меня сегодня день рождения",
+  "А я так хотел обыкновенную песенку",
+  "...",
+  "ЭХ"
+] as const;
+const _OSMINOG_SUCCESS_PHRASES = ["Спасибо", "благодарю", "Merci", "Ты лучший"] as const;
+const _OSMINOG_PHRASE_CLICK_THROTTLE_MS = 1000;
+const _OSMINOG_PHRASE_SWITCH_DELAY_MS = 420;
+
 export function mountOsminogProject(host: HTMLElement, options?: MountOsminogProjectOptions): MountedOsminogProject {
   host.innerHTML = "";
   host.style.display = "block";
@@ -265,6 +276,11 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
   const animContainer = document.createElement("div");
   animContainer.className = "osminog__anim";
   stage.appendChild(animContainer);
+
+  const phraseOverlay = document.createElement("div");
+  phraseOverlay.className = "osminog__phrase";
+  phraseOverlay.setAttribute("aria-live", "polite");
+  stage.appendChild(phraseOverlay);
 
   const threeLayer = document.createElement("div");
   threeLayer.className = "osminog__three-layer";
@@ -346,6 +362,12 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
   let _melodyTracker: MelodySequenceTracker<(typeof OSMINOG_DUDU_CONFIG.melody.sequences)[number][number]> | null = null;
   let _melodySuccessTimer = 0;
   let _inventoryRewardTimer = 0;
+  let _phraseHideTimer = 0;
+  let _phraseSwitchTimer = 0;
+  let _phraseIndex = 0;
+  let _phraseLastTriggerTs = -Infinity;
+  let _successPhraseIndex = 0;
+  let _successPhrasesUnlocked = false;
   let _keyRewardGranted = false;
   const _replacedHitMaterials: THREE.Material[] = [];
 
@@ -371,6 +393,96 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
 
   const _primeDuduAudio = (): void => {
     void _ensureDuduAudioStarted();
+  };
+
+  const _hidePhrase = (): void => {
+    if (_phraseHideTimer) {
+      window.clearTimeout(_phraseHideTimer);
+      _phraseHideTimer = 0;
+    }
+    if (_phraseSwitchTimer) {
+      window.clearTimeout(_phraseSwitchTimer);
+      _phraseSwitchTimer = 0;
+    }
+    phraseOverlay.classList.remove("osminog__phrase--visible");
+  };
+
+  const _showPhraseOverlay = (phrase: string): void => {
+    phraseOverlay.textContent = phrase;
+    void phraseOverlay.offsetWidth;
+    phraseOverlay.classList.add("osminog__phrase--visible");
+  };
+
+  const _showPhrase = (phrase: string, onHidden?: () => void): void => {
+    if (_phraseHideTimer) {
+      window.clearTimeout(_phraseHideTimer);
+      _phraseHideTimer = 0;
+    }
+
+    if (_phraseSwitchTimer) {
+      window.clearTimeout(_phraseSwitchTimer);
+      _phraseSwitchTimer = 0;
+    }
+
+    const _revealPhrase = (): void => {
+      _showPhraseOverlay(phrase);
+
+      _phraseHideTimer = window.setTimeout(() => {
+        phraseOverlay.classList.remove("osminog__phrase--visible");
+        _phraseHideTimer = 0;
+
+        if (!onHidden) return;
+
+        _phraseSwitchTimer = window.setTimeout(() => {
+          _phraseSwitchTimer = 0;
+          onHidden();
+        }, _OSMINOG_PHRASE_SWITCH_DELAY_MS);
+      }, 3600);
+    };
+
+    if (phraseOverlay.classList.contains("osminog__phrase--visible")) {
+      phraseOverlay.classList.remove("osminog__phrase--visible");
+      _phraseSwitchTimer = window.setTimeout(() => {
+        _phraseSwitchTimer = 0;
+        _revealPhrase();
+      }, _OSMINOG_PHRASE_SWITCH_DELAY_MS);
+      return;
+    }
+
+    _revealPhrase();
+  };
+
+  const _showNextPhrase = (): void => {
+    const phrase = _OSMINOG_PHRASES[_phraseIndex];
+    _phraseIndex = (_phraseIndex + 1) % _OSMINOG_PHRASES.length;
+    _showPhrase(phrase);
+  };
+
+  const _showNextSuccessPhrase = (): void => {
+    const phrase = _OSMINOG_SUCCESS_PHRASES[_successPhraseIndex];
+    _successPhraseIndex = (_successPhraseIndex + 1) % _OSMINOG_SUCCESS_PHRASES.length;
+    _showPhrase(phrase);
+  };
+
+  const _isLowerAnimHalfHit = (clientY: number): boolean => {
+    const rect = animContainer.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    return clientY >= rect.top + rect.height * 0.5 && clientY <= rect.bottom;
+  };
+
+  const _handleAnimClick = (event: MouseEvent): void => {
+    if (!_isLowerAnimHalfHit(event.clientY)) return;
+    const now = performance.now();
+    if (now - _phraseLastTriggerTs < _OSMINOG_PHRASE_CLICK_THROTTLE_MS) return;
+    _phraseLastTriggerTs = now;
+
+    if (_successPhrasesUnlocked) {
+      _showNextSuccessPhrase();
+      return;
+    }
+
+    if (_threeVisible) return;
+    _showNextPhrase();
   };
 
   const _requestThreeFrame = (): void => {
@@ -406,6 +518,9 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     _releaseThreeInteraction();
     _melodyTracker?.reset();
     _resetMelodyUi();
+    _hidePhrase();
+    _successPhraseIndex = 0;
+    _successPhrasesUnlocked = false;
     _interactionReady = false;
     _animationPlaying = false;
     _duduAnimationDirection = null;
@@ -475,6 +590,10 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     _threeVisible = visible && _threeReady;
     threeCanvas.classList.toggle("osminog__three--visible", _threeVisible);
 
+    if (_threeVisible) {
+      _hidePhrase();
+    }
+
     if (!_threeVisible) {
       _resetDuduInteractionState();
     }
@@ -532,7 +651,8 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     if (!state.isCompleted) return;
 
     _controller?.triggerSuccessSequence();
-
+    _successPhrasesUnlocked = true;
+    _successPhraseIndex = 0;
     _melodySuccessTimer = window.setTimeout(() => {
       melodyProgress.classList.add("osminog__melody-progress--hidden");
       melodySuccess.classList.add("osminog__melody-success--visible");
@@ -956,6 +1076,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
       _threeResizeObserver.observe(threeLayer);
       _resizeThree();
 
+      animContainer.addEventListener("click", _handleAnimClick);
       root.addEventListener("pointerdown", _primeDuduAudio, { capture: true });
       root.addEventListener("touchstart", _primeDuduAudio, { passive: true, capture: true });
       root.addEventListener("touchend", _primeDuduAudio, { passive: true, capture: true });
@@ -984,6 +1105,9 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
     _controller?.dispose();
     _anim?.destroy();
     cancelAnimationFrame(_threeFrame);
+    _hidePhrase();
+    if (_phraseSwitchTimer) window.clearTimeout(_phraseSwitchTimer);
+    animContainer.removeEventListener("click", _handleAnimClick);
     root.removeEventListener("pointerdown", _primeDuduAudio, { capture: true } as EventListenerOptions);
     root.removeEventListener("touchstart", _primeDuduAudio, { capture: true } as EventListenerOptions);
     root.removeEventListener("touchend", _primeDuduAudio, { capture: true } as EventListenerOptions);
