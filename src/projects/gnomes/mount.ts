@@ -1,55 +1,34 @@
+import "./gnomes.css";
 import { GNOMES_CONFIG } from "./config";
 import { GnomesApp } from "./GnomesApp";
 
-type _SavedStyles = {
-  bodyOverflowY: string;
-  htmlScrollSnapType: string;
-  htmlOverscrollBehaviorY: string;
-};
-
 export function mountGnomesProject(host: HTMLElement): () => void {
   host.innerHTML = "";
-  host.style.display = "block";
-  host.style.padding = "0";
+  host.classList.add("gnomes-project-host");
 
   const wrapper = document.createElement("div");
-  wrapper.style.position = "absolute";
-  wrapper.style.inset = "0";
-  wrapper.style.pointerEvents = "auto";
+  wrapper.className = "gnomes-project";
   host.appendChild(wrapper);
 
   const uiRoot = document.createElement("div");
-  uiRoot.style.position = "absolute";
-  uiRoot.style.inset = "0";
-  uiRoot.style.pointerEvents = "none"; // сами компоненты внутри включат pointerEvents
-  uiRoot.style.zIndex = "20";
+  uiRoot.className = "gnomes-project__ui";
   wrapper.appendChild(uiRoot);
 
   const canvas = document.createElement("canvas");
-  canvas.style.width = "100%";
-  canvas.style.height = "100%";
-  canvas.style.pointerEvents = "none";
-  // Важно: иначе на мобильном свайп по canvas не будет скроллить страницу.
-  canvas.style.touchAction = "pan-y";
+  canvas.className = "gnomes-project__canvas";
   wrapper.appendChild(canvas);
 
-  const saved: _SavedStyles = {
-    bodyOverflowY: document.body.style.overflowY,
-    htmlScrollSnapType: document.documentElement.style.scrollSnapType,
-    htmlOverscrollBehaviorY: document.documentElement.style.overscrollBehaviorY,
-  };
   let _scrollLocked = false;
 
   const _setStandaloneScrollLocked = (locked: boolean): void => {
     if (_scrollLocked === locked) return;
     _scrollLocked = locked;
-    document.body.style.overflowY = locked ? "hidden" : "auto";
+    document.body.classList.toggle("gnomes-project-scroll-locked", locked);
   };
 
   // Делаем нативный scroll страницы (не div), а камеру двигаем по scrollY.
-  document.body.style.overflowY = "auto";
-  document.documentElement.style.overscrollBehaviorY = "none";
-  document.documentElement.style.scrollSnapType = "y mandatory";
+  document.body.classList.add("gnomes-project-scroll");
+  document.documentElement.classList.add("gnomes-project-scroll");
 
   // Создаём \"пустой\" контент в body, чтобы страница реально скроллилась на 3 экрана.
   const prevScrollRoot = document.getElementById("gnomes-scroll-root");
@@ -57,17 +36,12 @@ export function mountGnomesProject(host: HTMLElement): () => void {
 
   const scrollRoot = document.createElement("div");
   scrollRoot.id = "gnomes-scroll-root";
-  scrollRoot.style.position = "relative";
-  scrollRoot.style.width = "1px";
-  scrollRoot.style.pointerEvents = "none";
-  scrollRoot.style.opacity = "0";
-  scrollRoot.style.userSelect = "none";
+  scrollRoot.className = "gnomes-project__scroll-root";
   document.body.appendChild(scrollRoot);
 
   for (let i = 0; i < GNOMES_CONFIG.pages; i++) {
     const snap = document.createElement("div");
-    snap.style.height = "100vh";
-    snap.style.scrollSnapAlign = "start";
+    snap.className = "gnomes-project__scroll-snap";
     scrollRoot.appendChild(snap);
   }
 
@@ -96,9 +70,8 @@ export function mountGnomesProject(host: HTMLElement): () => void {
 
     scrollRoot.remove();
     wrapper.remove();
-
-    document.body.style.overflowY = saved.bodyOverflowY;
-    document.documentElement.style.scrollSnapType = saved.htmlScrollSnapType;
-    document.documentElement.style.overscrollBehaviorY = saved.htmlOverscrollBehaviorY;
+    host.classList.remove("gnomes-project-host");
+    document.body.classList.remove("gnomes-project-scroll", "gnomes-project-scroll-locked");
+    document.documentElement.classList.remove("gnomes-project-scroll");
   };
 }

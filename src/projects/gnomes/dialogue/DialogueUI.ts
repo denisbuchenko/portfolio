@@ -1,93 +1,67 @@
 import type { DialogueViewState, DialogueViewOption } from "./DialogueEngine";
 
+const HIDE_ANIMATION_MS = 380;
+
 export class DialogueUI {
-  private _root: HTMLElement;
   private _panel: HTMLDivElement;
   private _portrait: HTMLImageElement;
   private _title: HTMLDivElement;
   private _log: HTMLDivElement;
   private _options: HTMLDivElement;
   private _closeBtn: HTMLButtonElement;
+  private _portraitUrls: Record<string, string>;
+  private _defaultPortraitUrl: string;
 
   private _onChoose: ((o: DialogueViewOption) => void) | null = null;
   private _onClose: (() => void) | null = null;
   private _lastReplyId: string | null = null;
+  private _isVisible = false;
+  private _hideTimer = 0;
 
-  constructor(opts: { root: HTMLElement; portraitUrl: string }) {
-    this._root = opts.root;
+  constructor(opts: { root: HTMLElement; portraitUrls: Record<string, string>; defaultPortraitUrl?: string }) {
+    this._portraitUrls = opts.portraitUrls;
+    this._defaultPortraitUrl = opts.defaultPortraitUrl ?? "";
 
     this._panel = document.createElement("div");
-    this._panel.style.position = "absolute";
-    this._panel.style.left = "0";
-    this._panel.style.right = "0";
-    this._panel.style.bottom = "0";
-    this._panel.style.zIndex = "20";
-    this._panel.style.display = "none";
-    this._panel.style.pointerEvents = "auto";
-    this._panel.style.padding = "12px 12px calc(12px + env(safe-area-inset-bottom))";
-    this._panel.style.background = "rgba(10, 12, 18, 0.78)";
-    this._panel.style.borderTop = "1px solid var(--panel-border)";
-    this._panel.style.backdropFilter = "blur(12px)";
+    this._panel.className = "gnomes-dialogue";
 
-    const row = document.createElement("div");
-    row.style.display = "grid";
-    row.style.gridTemplateColumns = "72px 1fr";
-    row.style.gap = "12px";
-    row.style.alignItems = "start";
-    this._panel.appendChild(row);
+    const card = document.createElement("div");
+    card.className = "gnomes-dialogue__card";
+    this._panel.appendChild(card);
 
     this._portrait = document.createElement("img");
-    this._portrait.src = opts.portraitUrl;
+    this._portrait.className = "gnomes-dialogue__portrait";
     this._portrait.alt = "portrait";
-    this._portrait.style.width = "72px";
-    this._portrait.style.height = "72px";
-    this._portrait.style.objectFit = "cover";
-    this._portrait.style.borderRadius = "12px";
-    this._portrait.style.border = "1px solid var(--panel-border)";
-    row.appendChild(this._portrait);
+    card.appendChild(this._portrait);
 
     const content = document.createElement("div");
-    content.style.minWidth = "0";
-    row.appendChild(content);
+    content.className = "gnomes-dialogue__content";
+    card.appendChild(content);
 
     const head = document.createElement("div");
-    head.style.display = "flex";
-    head.style.alignItems = "center";
-    head.style.justifyContent = "space-between";
-    head.style.gap = "12px";
+    head.className = "gnomes-dialogue__head";
     content.appendChild(head);
 
     this._title = document.createElement("div");
-    this._title.style.fontSize = "13px";
-    this._title.style.color = "var(--muted)";
-    this._title.style.whiteSpace = "nowrap";
-    this._title.style.overflow = "hidden";
-    this._title.style.textOverflow = "ellipsis";
+    this._title.className = "gnomes-dialogue__title";
     head.appendChild(this._title);
 
     this._closeBtn = document.createElement("button");
-    this._closeBtn.className = "btn";
+    this._closeBtn.className = "gnomes-dialogue__close";
     this._closeBtn.type = "button";
     this._closeBtn.textContent = "Закрыть";
     this._closeBtn.addEventListener("click", () => this._onClose?.());
     head.appendChild(this._closeBtn);
 
     this._log = document.createElement("div");
-    this._log.style.marginTop = "8px";
-    this._log.style.display = "grid";
-    this._log.style.gap = "8px";
-    this._log.style.maxHeight = "38vh";
-    this._log.style.overflowY = "auto";
-    this._log.style.paddingRight = "6px";
+    this._log.className = "gnomes-dialogue__log";
     content.appendChild(this._log);
 
     this._options = document.createElement("div");
-    this._options.style.marginTop = "10px";
-    this._options.style.display = "grid";
-    this._options.style.gap = "8px";
+    this._options.className = "gnomes-dialogue__options";
     content.appendChild(this._options);
 
-    this._root.appendChild(this._panel);
+    opts.root.appendChild(this._panel);
   }
 
   setHandlers(opts: { onChoose: (o: DialogueViewOption) => void; onClose: () => void }): void {
@@ -96,8 +70,15 @@ export class DialogueUI {
   }
 
   show(state: DialogueViewState): void {
-    this._panel.style.display = "block";
+    this._cancelHide();
+    if (!this._isVisible) this._resetForFreshSession();
+
+    this._panel.setAttribute("aria-hidden", "false");
+    this._panel.classList.remove("is-visible", "is-hiding");
+    this._panel.classList.add("is-mounted");
+    this._portrait.src = this._portraitUrls[state.characterId] ?? this._defaultPortraitUrl;
     this._title.textContent = state.characterName;
+    this._isVisible = true;
 
     // Добавляем новую реплику гнома в лог, если это реально новая реплика.
     if (this._lastReplyId !== state.replyId) {
@@ -109,42 +90,41 @@ export class DialogueUI {
 
     this._options.innerHTML = "";
     const visible = state.options.filter((o) => o.isVisible);
+    const _animateIn = () => {
+      requestAnimationFrame(() => {
+        this._panel.classList.remove("is-hiding");
+        this._panel.classList.add("is-visible");
+      });
+    };
 
     // Если вариантов нет — показываем одну кнопку завершения.
     if (visible.length === 0) {
       const btn = document.createElement("button");
-      btn.className = "btn";
+      btn.className = "gnomes-dialogue__option";
       btn.type = "button";
       btn.textContent = "Продолжить";
       btn.addEventListener("click", () => this._onClose?.());
       this._options.appendChild(btn);
+      _animateIn();
       return;
     }
 
     for (const opt of visible) {
       const btn = document.createElement("button");
-      btn.className = "btn";
+      btn.className = "gnomes-dialogue__option";
       btn.type = "button";
-      btn.style.textAlign = "left";
-      btn.style.whiteSpace = "normal";
-      btn.style.lineHeight = "1.35";
       btn.disabled = !opt.isEnabled;
-      btn.style.opacity = opt.isEnabled ? "1" : "0.55";
-      btn.style.cursor = opt.isEnabled ? "pointer" : "not-allowed";
 
       // Текст + (опционально) подсказка замка.
-      btn.innerHTML = "";
       const t = document.createElement("div");
+      t.className = "gnomes-dialogue__option-text";
       t.textContent = opt.text;
       btn.appendChild(t);
 
       if (!opt.isEnabled && opt.lockHint) {
         const hint = document.createElement("div");
+        hint.className = "gnomes-dialogue__option-hint";
         hint.textContent = opt.lockHint;
-        hint.style.marginTop = "4px";
-        hint.style.fontSize = "12px";
-        hint.style.lineHeight = "1.25";
-        hint.style.color = "var(--muted)";
         btn.appendChild(hint);
       }
 
@@ -157,45 +137,58 @@ export class DialogueUI {
       }
       this._options.appendChild(btn);
     }
+
+    _animateIn();
   }
 
   hide(): void {
-    this._panel.style.display = "none";
-    this._options.innerHTML = "";
-    this._log.innerHTML = "";
-    this._lastReplyId = null;
+    if (!this._isVisible) return;
+
+    this._cancelHide();
+    this._isVisible = false;
+    this._panel.classList.remove("is-visible");
+    this._panel.classList.add("is-hiding");
+    this._panel.setAttribute("aria-hidden", "true");
+
+    this._hideTimer = window.setTimeout(() => {
+      this._panel.classList.remove("is-hiding", "is-mounted");
+      this._resetForFreshSession();
+      this._hideTimer = 0;
+    }, HIDE_ANIMATION_MS);
   }
 
   private _appendBubble(opts: { who: string; text: string; side: "left" | "right" }): void {
     const wrap = document.createElement("div");
-    wrap.style.display = "flex";
-    wrap.style.justifyContent = opts.side === "left" ? "flex-start" : "flex-end";
+    wrap.className = `gnomes-dialogue__bubble-wrap gnomes-dialogue__bubble-wrap--${opts.side}`;
 
     const bubble = document.createElement("div");
-    bubble.style.maxWidth = "92%";
-    bubble.style.padding = "10px 12px";
-    bubble.style.borderRadius = "12px";
-    bubble.style.border = "1px solid var(--panel-border)";
-    bubble.style.background = opts.side === "left" ? "rgba(255,255,255,0.06)" : "rgba(53, 157, 255, 0.18)";
-    bubble.style.color = "var(--text)";
+    bubble.className = `gnomes-dialogue__bubble gnomes-dialogue__bubble--${opts.side}`;
 
     const name = document.createElement("div");
+    name.className = "gnomes-dialogue__bubble-name";
     name.textContent = opts.who;
-    name.style.fontSize = "12px";
-    name.style.marginBottom = "4px";
-    name.style.opacity = "0.75";
     bubble.appendChild(name);
 
     const txt = document.createElement("div");
+    txt.className = "gnomes-dialogue__bubble-text";
     txt.textContent = opts.text;
-    txt.style.whiteSpace = "pre-wrap";
-    txt.style.fontSize = "15px";
-    txt.style.lineHeight = "1.45";
     bubble.appendChild(txt);
 
     wrap.appendChild(bubble);
     this._log.appendChild(wrap);
     this._log.scrollTop = this._log.scrollHeight;
+  }
+
+  private _cancelHide(): void {
+    if (this._hideTimer === 0) return;
+    window.clearTimeout(this._hideTimer);
+    this._hideTimer = 0;
+  }
+
+  private _resetForFreshSession(): void {
+    this._options.innerHTML = "";
+    this._log.innerHTML = "";
+    this._lastReplyId = null;
   }
 }
 

@@ -11,12 +11,21 @@ export class DialogueSystem {
   private _isOpen = false;
   private _onVisibilityChange: (isOpen: boolean) => void;
 
-  constructor(opts: { uiRoot: HTMLElement; portraitUrl: string; onVisibilityChange?: (isOpen: boolean) => void }) {
+  constructor(opts: {
+    uiRoot: HTMLElement;
+    portraitUrls: Record<string, string>;
+    defaultPortraitUrl?: string;
+    onVisibilityChange?: (isOpen: boolean) => void;
+  }) {
     const db = new DialogueDatabase(loadAllDialogues());
     const knowledge = new PlayerKnowledgeStore();
     const progress = new DialogueProgressStore();
     this._engine = new DialogueEngine({ db, knowledge, progress });
-    this._ui = new DialogueUI({ root: opts.uiRoot, portraitUrl: opts.portraitUrl });
+    this._ui = new DialogueUI({
+      root: opts.uiRoot,
+      portraitUrls: opts.portraitUrls,
+      defaultPortraitUrl: opts.defaultPortraitUrl,
+    });
     this._onVisibilityChange = opts.onVisibilityChange ?? (() => {});
 
     this._ui.setHandlers({

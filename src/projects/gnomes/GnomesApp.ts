@@ -67,7 +67,12 @@ export class GnomesApp {
     this._factory = new GnomeFactory();
     this._dialogue = new DialogueSystem({
       uiRoot: opts.uiRoot,
-      portraitUrl: "/fr.jpg",
+      portraitUrls: {
+        horogran: "/gnomes/hor.jpg",
+        fyfchik: "/gnomes/fi.jpg",
+        pipiser: "/gnomes/pi.jpg",
+      },
+      defaultPortraitUrl: "/gnomes/hor.jpg",
       onVisibilityChange: (isOpen) => {
         this._setScrollLocked(isOpen);
       },
