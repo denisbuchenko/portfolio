@@ -94,6 +94,10 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
       modelRoot = model;
       enableShadowsAndSrgb(model);
       _fitModel(model);
+      const glowRoot = _createGlowRoot(model);
+      if (glowRoot) {
+        model.add(glowRoot);
+      }
       modelGroup.add(model);
     },
     render(): void {
@@ -136,6 +140,54 @@ export function createSunducViewer(options: CreateSunducViewerOptions): SunducVi
       SUNDUC_CONFIG.model.offset.z + SUNDUC_CONFIG.camera.lookAtOffset.z
     );
   }
+}
+
+function _createGlowRoot(model: THREE.Object3D): THREE.Group | null {
+  const glowConfig = SUNDUC_CONFIG.glow;
+  if (!glowConfig.enabled) return null;
+
+  const target = model.getObjectByName(glowConfig.targetNodeName);
+  if (!target) return null;
+
+  model.updateWorldMatrix(true, true);
+  target.updateWorldMatrix(true, true);
+
+  const targetBounds = new THREE.Box3().setFromObject(target);
+  const targetCenterWorld = targetBounds.isEmpty()
+    ? target.getWorldPosition(new THREE.Vector3())
+    : targetBounds.getCenter(new THREE.Vector3());
+  const modelScale = model.getWorldScale(new THREE.Vector3());
+  const scaleFactor = Math.max(modelScale.x, modelScale.y, modelScale.z, 0.0001);
+  const targetSizeWorld = targetBounds.getSize(new THREE.Vector3());
+  const baseSize = Math.max(targetSizeWorld.length() / scaleFactor, 0.18);
+  const glowPosition = model.worldToLocal(targetCenterWorld.clone());
+
+  glowPosition.x += glowConfig.offset.x;
+  glowPosition.y += glowConfig.offset.y;
+  glowPosition.z += glowConfig.offset.z;
+
+  target.visible = false;
+
+  const glowRoot = new THREE.Group();
+  glowRoot.name = `${glowConfig.targetNodeName}_glow`;
+  glowRoot.position.copy(glowPosition);
+
+  const glowColor = new THREE.Color(glowConfig.color);
+  const glowTexture = _createGlowTexture();
+  const coreOpacity = Math.min(1, 0.46 + glowConfig.intensity * 0.04);
+  const haloOpacity = Math.min(0.8, 0.24 + glowConfig.intensity * 0.022);
+  const outerOpacity = Math.min(0.48, 0.11 + glowConfig.intensity * 0.014);
+
+  glowRoot.add(_createGlowSprite(glowTexture, glowColor, baseSize * 1.8, coreOpacity));
+  glowRoot.add(_createGlowSprite(glowTexture, glowColor, baseSize * 3.2, haloOpacity));
+  glowRoot.add(_createGlowSprite(glowTexture, glowColor, baseSize * 4.8, outerOpacity));
+
+  const coreLight = new THREE.PointLight(glowColor, glowConfig.intensity, glowConfig.lightDistance, 1.2);
+  const haloLight = new THREE.PointLight(0xfff0a8, glowConfig.intensity * 0.65, glowConfig.lightDistance * 1.7, 1.6);
+  glowRoot.add(coreLight);
+  glowRoot.add(haloLight);
+
+  return glowRoot;
 }
 
 function _getBoundsByNodeNames(root: THREE.Object3D, nodeNames: readonly string[]): THREE.Box3 | null {
@@ -184,4 +236,51 @@ function _setupLights(scene: THREE.Scene): void {
   floor.position.y = -0.001;
   floor.receiveShadow = true;
   scene.add(floor);
+}
+
+function _createGlowSprite(
+  texture: THREE.Texture,
+  color: THREE.Color,
+  size: number,
+  opacity: number
+): THREE.Sprite {
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    color,
+    transparent: true,
+    opacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.setScalar(size);
+  sprite.renderOrder = 8;
+  sprite.raycast = () => {};
+  return sprite;
+}
+
+function _createGlowTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  const gradient = context.createRadialGradient(128, 128, 10, 128, 128, 128);
+  gradient.addColorStop(0, "rgba(255, 253, 220, 1)");
+  gradient.addColorStop(0.22, "rgba(255, 227, 120, 0.98)");
+  gradient.addColorStop(0.5, "rgba(255, 198, 54, 0.55)");
+  gradient.addColorStop(1, "rgba(255, 198, 54, 0)");
+
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
 }

@@ -30,6 +30,14 @@ export const SUNDUC_CONFIG = {
     fillIntensity: 1.15,
     rimIntensity: 1.35
   },
+  glow: {
+    enabled: true,
+    targetNodeName: "L",
+    color: "#ffd43b",
+    intensity: 50,
+    lightDistance: 3.6,
+    offset: { x: 0.15, y: -0.1, z: 0 }
+  },
   model: {
     scale: 1,
     initialRotationDeg: { x: -8, y: 28, z: 0 },
