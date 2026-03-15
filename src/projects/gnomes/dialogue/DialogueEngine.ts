@@ -1,4 +1,4 @@
-import type { DialoguePlayerOption, DialogueReply, DialogueReplyPart } from "./types";
+import type { DialoguePlayerOption, DialogueReply, DialogueReplyPart, DialogueTone } from "./types";
 import { DialogueDatabase } from "./DialogueDatabase";
 import { PlayerKnowledgeStore } from "./PlayerKnowledgeStore";
 import { DialogueProgressStore } from "./DialogueProgressStore";
@@ -135,7 +135,8 @@ export class DialogueEngine {
       this._knowledge.add(this._actCompleteKey(this._active.characterId, this._active.act));
     }
 
-    return { state: this._buildViewState(idx, this._active.characterId, this._active.act, next) };
+    const tone = option.tone as DialogueTone | undefined;
+    return { state: this._buildViewState(idx, this._active.characterId, this._active.act, next, tone) };
   }
 
   end(): void {
@@ -146,9 +147,15 @@ export class DialogueEngine {
     idx: NonNullable<ReturnType<DialogueDatabase["getCharacter"]>>,
     characterId: string,
     act: number,
-    reply: DialogueReply
+    reply: DialogueReply,
+    chosenTone?: DialogueTone
   ): DialogueViewState {
-    const messages = this._buildReplyMessages(idx.data.characterInfo.name, reply);
+    let effectiveReply = reply;
+    if (chosenTone && chosenTone !== "default" && reply.toneVariants?.[chosenTone]) {
+      effectiveReply = { ...reply, text: reply.toneVariants[chosenTone] };
+    }
+
+    const messages = this._buildReplyMessages(idx.data.characterInfo.name, effectiveReply);
 
     const options = (reply.playerOptions ?? []).map((opt) => {
       const required = opt.requiredKnowledge ?? [];
@@ -182,11 +189,11 @@ export class DialogueEngine {
       characterId,
       characterName: idx.data.characterInfo.name,
       act,
-      replyId: reply.id,
-      text: reply.text ?? "",
+      replyId: effectiveReply.id,
+      text: effectiveReply.text ?? "",
       messages,
-      isSilent: Boolean(reply.isSilent),
-      isFinal: Boolean(reply.isFinal),
+      isSilent: Boolean(effectiveReply.isSilent),
+      isFinal: Boolean(effectiveReply.isFinal),
       options,
     };
   }

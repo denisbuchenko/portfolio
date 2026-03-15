@@ -36,6 +36,14 @@ export type DialogueReplyPart = {
   author?: string;
 };
 
+/**
+ * Тон реплики игрока:
+ * - "default"   — нейтральная, без прикрас
+ * - "naive"     — наивная, мягкая, сочувствующая
+ * - "sarcastic" — язвительная, колкая
+ */
+export type DialogueTone = "default" | "naive" | "sarcastic";
+
 export type DialogueReply = {
   id: string;
   /** Авторское описание/ремарка (может быть показана в редакторе/в будущем в UI). */
@@ -46,6 +54,12 @@ export type DialogueReply = {
    * Нужны, когда в одном ответе чередуются описания и прямая речь.
    */
   parts?: DialogueReplyPart[];
+  /**
+   * Альтернативные тексты реплики, зависящие от тона предыдущего выбора игрока.
+   * Ключ — тон (naive / sarcastic); значение — полный текст вместо `text`.
+   * Если тон "default" или ключ отсутствует, используется основной `text`.
+   */
+  toneVariants?: Partial<Record<DialogueTone, string>>;
   playerOptions?: DialoguePlayerOption[];
   /**
    * Ключи, которые игрок получает за сам факт "дошёл до этой реплики" (прочитал/увидел).
@@ -59,6 +73,8 @@ export type DialogueReply = {
 export type DialoguePlayerOption = {
   text: string;
   nextReplyId: string | null;
+  /** Тон этой реплики (влияет на реакцию гнома в следующей реплике). */
+  tone?: DialogueTone;
   requiredKnowledge?: string[];
   grantsKnowledge?: string[];
   /**
