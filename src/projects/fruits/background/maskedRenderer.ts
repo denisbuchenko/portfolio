@@ -128,7 +128,7 @@ export function createFruitMaskedBackgroundRenderer({
       glslVersion: THREE.GLSL3,
       depthTest: false,
       depthWrite: false,
-      transparent: false,
+      transparent: true,
       uniforms: {
         tMask: { value: null },
         uResolution: { value: new THREE.Vector2(2, 2) },

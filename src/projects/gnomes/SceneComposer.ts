@@ -13,7 +13,7 @@ export class SceneComposer {
     this._renderer = new THREE.WebGLRenderer({
       canvas: this._canvas,
       antialias: true,
-      alpha: false,
+      alpha: true,
       powerPreference: "high-performance",
       logarithmicDepthBuffer: true,
     });
@@ -21,11 +21,12 @@ export class SceneComposer {
     this._renderer.outputColorSpace = THREE.SRGBColorSpace;
     this._renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this._renderer.toneMappingExposure = GNOMES_CONFIG.visuals.renderer.toneMappingExposure;
+    this._renderer.setClearColor(0x000000, 0);
     this._renderer.shadowMap.enabled = true;
     this._renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this._scene = new THREE.Scene();
-    this._scene.background = new THREE.Color(GNOMES_CONFIG.visuals.environment.backgroundColor);
+    this._scene.background = null;
     this._scene.fog = new THREE.Fog(
       GNOMES_CONFIG.visuals.environment.fogColor,
       GNOMES_CONFIG.visuals.environment.fogNear,

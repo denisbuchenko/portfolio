@@ -206,9 +206,13 @@ export class PuzzleRendererImpl implements PuzzleRenderer {
     if (!this._config.enabled) {
       updatePiecesMeshes({ pieces, w, h, threshold: this._config.maskThreshold });
       const prevAutoClear = this.renderer.autoClear;
+      const prevClr = new THREE.Color();
+      this.renderer.getClearColor(prevClr);
+      const prevAlpha = this.renderer.getClearAlpha();
       this.renderer.autoClear = true;
-      this.renderer.setClearColor(0x070a10, 1);
+      this.renderer.setClearColor(0x000000, 0);
       this.renderer.render(this.scene, this.camera);
+      this.renderer.setClearColor(prevClr, prevAlpha);
       this.renderer.autoClear = prevAutoClear;
       return;
     }
@@ -223,14 +227,18 @@ export class PuzzleRendererImpl implements PuzzleRenderer {
     updatePiecesMeshes({ pieces, w, h, threshold: this._config.maskThreshold });
 
     const prevAutoClear = this.renderer.autoClear;
+    const prevClr = new THREE.Color();
+    this.renderer.getClearColor(prevClr);
+    const prevAlpha = this.renderer.getClearAlpha();
     if (this._mode !== "legacy7rt") {
       // Фон+фрукты уже нарисованы отдельными pass'ами. Здесь только оверлей пазлов.
       this.renderer.autoClear = false;
     }
     if (this._mode === "legacy7rt") {
-      this.renderer.setClearColor(0x070a10, 1);
+      this.renderer.setClearColor(0x000000, 0);
     }
     this.renderer.render(this.scene, this.camera);
+    this.renderer.setClearColor(prevClr, prevAlpha);
     this.renderer.autoClear = prevAutoClear;
   }
 

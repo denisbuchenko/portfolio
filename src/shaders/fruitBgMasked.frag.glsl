@@ -22,7 +22,7 @@ void main() {
   vec3 m = texture(tMask, uvMask).rgb;
   float bits = bitsFromMask(m);
   if (bits < 0.5) {
-    outColor = vec4(uClearColor, 1.0);
+    outColor = vec4(0.0);
     return;
   }
   int idx = int(clamp(bits, 1.0, 7.0)) - 1;

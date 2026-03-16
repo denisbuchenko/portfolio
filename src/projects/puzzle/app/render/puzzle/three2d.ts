@@ -3,7 +3,7 @@ import * as THREE from "three";
 export function createWebGLRenderer2D(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    alpha: false,
+    alpha: true,
     antialias: false,
     depth: true,
     stencil: false,
@@ -11,6 +11,7 @@ export function createWebGLRenderer2D(canvas: HTMLCanvasElement): THREE.WebGLRen
     preserveDrawingBuffer: false
   });
   renderer.autoClear = true;
+  renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(1); // canvas уже в px, мы сами ресайзим.
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
