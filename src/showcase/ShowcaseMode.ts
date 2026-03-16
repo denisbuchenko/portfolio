@@ -25,6 +25,7 @@ import { mountOsminogProject } from "../projects/osminog";
 import { mountSunducProject } from "../projects/sunduc";
 import type { Overlay } from "../ui/overlay";
 import { ShowcaseInventory } from "./ShowcaseInventory";
+import { ShowcaseBackdrop } from "./ShowcaseBackdrop";
 
 // ─── типы ────────────────────────────────────────────────────────────────────
 
@@ -102,6 +103,7 @@ const LOTTIE_IMPORT_WEIGHT = 2;
 export class ShowcaseMode {
   private _host: HTMLElement;
   private _showcaseEl!: HTMLElement;
+  private _backdrop: ShowcaseBackdrop | null = null;
   private _sections: SectionState[] = [];
   private _inventoryUi!: ShowcaseInventory;
   private _exitBtn!: HTMLElement;
@@ -255,6 +257,13 @@ export class ShowcaseMode {
     this._host.appendChild(this._showcaseEl);
 
     this._buildSections();
+    this._backdrop = new ShowcaseBackdrop({
+      host: this._showcaseEl,
+      sections: this._sections.map((section) => ({
+        key: section.def.key,
+        el: section.el,
+      })),
+    });
 
     this._exitBtn = this._buildExitBtn();
     this._inventoryUi = new ShowcaseInventory({ host: this._host });
@@ -298,6 +307,8 @@ export class ShowcaseMode {
       this._warmObserver.disconnect();
       this._hotObserver.disconnect();
       this._activeObserver.disconnect();
+      this._backdrop?.dispose();
+      this._backdrop = null;
 
       for (const s of this._sections) {
         s.cleanupSection?.();

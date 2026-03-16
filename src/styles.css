@@ -965,6 +965,19 @@ canvas {
 .showcase {
   width: 100%;
   position: relative;
+  isolation: isolate;
+  background: #04070d;
+}
+
+.showcase__backdrop {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: #070910;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
 }
 
 /* ── section ── */
@@ -972,6 +985,7 @@ canvas {
 .showcase__section {
   position: relative;
   width: 100%;
+  z-index: 1;
 }
 
 .showcase__section--flow {
@@ -984,6 +998,7 @@ canvas {
   width: 100%;
   height: var(--app-visible-height);
   overflow: hidden;
+  z-index: 1;
 }
 
 .showcase__sticky--flow {
@@ -996,6 +1011,7 @@ canvas {
 .showcase__project-container {
   position: absolute;
   inset: 0;
+  z-index: 1;
 }
 
 .showcase__project-container--flow {
