@@ -76,20 +76,40 @@ const ACTIVATION_STAGGER_MS = 80;
 const FAST_SCROLL_VELOCITY_PX_S = 3000;
 const SCROLL_SETTLE_MS = 120;
 
+// ─── preload manifest ───────────────────────────────────────────────────────
+
+const PRELOAD_ITEMS: Array<{ url: string; weight: number }> = [
+  { url: "/city/city.glb", weight: 59 },
+  { url: "/gnomes/export.glb", weight: 50 },
+  { url: "/city/Chel.glb", weight: 8 },
+  { url: "/3dmodels/3d_props_-_adorable_foods/scene.bin", weight: 4 },
+  { url: "/sunduc/sunduc.glb", weight: 3 },
+  { url: "/city/Girl.glb", weight: 2 },
+  { url: "/sunduc/dudu.glb", weight: 1 },
+  { url: "/osminog/osminog%20.json", weight: 1 },
+  { url: "/3dmodels/3d_props_-_adorable_foods/scene.gltf", weight: 1 },
+  { url: "/img-lol.jpg", weight: 1 },
+  { url: "/gnomes/hor.jpg", weight: 1 },
+  { url: "/gnomes/fi.jpg", weight: 1 },
+  { url: "/gnomes/pi.jpg", weight: 1 },
+  { url: "/paths/treble-clef.svg", weight: 1 },
+];
+const LOTTIE_IMPORT_WEIGHT = 2;
+
 // ─── ShowcaseMode ────────────────────────────────────────────────────────────
 
 export class ShowcaseMode {
   private _host: HTMLElement;
-  private _showcaseEl: HTMLElement;
+  private _showcaseEl!: HTMLElement;
   private _sections: SectionState[] = [];
-  private _inventoryUi: ShowcaseInventory;
-  private _exitBtn: HTMLElement;
+  private _inventoryUi!: ShowcaseInventory;
+  private _exitBtn!: HTMLElement;
   private _interactingIdx = -1;
   private _pendingInteractionIdx = -1;
   private _osminogAligning = false;
-  private _warmObserver: IntersectionObserver;
-  private _hotObserver: IntersectionObserver;
-  private _activeObserver: IntersectionObserver;
+  private _warmObserver!: IntersectionObserver;
+  private _hotObserver!: IntersectionObserver;
+  private _activeObserver!: IntersectionObserver;
 
   private _activationQueue = new Set<number>();
   private _activationTimer = 0;
@@ -98,41 +118,145 @@ export class ShowcaseMode {
   private _prevScrollTs = 0;
   private _scrollVelocityPxS = 0;
 
+  private _loadingEl: HTMLElement | null = null;
+  private _disposed = false;
+  private _preloadDone = false;
+
   constructor(opts: ShowcaseOpts) {
     this._host = opts.host;
     void opts.onBack;
 
     this._hideExistingUI();
-
-    // Showcase container
-    this._showcaseEl = _el("div", "showcase");
-    this._host.appendChild(this._showcaseEl);
     this._host.classList.add("showcase-active");
 
-    // Sections
+    this._loadingEl = this._buildLoadingScreen();
+    this._host.appendChild(this._loadingEl);
+
+    void this._preloadAndStart();
+  }
+
+  // ── preloading ──────────────────────────────────────────────────────────────
+
+  private _buildLoadingScreen(): HTMLElement {
+    const overlay = _el("div", "showcase__loading");
+    Object.assign(overlay.style, {
+      position: "absolute",
+      inset: "0",
+      zIndex: "1000",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "#070a10",
+    });
+
+    const content = _el("div");
+    content.style.cssText = "text-align:center;width:260px;";
+
+    const label = _el("p");
+    label.textContent = "Скачиваем весь контент";
+    label.style.cssText =
+      "color:#fff;font-size:14px;margin:0 0 16px;font-family:system-ui,sans-serif;opacity:.7;letter-spacing:.02em;";
+
+    const track = _el("div");
+    track.style.cssText =
+      "width:100%;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden;";
+
+    const fill = _el("div");
+    fill.style.cssText =
+      "width:0%;height:100%;background:#fff;border-radius:2px;transition:width .3s ease;";
+    fill.dataset.role = "fill";
+
+    const pct = _el("p");
+    pct.textContent = "0%";
+    pct.style.cssText =
+      "color:#fff;font-size:12px;margin:10px 0 0;font-family:system-ui,sans-serif;opacity:.5;";
+    pct.dataset.role = "percent";
+
+    track.appendChild(fill);
+    content.appendChild(label);
+    content.appendChild(track);
+    content.appendChild(pct);
+    overlay.appendChild(content);
+
+    return overlay;
+  }
+
+  private _updateLoadingProgress(percent: number): void {
+    if (!this._loadingEl) return;
+    const fill = this._loadingEl.querySelector<HTMLElement>('[data-role="fill"]');
+    const pct = this._loadingEl.querySelector<HTMLElement>('[data-role="percent"]');
+    if (fill) fill.style.width = `${percent}%`;
+    if (pct) pct.textContent = `${percent}%`;
+  }
+
+  private async _preloadAssets(): Promise<void> {
+    const totalWeight = PRELOAD_ITEMS.reduce((s, i) => s + i.weight, 0) + LOTTIE_IMPORT_WEIGHT;
+    let completedWeight = 0;
+
+    const tick = (weight: number): void => {
+      completedWeight += weight;
+      if (!this._disposed)
+        this._updateLoadingProgress(Math.min(100, Math.round((completedWeight / totalWeight) * 100)));
+    };
+
+    const fetchOne = async (item: { url: string; weight: number }): Promise<void> => {
+      try {
+        await (await fetch(item.url)).blob();
+      } catch {
+        /* project handles its own errors */
+      }
+      tick(item.weight);
+    };
+
+    const importLottie = async (): Promise<void> => {
+      try {
+        await import("lottie-web");
+      } catch {
+        /* ignore */
+      }
+      tick(LOTTIE_IMPORT_WEIGHT);
+    };
+
+    await Promise.all([...PRELOAD_ITEMS.map(fetchOne), importLottie()]);
+  }
+
+  private async _preloadAndStart(): Promise<void> {
+    await this._preloadAssets();
+    if (this._disposed) return;
+
+    if (this._loadingEl) {
+      this._loadingEl.style.transition = "opacity .4s ease";
+      this._loadingEl.style.opacity = "0";
+      await new Promise<void>((r) => setTimeout(r, 420));
+      if (this._disposed) return;
+      this._loadingEl.remove();
+      this._loadingEl = null;
+    }
+
+    this._initShowcase();
+  }
+
+  private _initShowcase(): void {
+    this._showcaseEl = _el("div", "showcase");
+    this._host.appendChild(this._showcaseEl);
+
     this._buildSections();
 
-    // Fixed UI
     this._exitBtn = this._buildExitBtn();
     this._inventoryUi = new ShowcaseInventory({ host: this._host });
 
-    // Observers:
-    // warm  — заранее подготавливает проект в памяти;
-    // hot   — включает "живой" режим рядом с viewport;
-    // active — обновляет навигацию.
     this._warmObserver = this._createWarmObserver();
     this._hotObserver = this._createHotObserver();
     this._activeObserver = this._createActiveObserver();
 
-    // Scroll listener for scroll-dependent projects
     this._host.addEventListener("scroll", this._onHostScroll, { passive: true });
 
-    // Initial active dot
     this._updateActiveSection(0);
     this._forceActivateSection(0);
 
     this._prevScrollTop = this._host.scrollTop;
     this._prevScrollTs = performance.now();
+    this._preloadDone = true;
   }
 
   public async alignProject(projectKeyOrIdx: string | number, behavior: ScrollBehavior = "smooth"): Promise<boolean> {
@@ -146,23 +270,31 @@ export class ShowcaseMode {
   // ── cleanup ────────────────────────────────────────────────────────────────
 
   dispose(): void {
+    this._disposed = true;
+
+    this._loadingEl?.remove();
+    this._loadingEl = null;
+
     if (this._activationTimer) { window.clearTimeout(this._activationTimer); this._activationTimer = 0; }
     if (this._scrollSettleTimer) { window.clearTimeout(this._scrollSettleTimer); this._scrollSettleTimer = 0; }
     this._activationQueue.clear();
-    this._host.removeEventListener("scroll", this._onHostScroll);
-    this._warmObserver.disconnect();
-    this._hotObserver.disconnect();
-    this._activeObserver.disconnect();
 
-    for (const s of this._sections) {
-      s.cleanupSection?.();
-      s.deactivateProject?.();
-      s.disposeProject?.();
+    if (this._preloadDone) {
+      this._host.removeEventListener("scroll", this._onHostScroll);
+      this._warmObserver.disconnect();
+      this._hotObserver.disconnect();
+      this._activeObserver.disconnect();
+
+      for (const s of this._sections) {
+        s.cleanupSection?.();
+        s.deactivateProject?.();
+        s.disposeProject?.();
+      }
+
+      this._showcaseEl.remove();
+      this._exitBtn.remove();
+      this._inventoryUi.dispose();
     }
-
-    this._showcaseEl.remove();
-    this._exitBtn.remove();
-    this._inventoryUi.dispose();
 
     this._host.classList.remove("showcase-active");
     this._host.style.overflow = "";
