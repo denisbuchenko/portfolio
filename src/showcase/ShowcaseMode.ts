@@ -57,6 +57,7 @@ interface SectionState {
   deactivateProject: (() => void) | null;
   cleanupSection: (() => void) | null;
   projectRef: unknown;
+  readyPromise: Promise<void> | null;
 }
 
 // ─── секции ──────────────────────────────────────────────────────────────────
@@ -224,6 +225,21 @@ export class ShowcaseMode {
     await this._preloadAssets();
     if (this._disposed) return;
 
+    this._initShowcase();
+    if (this._disposed) return;
+
+    for (let i = 0; i < this._sections.length; i++) {
+      this._ensureSectionWarm(i);
+    }
+
+    const readyPromises = this._sections
+      .map((s) => s.readyPromise)
+      .filter((p): p is Promise<void> => p !== null);
+    if (readyPromises.length > 0) {
+      await Promise.all(readyPromises);
+      if (this._disposed) return;
+    }
+
     if (this._loadingEl) {
       this._loadingEl.style.transition = "opacity .4s ease";
       this._loadingEl.style.opacity = "0";
@@ -232,8 +248,6 @@ export class ShowcaseMode {
       this._loadingEl.remove();
       this._loadingEl = null;
     }
-
-    this._initShowcase();
   }
 
   private _initShowcase(): void {
@@ -379,6 +393,7 @@ export class ShowcaseMode {
         deactivateProject: null,
         cleanupSection: null,
         projectRef: null,
+        readyPromise: null,
       });
     }
   }
@@ -952,7 +967,7 @@ export class ShowcaseMode {
     app.setRenderActive(s.hot);
 
     let disposed = false;
-    void app.start().catch((e) => {
+    s.readyPromise = app.start().catch((e) => {
       if (disposed) return;
       // eslint-disable-next-line no-console
       console.error(e);
@@ -1006,19 +1021,15 @@ export class ShowcaseMode {
         this._inventoryUi.addItem("stone4");
       },
     });
-    let started = false;
-    const _ensureStarted = (): void => {
-      if (started) return;
-      started = true;
-      // Отключаем внутренний скролл: в витрине прогресс задается извне.
-      app?.setScrollInputEnabled(false);
-      void app?.start();
-    };
+    app?.setScrollInputEnabled(false);
+    s.readyPromise = app?.start().catch((e) => {
+      // eslint-disable-next-line no-console
+      console.error("[Showcase] city start failed:", e);
+    }) ?? Promise.resolve();
 
     s.projectRef = app;
     s.disposeProject = () => app?.dispose();
     s.activateProject = () => {
-      _ensureStarted();
       if (!app) return;
       this._callProjectMethod(app, ["resume", "wake"]);
       this._callProjectMethod(app, ["setRenderActive", "setAnimationActive"], ["setRenderActive", "setAnimationActive"], true);
