@@ -117,17 +117,18 @@ export class CityApp {
     this._renderer = new THREE.WebGLRenderer({
       canvas: this._canvas,
       antialias: true,
-      alpha: false,
+      alpha: true,
       powerPreference: "high-performance"
     });
     this._renderer.outputColorSpace = THREE.SRGBColorSpace;
     this._renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this._renderer.toneMappingExposure = 1.05;
+    this._renderer.setClearColor(0x000000, 0);
     this._renderer.shadowMap.enabled = true;
     this._renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this._scene = new THREE.Scene();
-    this._scene.background = new THREE.Color(0x070a10);
+    this._scene.background = null;
     this._scene.add(this._sunTarget);
 
     this._girlsSystem = new CityGirlsSystem({ scene: this._scene });
