@@ -561,7 +561,7 @@ export class ShowcaseMode {
       if (!dropResult.accepted) return;
 
       if (dropResult.consumeItemId) {
-        this._inventoryUi.removeItem(dropResult.consumeItemId);
+        this._inventoryUi.consumeItem(dropResult.consumeItemId);
       }
       if (dropResult.closeInventory) {
         this._inventoryUi.close();
@@ -612,9 +612,10 @@ export class ShowcaseMode {
     let _stoneRewardTimeoutId: number | null = null;
     const _scheduleStoneReward = (): void => {
       if (_stoneRewardTimeoutId !== null) return;
-      if (this._inventoryUi.hasItem("stone1")) return;
+      if (this._inventoryUi.wasItemGranted("stone1")) return;
       _stoneRewardTimeoutId = window.setTimeout(() => {
         _stoneRewardTimeoutId = null;
+        if (this._inventoryUi.wasItemGranted("stone1")) return;
         this._inventoryUi.addItem("stone1");
       }, 3000);
     };

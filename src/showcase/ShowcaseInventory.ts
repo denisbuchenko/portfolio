@@ -2,9 +2,13 @@ import { ShowcaseInventoryRewardOverlay } from "./ShowcaseInventoryRewardOverlay
 
 const INVENTORY_STYLE_ID = "showcase-inventory-styles";
 const INVENTORY_SLOT_COUNT = 4;
+const INVENTORY_STORAGE_KEY = "showcase_inventory_items_v1";
+const INVENTORY_ITEM_STATES_STORAGE_KEY = "showcase_inventory_item_states_v1";
+const INVENTORY_GRANTED_ITEMS_STORAGE_KEY = "showcase_inventory_granted_items_v1";
 
 export type InventoryItemId = "key" | "stone1" | "stone2" | "stone3" | "stone4" | "flute";
 export type InventoryDragPhase = "start" | "move" | "end";
+export type InventoryItemState = "owned" | "consumed";
 
 export interface InventoryItemDef {
   id: InventoryItemId;
@@ -29,7 +33,10 @@ export type InventoryDragListener = (snapshot: InventoryDragSnapshot) => void;
 export interface InventoryConsoleApi {
   addItem: (itemId: InventoryItemId) => boolean;
   removeItem: (itemId: InventoryItemId) => boolean;
+  consumeItem: (itemId: InventoryItemId) => boolean;
   hasItem: (itemId: InventoryItemId) => boolean;
+  hasKnownItem: (itemId: InventoryItemId) => boolean;
+  wasItemGranted: (itemId: InventoryItemId) => boolean;
   listItems: () => InventoryItemId[];
   listCatalog: () => InventoryItemDef[];
   clear: () => void;
@@ -78,6 +85,8 @@ export class ShowcaseInventory {
   private _rootEl: HTMLDivElement;
   private _slots: HTMLDivElement[] = [];
   private _items: InventoryItemId[] = [];
+  private _itemStates: Partial<Record<InventoryItemId, InventoryItemState>> = {};
+  private _grantedItems = new Set<InventoryItemId>();
   private _subscribers = new Set<InventoryDragListener>();
   private _expanded = false;
   private _activeDrag: ActiveDragState | null = null;
@@ -87,6 +96,10 @@ export class ShowcaseInventory {
   constructor(opts: ShowcaseInventoryOptions) {
     _ensureInventoryStyles();
     this._rewardOverlay = new ShowcaseInventoryRewardOverlay();
+    this._grantedItems = this._loadPersistedGrantedItems();
+    this._itemStates = this._loadPersistedItemStates();
+    this._items = this._loadPersistedItems();
+    this._syncPersistedState();
 
     this._rootEl = document.createElement("div");
     this._rootEl.className = "showcase-inventory";
@@ -164,12 +177,16 @@ export class ShowcaseInventory {
 
   addItem(itemId: InventoryItemId): boolean {
     if (this._items.includes(itemId)) return false;
+    if (this.wasItemGranted(itemId)) return false;
     if (this._items.length >= INVENTORY_SLOT_COUNT) {
       // eslint-disable-next-line no-console
       console.warn(`[Inventory] Нет свободных слотов для «${INVENTORY_CATALOG[itemId].label}»`);
       return false;
     }
     this._items.push(itemId);
+    this._grantedItems.add(itemId);
+    this._itemStates[itemId] = "owned";
+    this._savePersistedState();
     this._render();
     this._rewardOverlay.enqueue(INVENTORY_CATALOG[itemId]);
     return true;
@@ -179,18 +196,40 @@ export class ShowcaseInventory {
     const nextItems = this._items.filter((id) => id !== itemId);
     if (nextItems.length === this._items.length) return false;
     this._items = nextItems;
+    this._savePersistedState();
+    this._render();
+    return true;
+  }
+
+  consumeItem(itemId: InventoryItemId): boolean {
+    if (!this._items.includes(itemId)) return false;
+    this._items = this._items.filter((id) => id !== itemId);
+    this._grantedItems.add(itemId);
+    this._itemStates[itemId] = "consumed";
+    this._savePersistedState();
     this._render();
     return true;
   }
 
   clear(): void {
-    if (this._items.length === 0) return;
+    if (this._items.length === 0 && Object.keys(this._itemStates).length === 0 && this._grantedItems.size === 0) return;
     this._items = [];
+    this._itemStates = {};
+    this._grantedItems.clear();
+    this._savePersistedState();
     this._render();
   }
 
   hasItem(itemId: InventoryItemId): boolean {
     return this._items.includes(itemId);
+  }
+
+  hasKnownItem(itemId: InventoryItemId): boolean {
+    return this.wasItemGranted(itemId) || this._itemStates[itemId] !== undefined;
+  }
+
+  wasItemGranted(itemId: InventoryItemId): boolean {
+    return this._grantedItems.has(itemId);
   }
 
   listItems(): InventoryItemId[] {
@@ -238,7 +277,10 @@ export class ShowcaseInventory {
     return {
       addItem: (itemId) => this.addItem(itemId),
       removeItem: (itemId) => this.removeItem(itemId),
+      consumeItem: (itemId) => this.consumeItem(itemId),
       hasItem: (itemId) => this.hasItem(itemId),
+      hasKnownItem: (itemId) => this.hasKnownItem(itemId),
+      wasItemGranted: (itemId) => this.wasItemGranted(itemId),
       listItems: () => this.listItems(),
       listCatalog: () => Object.values(INVENTORY_CATALOG),
       clear: () => this.clear(),
@@ -259,6 +301,121 @@ export class ShowcaseInventory {
       addFlute: () => this.addItem("flute"),
       removeFlute: () => this.removeItem("flute"),
     };
+  }
+
+  private _loadPersistedItems(): InventoryItemId[] {
+    try {
+      const raw = localStorage.getItem(INVENTORY_STORAGE_KEY);
+      if (!raw) return [];
+
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+
+      const restoredItems: InventoryItemId[] = [];
+      for (const value of parsed) {
+        if (!_isInventoryItemId(value)) continue;
+        if (restoredItems.includes(value)) continue;
+        restoredItems.push(value);
+        if (restoredItems.length >= INVENTORY_SLOT_COUNT) break;
+      }
+
+      return restoredItems;
+    } catch {
+      return [];
+    }
+  }
+
+  private _loadPersistedGrantedItems(): Set<InventoryItemId> {
+    try {
+      const raw = localStorage.getItem(INVENTORY_GRANTED_ITEMS_STORAGE_KEY);
+      if (!raw) return new Set<InventoryItemId>();
+
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return new Set<InventoryItemId>();
+
+      const grantedItems = new Set<InventoryItemId>();
+      for (const value of parsed) {
+        if (!_isInventoryItemId(value)) continue;
+        grantedItems.add(value);
+      }
+
+      return grantedItems;
+    } catch {
+      return new Set<InventoryItemId>();
+    }
+  }
+
+  private _loadPersistedItemStates(): Partial<Record<InventoryItemId, InventoryItemState>> {
+    try {
+      const raw = localStorage.getItem(INVENTORY_ITEM_STATES_STORAGE_KEY);
+      if (!raw) return {};
+
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object") return {};
+
+      const restoredStates: Partial<Record<InventoryItemId, InventoryItemState>> = {};
+      for (const [itemId, itemState] of Object.entries(parsed)) {
+        if (!_isInventoryItemId(itemId)) continue;
+        if (!_isInventoryItemState(itemState)) continue;
+        restoredStates[itemId] = itemState;
+      }
+
+      return restoredStates;
+    } catch {
+      return {};
+    }
+  }
+
+  private _syncPersistedState(): void {
+    const nextItems: InventoryItemId[] = [];
+    let itemsChanged = false;
+    let statesChanged = false;
+    let grantedChanged = false;
+
+    for (const itemId of this._items) {
+      if (this._itemStates[itemId] === "consumed") {
+        itemsChanged = true;
+        continue;
+      }
+      if (nextItems.includes(itemId)) {
+        itemsChanged = true;
+        continue;
+      }
+      nextItems.push(itemId);
+      if (this._itemStates[itemId] !== "owned") {
+        this._itemStates[itemId] = "owned";
+        statesChanged = true;
+      }
+      if (!this._grantedItems.has(itemId)) {
+        this._grantedItems.add(itemId);
+        grantedChanged = true;
+      }
+    }
+
+    for (const [itemId, itemState] of Object.entries(this._itemStates)) {
+      if (!_isInventoryItemId(itemId) || !_isInventoryItemState(itemState)) continue;
+      if (this._grantedItems.has(itemId)) continue;
+      this._grantedItems.add(itemId);
+      grantedChanged = true;
+    }
+
+    if (itemsChanged) {
+      this._items = nextItems;
+    }
+
+    if (itemsChanged || statesChanged || grantedChanged) {
+      this._savePersistedState();
+    }
+  }
+
+  private _savePersistedState(): void {
+    try {
+      localStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(this._items));
+      localStorage.setItem(INVENTORY_ITEM_STATES_STORAGE_KEY, JSON.stringify(this._itemStates));
+      localStorage.setItem(INVENTORY_GRANTED_ITEMS_STORAGE_KEY, JSON.stringify(Array.from(this._grantedItems)));
+    } catch {
+      // ignore
+    }
   }
 
   private _onItemPointerDown = (event: PointerEvent): void => {
@@ -568,4 +725,12 @@ function _ensureInventoryStyles(): void {
     }
   `;
   document.head.appendChild(styleEl);
+}
+
+function _isInventoryItemId(value: unknown): value is InventoryItemId {
+  return typeof value === "string" && Object.hasOwn(INVENTORY_CATALOG, value);
+}
+
+function _isInventoryItemState(value: unknown): value is InventoryItemState {
+  return value === "owned" || value === "consumed";
 }
