@@ -65,11 +65,15 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
   const canvas = _requireElement(root, ".sunduc__canvas") as HTMLCanvasElement;
   const canvasWrap = _requireElement(root, ".sunduc__canvas-wrap") as HTMLDivElement;
   const status = _requireElement(root, ".sunduc__status") as HTMLDivElement;
+  if (options.embedded) {
+    status.style.display = "none";
+  }
 
   return {
     canvas,
     canvasWrap,
     setStatus(text: string): void {
+      if (options.embedded) return;
       status.textContent = text;
       status.style.display = text ? "" : "none";
     },
