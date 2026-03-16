@@ -112,10 +112,10 @@ export class ParticleApp {
       canvas,
       context: gl,
       antialias: false,
-      alpha: false,
+      alpha: true,
       powerPreference: "high-performance"
     });
-    renderer.setClearColor(0x070a10, 1);
+    renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;

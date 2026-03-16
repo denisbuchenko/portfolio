@@ -803,10 +803,7 @@ canvas {
   position: absolute;
   inset: 0;
   display: block;
-  background:
-    radial-gradient(900px 500px at 18% 10%, rgba(110, 231, 255, 0.16), transparent 65%),
-    radial-gradient(700px 400px at 82% 0%, rgba(167, 139, 250, 0.18), transparent 62%),
-    linear-gradient(180deg, rgba(7, 10, 16, 0.96) 0%, rgba(8, 12, 22, 0.98) 100%);
+  background: transparent;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -915,10 +912,7 @@ canvas {
   min-height: var(--sunduc-canvas-min-height, 420px);
   margin: 0;
   overflow: hidden;
-  background:
-    radial-gradient(540px 320px at 50% 24%, rgba(255, 242, 216, 0.14), transparent 58%),
-    radial-gradient(820px 420px at 50% 100%, rgba(110, 231, 255, 0.08), transparent 68%),
-    radial-gradient(1200px 600px at 50% 60%, rgba(255, 255, 255, 0.02), transparent 76%);
+  background: transparent;
 }
 
 .sunduc__canvas {
