@@ -32,6 +32,7 @@ export type InventoryDragListener = (snapshot: InventoryDragSnapshot) => void;
 
 export interface InventoryConsoleApi {
   addItem: (itemId: InventoryItemId) => boolean;
+  restoreItem: (itemId: InventoryItemId) => boolean;
   removeItem: (itemId: InventoryItemId) => boolean;
   consumeItem: (itemId: InventoryItemId) => boolean;
   hasItem: (itemId: InventoryItemId) => boolean;
@@ -192,6 +193,22 @@ export class ShowcaseInventory {
     return true;
   }
 
+  restoreItem(itemId: InventoryItemId): boolean {
+    if (this._items.includes(itemId)) return false;
+    if (this._items.length >= INVENTORY_SLOT_COUNT) {
+      // eslint-disable-next-line no-console
+      console.warn(`[Inventory] Нет свободных слотов для тихого восстановления «${INVENTORY_CATALOG[itemId].label}»`);
+      return false;
+    }
+
+    this._items.push(itemId);
+    this._grantedItems.add(itemId);
+    this._itemStates[itemId] = "owned";
+    this._savePersistedState();
+    this._render();
+    return true;
+  }
+
   removeItem(itemId: InventoryItemId): boolean {
     const nextItems = this._items.filter((id) => id !== itemId);
     if (nextItems.length === this._items.length) return false;
@@ -276,6 +293,7 @@ export class ShowcaseInventory {
   private _createConsoleApi(): InventoryConsoleApi {
     return {
       addItem: (itemId) => this.addItem(itemId),
+      restoreItem: (itemId) => this.restoreItem(itemId),
       removeItem: (itemId) => this.removeItem(itemId),
       consumeItem: (itemId) => this.consumeItem(itemId),
       hasItem: (itemId) => this.hasItem(itemId),

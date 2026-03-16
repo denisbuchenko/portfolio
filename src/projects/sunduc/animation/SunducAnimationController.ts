@@ -130,6 +130,24 @@ export class SunducAnimationController {
     });
   }
 
+  pinClipAtEnd(clipName: string): void {
+    const action = this._actionsByName.get(clipName);
+    if (!action) return;
+
+    const range = this._clipRanges.get(clipName);
+    if (!range) return;
+
+    this._clipStates.set(clipName, true);
+    this._clipPinnedAtEnd.set(clipName, true);
+    action.stop();
+    action.enabled = false;
+    action.paused = true;
+    action.time = range.end;
+    this._syncClipVisibility(clipName, true);
+    this._applyClipPose(clipName, "end");
+    this._onClipStateChange?.(clipName, true);
+  }
+
   private _setClipActiveInternal(
     clipName: string,
     active: boolean,

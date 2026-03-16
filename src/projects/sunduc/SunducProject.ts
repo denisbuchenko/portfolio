@@ -17,6 +17,7 @@ export class SunducProject {
   private readonly _viewer: SunducViewer;
   private readonly _rotationController: SunducRotationController;
   private readonly _resizeObserver: ResizeObserver;
+  private readonly _onRestoreKeyRequest?: () => void;
 
   private _animationController: SunducAnimationController | null = null;
   private _sequenceController: SunducSequenceController | null = null;
@@ -26,6 +27,7 @@ export class SunducProject {
   private _renderActive = true;
 
   constructor(options: SunducProjectOptions) {
+    this._onRestoreKeyRequest = options.onRestoreKeyRequest;
     this._ui = createSunducUI({
       host: options.host,
       embedded: options.embedded ?? false
@@ -139,12 +141,6 @@ export class SunducProject {
 
       const animationCatalog = buildSunducAnimationCatalog(this._animationController.getClipNames());
       this._interactiveClipNames = [...animationCatalog.stoneClipNames, ...animationCatalog.sequenceClipNames];
-      this._sequenceController = new SunducSequenceController({
-        animationCatalog,
-        animationController: this._animationController,
-        onStatusChange: (text) => this._ui.setStatus(text),
-        onOpen2Complete: () => this._viewer.scheduleTitleReveal()
-      });
 
       this._ui.renderAnimationControls({
         stoneClipNames: animationCatalog.stoneClipNames,
@@ -152,11 +148,19 @@ export class SunducProject {
         summary: animationCatalog.summary,
         onToggleClip: (clipName) => this._animationController?.toggleClip(clipName),
         onResetAll: () => {
+          this._sequenceController?.resetProgress();
           this._viewer.resetTitleReveal();
           this._animationController?.resetClips(this._interactiveClipNames);
         }
       });
       this._animationController.initializeClips(this._interactiveClipNames);
+      this._sequenceController = new SunducSequenceController({
+        animationCatalog,
+        animationController: this._animationController,
+        onStatusChange: (text) => this._ui.setStatus(text),
+        onOpen2Complete: () => this._viewer.scheduleTitleReveal(),
+        onRestoreKeyRequest: this._onRestoreKeyRequest
+      });
 
       this._ui.setButtonsEnabled(true);
       this._ui.setStatus("");

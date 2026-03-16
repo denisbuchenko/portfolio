@@ -540,7 +540,12 @@ export class ShowcaseMode {
     const container = s.containerEl;
     container.innerHTML = "";
 
-    const project = mountSunducProject(container, { embedded: true });
+    const project = mountSunducProject(container, {
+      embedded: true,
+      onRestoreKeyRequest: () => {
+        this._inventoryUi.restoreItem("key");
+      },
+    });
     let alignRequestedForDrag = false;
     const unsubscribeInventoryDrag = this._inventoryUi.subscribeDrag((event) => {
       if (event.phase === "start") {

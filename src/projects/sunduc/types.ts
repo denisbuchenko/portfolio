@@ -2,6 +2,7 @@ export interface SunducProjectOptions {
   host: HTMLElement;
   embedded?: boolean;
   onMenu?: () => void;
+  onRestoreKeyRequest?: () => void;
 }
 
 export type SunducStoneItemId = "stone1" | "stone2" | "stone3" | "stone4";

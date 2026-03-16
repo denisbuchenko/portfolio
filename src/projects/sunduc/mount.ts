@@ -4,6 +4,7 @@ export function mountSunducProject(host: HTMLElement, options?: Omit<SunducProje
   return new SunducProject({
     host,
     embedded: options?.embedded,
-    onMenu: options?.onMenu
+    onMenu: options?.onMenu,
+    onRestoreKeyRequest: options?.onRestoreKeyRequest
   });
 }
