@@ -70,6 +70,12 @@ const SECTION_DEFS: SectionDef[] = [
   { key: "osminog", title: "Осьминог", heightVh: 100, needsGate: false, interactLabel: "" },
 ];
 
+// ─── activation tuning ──────────────────────────────────────────────────────
+
+const ACTIVATION_STAGGER_MS = 80;
+const FAST_SCROLL_VELOCITY_PX_S = 3000;
+const SCROLL_SETTLE_MS = 120;
+
 // ─── ShowcaseMode ────────────────────────────────────────────────────────────
 
 export class ShowcaseMode {
@@ -78,13 +84,19 @@ export class ShowcaseMode {
   private _sections: SectionState[] = [];
   private _inventoryUi: ShowcaseInventory;
   private _exitBtn: HTMLElement;
-  private _raf = 0;
   private _interactingIdx = -1;
   private _pendingInteractionIdx = -1;
   private _osminogAligning = false;
   private _warmObserver: IntersectionObserver;
   private _hotObserver: IntersectionObserver;
   private _activeObserver: IntersectionObserver;
+
+  private _activationQueue = new Set<number>();
+  private _activationTimer = 0;
+  private _scrollSettleTimer = 0;
+  private _prevScrollTop = 0;
+  private _prevScrollTs = 0;
+  private _scrollVelocityPxS = 0;
 
   constructor(opts: ShowcaseOpts) {
     this._host = opts.host;
@@ -117,10 +129,10 @@ export class ShowcaseMode {
 
     // Initial active dot
     this._updateActiveSection(0);
-    this._setSectionHot(0, true);
+    this._forceActivateSection(0);
 
-    // Animation loop (for per-frame updates)
-    this._raf = requestAnimationFrame(this._tick);
+    this._prevScrollTop = this._host.scrollTop;
+    this._prevScrollTs = performance.now();
   }
 
   public async alignProject(projectKeyOrIdx: string | number, behavior: ScrollBehavior = "smooth"): Promise<boolean> {
@@ -134,7 +146,9 @@ export class ShowcaseMode {
   // ── cleanup ────────────────────────────────────────────────────────────────
 
   dispose(): void {
-    cancelAnimationFrame(this._raf);
+    if (this._activationTimer) { window.clearTimeout(this._activationTimer); this._activationTimer = 0; }
+    if (this._scrollSettleTimer) { window.clearTimeout(this._scrollSettleTimer); this._scrollSettleTimer = 0; }
+    this._activationQueue.clear();
     this._host.removeEventListener("scroll", this._onHostScroll);
     this._warmObserver.disconnect();
     this._hotObserver.disconnect();
@@ -275,7 +289,7 @@ export class ShowcaseMode {
           this._setSectionHot(idx, entry.isIntersecting);
         }
       },
-      { root: this._host, rootMargin: "75% 0px" }
+      { root: this._host, rootMargin: "15% 0px" }
     );
     for (const s of this._sections) obs.observe(s.el);
     return obs;
@@ -316,11 +330,87 @@ export class ShowcaseMode {
 
     s.hot = hot;
     if (hot) {
-      s.activateProject?.();
-      if (s.def.key === "city" && !s.interacting) this._updateCityProgress();
+      this._activationQueue.add(idx);
+      this._scheduleActivation();
       return;
     }
+    this._activationQueue.delete(idx);
     s.deactivateProject?.();
+  }
+
+  private _forceActivateSection(idx: number): void {
+    const s = this._sections[idx];
+    if (!s) return;
+    this._ensureSectionWarm(idx);
+    if (!s.mounted) return;
+    s.hot = true;
+    this._activationQueue.delete(idx);
+    s.activateProject?.();
+    if (s.def.key === "city" && !s.interacting) this._updateCityProgress();
+  }
+
+  private _scheduleActivation(): void {
+    if (this._activationTimer) return;
+    if (this._scrollVelocityPxS > FAST_SCROLL_VELOCITY_PX_S) {
+      this._scheduleScrollSettle();
+      return;
+    }
+
+    this._activationTimer = window.setTimeout(() => {
+      this._activationTimer = 0;
+      this._processNextActivation();
+    }, ACTIVATION_STAGGER_MS);
+  }
+
+  private _scheduleScrollSettle(): void {
+    if (this._scrollSettleTimer) window.clearTimeout(this._scrollSettleTimer);
+    this._scrollSettleTimer = window.setTimeout(() => {
+      this._scrollSettleTimer = 0;
+      this._scrollVelocityPxS = 0;
+      if (this._activationQueue.size > 0) this._scheduleActivation();
+    }, SCROLL_SETTLE_MS);
+  }
+
+  private _processNextActivation(): void {
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    for (const idx of this._activationQueue) {
+      const s = this._sections[idx];
+      if (!s?.hot || !s.mounted) {
+        this._activationQueue.delete(idx);
+        continue;
+      }
+      const dist = this._distToViewportCenter(idx);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = idx;
+      }
+    }
+
+    if (bestIdx >= 0) {
+      this._activationQueue.delete(bestIdx);
+      const s = this._sections[bestIdx];
+      s.activateProject?.();
+      if (s.def.key === "city" && !s.interacting) this._updateCityProgress();
+    }
+    if (this._activationQueue.size > 0) this._scheduleActivation();
+  }
+
+  private _distToViewportCenter(idx: number): number {
+    const s = this._sections[idx];
+    if (!s) return Infinity;
+    const sRect = s.el.getBoundingClientRect();
+    const hRect = this._host.getBoundingClientRect();
+    return Math.abs(sRect.top + sRect.height * 0.5 - hRect.top - hRect.height * 0.5);
+  }
+
+  private _updateScrollVelocity(): void {
+    const now = performance.now();
+    const dtSec = Math.max(0.001, (now - this._prevScrollTs) * 0.001);
+    const dPx = Math.abs(this._host.scrollTop - this._prevScrollTop);
+    this._prevScrollTop = this._host.scrollTop;
+    this._prevScrollTs = now;
+    this._scrollVelocityPxS = this._scrollVelocityPxS * 0.7 + (dPx / dtSec) * 0.3;
   }
 
   private _resolveSectionIdx(projectKeyOrIdx: string | number): number {
@@ -873,7 +963,7 @@ export class ShowcaseMode {
     }
     if (this._pendingInteractionIdx !== idx) return;
 
-    this._setSectionHot(idx, true);
+    this._forceActivateSection(idx);
     s.interacting = true;
     this._interactingIdx = idx;
     this._pendingInteractionIdx = -1;
@@ -915,15 +1005,13 @@ export class ShowcaseMode {
   // ── per-frame / per-scroll updates ─────────────────────────────────────────
 
   private _onHostScroll = (): void => {
+    this._updateScrollVelocity();
     this._updateCityProgress();
     this._updateOsminogVisibilityState();
-  };
 
-  private _tick = (t: number): void => {
-    this._raf = requestAnimationFrame(this._tick);
-    // Gnomes scrollY обновляется внутри GnomesApp._frame через getScrollY().
-    // Город обновляем при скролле (onHostScroll).
-    void t;
+    if (this._scrollVelocityPxS > FAST_SCROLL_VELOCITY_PX_S && this._activationQueue.size > 0) {
+      this._scheduleScrollSettle();
+    }
   };
 
   private _updateCityProgress(): void {
