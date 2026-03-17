@@ -40,6 +40,7 @@ export class GnomesApp {
   private _setScrollLocked: (locked: boolean) => void;
   private _scrollSyncMode: "smooth" | "instant";
   private _pendingFocusToken = 0;
+  private _activeDialogueCharacterId: string | null = null;
 
   private _onResize = () => this._scheduleResize();
   private _onScroll = () => this._handleScroll();
@@ -81,6 +82,7 @@ export class GnomesApp {
       },
       defaultPortraitUrl: "/gnomes/hor.jpg",
       onVisibilityChange: (isOpen) => {
+        if (!isOpen) this._activeDialogueCharacterId = null;
         this._setScrollLocked(isOpen);
         opts.onDialogueVisibilityChange?.(isOpen);
       },
@@ -238,7 +240,7 @@ export class GnomesApp {
     this._resizeRaf = requestAnimationFrame(() => {
       this._resizeRaf = 0;
       this._handleResize();
-      this._syncSceneState();
+      void this._restoreLayoutAfterResize();
     });
   }
 
@@ -284,6 +286,7 @@ export class GnomesApp {
     const id = this._pickCharacterIdAt(e.clientX, e.clientY);
     if (!id) return;
 
+    this._activeDialogueCharacterId = id;
     const focusToken = ++this._pendingFocusToken;
     await this.focusCharacter(id, "smooth");
     if (focusToken !== this._pendingFocusToken) return;
@@ -293,6 +296,19 @@ export class GnomesApp {
     gnome?.controller.playHelloOnce();
 
     this._dialogue.open(id);
+  }
+
+  private async _restoreLayoutAfterResize(): Promise<void> {
+    const dialogueCharacterId = this._dialogue.isOpen ? this._activeDialogueCharacterId : null;
+    if (dialogueCharacterId) {
+      await this.focusCharacter(dialogueCharacterId, "auto");
+      if (this._activeDialogueCharacterId !== dialogueCharacterId) return;
+      this._dialogue.refreshLayout();
+      return;
+    }
+
+    this._syncSceneState();
+    this._dialogue.refreshLayout();
   }
 
   private _pickCharacterIdAt(clientX: number, clientY: number): string | null {

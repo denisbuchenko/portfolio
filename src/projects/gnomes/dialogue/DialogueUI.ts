@@ -140,6 +140,17 @@ export class DialogueUI {
     }, HIDE_ANIMATION_MS);
   }
 
+  refreshLayout(): void {
+    if (!this._isVisible) return;
+    this._setOptionsInset(this._options.scrollHeight);
+    this._smoothScrollToBottom("auto");
+    requestAnimationFrame(() => {
+      if (!this._isVisible) return;
+      this._setOptionsInset(this._options.scrollHeight);
+      this._smoothScrollToBottom("auto");
+    });
+  }
+
   private _renderOptions(options: DialogueViewOption[]): void {
     this._options.innerHTML = "";
 

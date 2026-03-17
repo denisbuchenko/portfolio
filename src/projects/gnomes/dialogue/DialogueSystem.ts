@@ -73,6 +73,14 @@ export class DialogueSystem {
     this._setOpen(false);
   }
 
+  get isOpen(): boolean {
+    return this._isOpen;
+  }
+
+  refreshLayout(): void {
+    this._ui.refreshLayout();
+  }
+
   private _setOpen(isOpen: boolean): void {
     if (this._isOpen === isOpen) return;
     this._isOpen = isOpen;

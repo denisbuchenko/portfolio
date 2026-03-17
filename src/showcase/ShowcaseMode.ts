@@ -122,6 +122,8 @@ export class ShowcaseMode {
   private _prevScrollTop = 0;
   private _prevScrollTs = 0;
   private _scrollVelocityPxS = 0;
+  private _resizeObserver: ResizeObserver | null = null;
+  private _resizeRaf = 0;
 
   private _loadingEl: HTMLElement | null = null;
   private _disposed = false;
@@ -275,6 +277,11 @@ export class ShowcaseMode {
     this._activeObserver = this._createActiveObserver();
 
     this._host.addEventListener("scroll", this._onHostScroll, { passive: true });
+    window.addEventListener("resize", this._onResize, { passive: true });
+    window.visualViewport?.addEventListener("resize", this._onResize, { passive: true });
+    this._resizeObserver = new ResizeObserver(() => this._scheduleResizeSync());
+    this._resizeObserver.observe(this._host);
+    this._resizeObserver.observe(this._showcaseEl);
 
     this._updateActiveSection(0);
     this._forceActivateSection(0);
@@ -306,6 +313,14 @@ export class ShowcaseMode {
 
     if (this._preloadDone) {
       this._host.removeEventListener("scroll", this._onHostScroll);
+      window.removeEventListener("resize", this._onResize);
+      window.visualViewport?.removeEventListener("resize", this._onResize);
+      if (this._resizeRaf) {
+        cancelAnimationFrame(this._resizeRaf);
+        this._resizeRaf = 0;
+      }
+      this._resizeObserver?.disconnect();
+      this._resizeObserver = null;
       this._warmObserver.disconnect();
       this._hotObserver.disconnect();
       this._activeObserver.disconnect();
@@ -699,6 +714,12 @@ export class ShowcaseMode {
     const hostRect = this._host.getBoundingClientRect();
     const sectionRect = s.el.getBoundingClientRect();
     return this._host.scrollTop + (sectionRect.top - hostRect.top);
+  }
+
+  private _getLockedInteractionScrollTop(idx: number): number {
+    const s = this._sections[idx];
+    if (!s) return this._host.scrollTop;
+    return s.def.key === "city" ? this._getSectionMiddleScrollTop(idx) : this._getSectionAlignScrollTop(s);
   }
 
   private async _scrollHostTo(top: number, behavior: ScrollBehavior): Promise<void> {
@@ -1186,6 +1207,31 @@ export class ShowcaseMode {
       this._scheduleScrollSettle();
     }
   };
+
+  private _onResize = (): void => {
+    this._scheduleResizeSync();
+  };
+
+  private _scheduleResizeSync(): void {
+    if (this._disposed || !this._preloadDone) return;
+    if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+    this._resizeRaf = requestAnimationFrame(() => {
+      this._resizeRaf = 0;
+      this._syncScrollAfterResize();
+    });
+  }
+
+  private _syncScrollAfterResize(): void {
+    const lockedIdx = this._interactingIdx >= 0 ? this._interactingIdx : this._pendingInteractionIdx;
+    if (lockedIdx >= 0) {
+      this._ensureSectionWarm(lockedIdx);
+      this._host.scrollTop = this._getLockedInteractionScrollTop(lockedIdx);
+      this._updateActiveSection(lockedIdx);
+    }
+    this._updateCityProgress();
+    this._prevScrollTop = this._host.scrollTop;
+    this._prevScrollTs = performance.now();
+  }
 
   private _updateCityProgress(): void {
     const cityIdx = this._sections.findIndex((s) => s.def.key === "city");
