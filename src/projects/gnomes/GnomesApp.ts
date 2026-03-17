@@ -211,8 +211,9 @@ export class GnomesApp {
 
   private _handleResize(): void {
     const dpr = Math.min(GNOMES_CONFIG.visuals.renderer.maxPixelRatio, window.devicePixelRatio || 1);
-    const w = Math.max(1, window.innerWidth);
-    const h = Math.max(1, window.innerHeight);
+    const rect = this._interactionEl.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width || this._canvas.clientWidth || window.innerWidth));
+    const h = Math.max(1, Math.round(rect.height || this._canvas.clientHeight || window.innerHeight));
 
     this._composer.resize(w, h, dpr);
     this._cameraRig.resize(w, h);

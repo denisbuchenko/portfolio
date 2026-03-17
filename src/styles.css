@@ -957,6 +957,7 @@ canvas {
 }
 
 .showcase {
+  --showcase-content-max-width: 1024px;
   width: 100%;
   position: relative;
   isolation: isolate;
@@ -995,11 +996,25 @@ canvas {
   z-index: 1;
 }
 
+.showcase__viewport {
+  box-sizing: border-box;
+  position: relative;
+  width: min(100%, var(--showcase-content-max-width));
+  height: 100%;
+  margin: 0 auto;
+  z-index: 1;
+}
+
 .showcase__sticky--flow {
   position: relative;
   top: auto;
   height: auto;
   overflow: visible;
+}
+
+.showcase__viewport--flow {
+  height: auto;
+  min-height: 0;
 }
 
 .showcase__project-container {
@@ -1011,6 +1026,13 @@ canvas {
 .showcase__project-container--flow {
   position: relative;
   inset: auto;
+}
+
+@media (min-width: 821px) {
+  .showcase__viewport {
+    border-left: 1px solid rgba(255, 255, 255, 0.9);
+    border-right: 1px solid rgba(255, 255, 255, 0.9);
+  }
 }
 
 /* ── section header ── */

@@ -108,6 +108,7 @@ export class ParticleApp {
   }
 
   private _createRenderer(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): THREE.WebGLRenderer {
+    const { width, height } = this._getCanvasViewportSize(canvas);
     const renderer = new THREE.WebGLRenderer({
       canvas,
       context: gl,
@@ -117,17 +118,26 @@ export class ParticleApp {
     });
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(width, height);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.getElementById("app")?.appendChild(renderer.domElement);
     return renderer;
   }
 
   private _createCamera(): THREE.PerspectiveCamera {
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.01, 100);
+    const { width, height } = this._getCanvasViewportSize(this._renderer.domElement);
+    const camera = new THREE.PerspectiveCamera(55, width / height, 0.01, 100);
     camera.position.set(0, 0, 11);
     camera.lookAt(0, 0, 0);
     return camera;
+  }
+
+  private _getCanvasViewportSize(canvas: HTMLCanvasElement): { width: number; height: number } {
+    const host = canvas.parentElement;
+    const rect = host?.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect?.width ?? host?.clientWidth ?? canvas.clientWidth ?? window.innerWidth));
+    const height = Math.max(1, Math.round(rect?.height ?? host?.clientHeight ?? canvas.clientHeight ?? window.innerHeight));
+    return { width, height };
   }
 
   private _createGas(): { gas: GasPoints; texSize: number; basePointSize: number } {
@@ -262,8 +272,7 @@ export class ParticleApp {
   }
 
   private _onResize(): void {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const { width: w, height: h } = this._getCanvasViewportSize(this._renderer.domElement);
     this._camera.aspect = w / h;
     this._camera.updateProjectionMatrix();
     this._renderer.setSize(w, h);
@@ -394,6 +403,10 @@ export class ParticleApp {
 
   pause(): void {
     this.setRenderActive(false);
+  }
+
+  resize(): void {
+    this._onResize();
   }
 
   setRenderActive(active: boolean): void {

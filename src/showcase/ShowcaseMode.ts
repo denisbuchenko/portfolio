@@ -48,6 +48,7 @@ interface SectionState {
   def: SectionDef;
   el: HTMLElement;
   stickyEl: HTMLElement;
+  viewportEl: HTMLElement;
   containerEl: HTMLElement;
   mounted: boolean;
   hot: boolean;
@@ -360,9 +361,13 @@ export class ShowcaseMode {
       if (layout === "flow") stickyEl.classList.add("showcase__sticky--flow");
       sectionEl.appendChild(stickyEl);
 
+      const viewportEl = _el("div", "showcase__viewport");
+      if (layout === "flow") viewportEl.classList.add("showcase__viewport--flow");
+      stickyEl.appendChild(viewportEl);
+
       const containerEl = _el("div", "showcase__project-container");
       if (layout === "flow") containerEl.classList.add("showcase__project-container--flow");
-      stickyEl.appendChild(containerEl);
+      viewportEl.appendChild(containerEl);
 
       // Loading placeholder
       const loader = _el("div", "showcase__loader");
@@ -374,13 +379,13 @@ export class ShowcaseMode {
 
       if (def.needsGate) {
         blocker = _el("div", "showcase__event-blocker");
-        stickyEl.appendChild(blocker);
+        viewportEl.appendChild(blocker);
 
         interactBtn = document.createElement("button");
         interactBtn.className = "btn showcase__interact-btn";
         (interactBtn as HTMLButtonElement).type = "button";
         interactBtn.textContent = def.interactLabel;
-        stickyEl.appendChild(interactBtn);
+        viewportEl.appendChild(interactBtn);
 
         const idx = i;
         interactBtn.addEventListener("click", () => {
@@ -394,6 +399,7 @@ export class ShowcaseMode {
         def,
         el: sectionEl,
         stickyEl,
+        viewportEl,
         containerEl,
         mounted: false,
         hot: false,
@@ -899,6 +905,7 @@ export class ShowcaseMode {
     s.containerEl.appendChild(canvas);
     canvas.style.width = "100%";
     canvas.style.height = "100%";
+    app.resize();
     app.setRenderActive(s.hot);
 
     s.projectRef = app;
