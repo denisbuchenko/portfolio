@@ -48,7 +48,8 @@ export class ScrollCameraRig {
   /** window.scrollY -> целевая позиция камеры */
   setScrollY(scrollY: number): void {
     const maxPage = Math.max(0, this._pages - 1);
-    const rawPage = scrollY / this._viewportHeightPx;
+    const scrollSpeed = Math.max(0.01, GNOMES_CONFIG.camera.scrollSpeed);
+    const rawPage = (scrollY / this._viewportHeightPx) * scrollSpeed;
     const page = Math.min(maxPage, Math.max(0, rawPage));
     this._targetY = -page * this._pageWorldHeight;
   }
