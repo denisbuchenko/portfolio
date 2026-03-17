@@ -54,6 +54,7 @@ function _blockTextSelectionUi(): void {
 function showPicker(): void {
   const el = document.getElementById("project-picker");
   if (!el) return;
+  el.style.display = "grid";
 
   el.innerHTML = `
     <div class="launcher__card">
@@ -224,6 +225,6 @@ window.addEventListener("resize", _syncAppVisibleViewport, { passive: true });
 window.addEventListener("orientationchange", _syncAppVisibleViewport, { passive: true });
 window.visualViewport?.addEventListener("resize", _syncAppVisibleViewport, { passive: true });
 window.visualViewport?.addEventListener("scroll", _syncAppVisibleViewport, { passive: true });
-showPicker();
+startShowcase();
 
 
