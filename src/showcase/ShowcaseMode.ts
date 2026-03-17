@@ -489,6 +489,12 @@ export class ShowcaseMode {
 
     s.hot = hot;
     if (hot) {
+      if (this._shouldActivateImmediatelyOnHot(s.def.key)) {
+        this._activationQueue.delete(idx);
+        s.activateProject?.();
+        if (s.def.key === "city" && !s.interacting) this._updateCityProgress();
+        return;
+      }
       this._activationQueue.add(idx);
       this._scheduleActivation();
       return;
@@ -506,6 +512,10 @@ export class ShowcaseMode {
     this._activationQueue.delete(idx);
     s.activateProject?.();
     if (s.def.key === "city" && !s.interacting) this._updateCityProgress();
+  }
+
+  private _shouldActivateImmediatelyOnHot(sectionKey: string): boolean {
+    return sectionKey === "gnomes" || sectionKey === "city";
   }
 
   private _scheduleActivation(): void {
@@ -969,6 +979,7 @@ export class ShowcaseMode {
       getScrollY,
       setScrollY,
       setScrollLocked,
+      scrollSyncMode: "instant",
       onDialogueVisibilityChange: (isOpen) => {
         this._inventoryUi.setDialogueShifted(isOpen);
       },

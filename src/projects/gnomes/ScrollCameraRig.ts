@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { GNOMES_CONFIG } from "./config";
 
+type _ScrollSyncMode = "smooth" | "instant";
+
 export class ScrollCameraRig {
   private _camera: THREE.PerspectiveCamera;
   private _pages: number;
@@ -46,12 +48,15 @@ export class ScrollCameraRig {
   }
 
   /** window.scrollY -> целевая позиция камеры */
-  setScrollY(scrollY: number): void {
+  setScrollY(scrollY: number, syncMode: _ScrollSyncMode = "smooth"): void {
     const maxPage = Math.max(0, this._pages - 1);
     const scrollSpeed = Math.max(0.01, GNOMES_CONFIG.camera.scrollSpeed);
     const rawPage = (scrollY / this._viewportHeightPx) * scrollSpeed;
     const page = Math.min(maxPage, Math.max(0, rawPage));
     this._targetY = -page * this._pageWorldHeight;
+    if (syncMode === "instant") {
+      this._applyImmediateCameraPosition();
+    }
   }
 
   update(deltaSec: number): void {
@@ -60,6 +65,11 @@ export class ScrollCameraRig {
     const a = 1 - Math.exp(-k * Math.max(0, deltaSec));
 
     this._camera.position.y += (this._targetY - this._camera.position.y) * a;
+    this._camera.lookAt(0, this._camera.position.y + this._focusOffsetY, 0);
+  }
+
+  private _applyImmediateCameraPosition(): void {
+    this._camera.position.y = this._targetY;
     this._camera.lookAt(0, this._camera.position.y + this._focusOffsetY, 0);
   }
 }

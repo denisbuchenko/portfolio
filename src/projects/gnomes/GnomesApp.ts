@@ -36,6 +36,7 @@ export class GnomesApp {
   private _getScrollY: () => number;
   private _setScrollY: (scrollY: number, behavior?: ScrollBehavior) => Promise<void> | void;
   private _setScrollLocked: (locked: boolean) => void;
+  private _scrollSyncMode: "smooth" | "instant";
   private _pendingFocusToken = 0;
 
   private _onResize = () => this._handleResize();
@@ -51,6 +52,7 @@ export class GnomesApp {
     getScrollY?: () => number;
     setScrollY?: (scrollY: number, behavior?: ScrollBehavior) => Promise<void> | void;
     setScrollLocked?: (locked: boolean) => void;
+    scrollSyncMode?: "smooth" | "instant";
     onDialogueVisibilityChange?: (isOpen: boolean) => void;
     onGameComplete?: () => void;
   }) {
@@ -63,6 +65,7 @@ export class GnomesApp {
         window.scrollTo({ top: scrollY, behavior });
       });
     this._setScrollLocked = opts.setScrollLocked ?? (() => {});
+    this._scrollSyncMode = opts.scrollSyncMode ?? "smooth";
 
     this._composer = new SceneComposer({ canvas: this._canvas });
     this._cameraRig = new ScrollCameraRig({ pages: GNOMES_CONFIG.pages });
@@ -217,7 +220,7 @@ export class GnomesApp {
   }
 
   private _handleScroll(): void {
-    this._cameraRig.setScrollY(this._getScrollY());
+    this._cameraRig.setScrollY(this._getScrollY(), this._scrollSyncMode);
     if (!this._renderActive) return;
   }
 
@@ -327,13 +330,19 @@ export class GnomesApp {
   }
 
   private _syncSceneState(): void {
-    this._cameraRig.setScrollY(this._getScrollY());
+    this._cameraRig.setScrollY(this._getScrollY(), this._scrollSyncMode);
     this._updateScene(0);
   }
 
   private _updateScene(deltaSec: number): void {
     // Подтягиваем scrollY на каждом кадре — если браузер не триггерит scroll event (иногда на iOS).
-    this._cameraRig.setScrollY(this._getScrollY());
+    this._cameraRig.setScrollY(this._getScrollY(), this._scrollSyncMode);
+    if (this._scrollSyncMode === "instant") {
+      for (const g of this._gnomes) g.controller.update(deltaSec);
+      this._composer.renderer.render(this._composer.scene, this._cameraRig.camera);
+      return;
+    }
+
     this._cameraRig.update(deltaSec);
 
     for (const g of this._gnomes) g.controller.update(deltaSec);
