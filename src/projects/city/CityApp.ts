@@ -58,6 +58,8 @@ export class CityApp {
 
   private _raf = 0;
   private _lastT = performance.now();
+  private _resizeRaf = 0;
+  private _resizeObserver: ResizeObserver | null = null;
 
   // Assets
   private _cityRoot: THREE.Group | null = null;
@@ -199,8 +201,12 @@ export class CityApp {
       return;
     }
     this._loaded = true;
-    this._onResize();
-    window.addEventListener("resize", this._onResize);
+    this._scheduleResize();
+    window.addEventListener("resize", this._scheduleResize, { passive: true });
+    window.visualViewport?.addEventListener("resize", this._scheduleResize, { passive: true });
+    this._resizeObserver = new ResizeObserver(() => this._scheduleResize());
+    this._resizeObserver.observe(this._host);
+    this._resizeObserver.observe(this._canvas);
     this._lastT = performance.now();
     this._raf = requestAnimationFrame(this._frame);
 
@@ -212,7 +218,14 @@ export class CityApp {
 
   dispose(): void {
     cancelAnimationFrame(this._raf);
-    window.removeEventListener("resize", this._onResize);
+    if (this._resizeRaf) {
+      cancelAnimationFrame(this._resizeRaf);
+      this._resizeRaf = 0;
+    }
+    window.removeEventListener("resize", this._scheduleResize);
+    window.visualViewport?.removeEventListener("resize", this._scheduleResize);
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
     this._unsubScroll?.();
     this._unsubTurn?.();
 
@@ -513,6 +526,16 @@ export class CityApp {
     shadowCam.updateProjectionMatrix();
   }
 
+  private _scheduleResize = (): void => {
+    if (!this._loaded) return;
+    if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+    this._resizeRaf = requestAnimationFrame(() => {
+      this._resizeRaf = 0;
+      this._onResize();
+      this._syncViewAfterResize();
+    });
+  };
+
   private _onResize = (): void => {
     const w = this._host.clientWidth || window.innerWidth;
     const h = this._host.clientHeight || window.innerHeight;
@@ -540,6 +563,29 @@ export class CityApp {
     this._overviewPerspectiveCamera.aspect = aspect;
     this._overviewPerspectiveCamera.updateProjectionMatrix();
   };
+
+  private _syncViewAfterResize(): void {
+    if (!this._loaded) return;
+
+    switch (this._mode) {
+      case "overview":
+        this._updateOverview(0);
+        break;
+      case "focusStart":
+        this._updateFocus(0);
+        break;
+      case "playing":
+        this._updatePlaying(0);
+        break;
+      case "encounter":
+        this._updateEncounter(0);
+        break;
+      case "crashed":
+        break;
+    }
+
+    this._renderer.render(this._scene, this._activeCamera);
+  }
 
   private _frame = (t: number): void => {
     this._raf = requestAnimationFrame(this._frame);

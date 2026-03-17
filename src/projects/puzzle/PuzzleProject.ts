@@ -27,6 +27,20 @@ export interface PuzzleConsoleApi {
   isCompleted: () => boolean;
 }
 
+type _PuzzleLayoutSnapshot = {
+  canvasWidth: number;
+  canvasHeight: number;
+  pieceOrder: number[];
+  piecesById: Map<
+    number,
+    {
+      centerX01: number;
+      centerY01: number;
+      groupId: number;
+    }
+  >;
+};
+
 declare global {
   interface Window {
     puzzleGame?: PuzzleConsoleApi;
@@ -34,6 +48,7 @@ declare global {
 }
 
 export class PuzzleProject {
+  private _host: HTMLElement;
   private _ui: ReturnType<typeof mountPuzzleUI>;
   private _paint: ReturnType<typeof createPaintSystemGL>;
   private _groupSys: ReturnType<typeof createGroupSystem>;
@@ -45,6 +60,7 @@ export class PuzzleProject {
   private _sourceImg: HTMLImageElement | null = null;
   private _rafId = 0;
   private _resizeRaf = 0;
+  private _resizeObserver: ResizeObserver | null = null;
   private _disposed = false;
   private _renderActive = true;
   private _finalFillPhase: "idle" | "animating" | "completed" = "idle";
@@ -60,6 +76,7 @@ export class PuzzleProject {
   private _onWindowResize = () => this._scheduleRebuild();
 
   constructor(host: HTMLElement, opts: PuzzleProjectOptions = {}) {
+    this._host = host;
     this._onGameComplete = opts.onGameComplete;
     this._ui = mountPuzzleUI({ 
       host, 
@@ -102,6 +119,8 @@ export class PuzzleProject {
     this._ui.canvas.addEventListener("pointercancel", this._onCanvasPointerUpOrCancel);
 
     window.addEventListener("resize", this._onWindowResize);
+    this._resizeObserver = new ResizeObserver(() => this._scheduleRebuild());
+    this._resizeObserver.observe(this._host);
   }
 
   private _removeEventListeners(): void {
@@ -112,6 +131,8 @@ export class PuzzleProject {
     this._ui.canvas.removeEventListener("pointercancel", this._onCanvasPointerUpOrCancel);
 
     window.removeEventListener("resize", this._onWindowResize);
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
   }
 
   private _scheduleRebuild(): void {
@@ -119,7 +140,8 @@ export class PuzzleProject {
     if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
     this._resizeRaf = requestAnimationFrame(() => {
       this._resizeRaf = 0;
-      void this._rebuild();
+      const snapshot = this._captureLayoutSnapshot();
+      void this._rebuild(snapshot);
       this._renderOnce();
     });
   }
@@ -127,7 +149,7 @@ export class PuzzleProject {
   private async _init(): Promise<void> {
     try {
       this._sourceImg = await loadImage("/img-lol.jpg");
-      await this._rebuild();
+      await this._rebuild(null);
       await this._renderer?.loadAndPrewarm(getDpr());
 
       if (this._renderActive) this._requestFrame();
@@ -200,9 +222,10 @@ export class PuzzleProject {
     );
   }
 
-  private async _rebuild(): Promise<void> {
+  private async _rebuild(snapshot: _PuzzleLayoutSnapshot | null): Promise<void> {
     if (!this._sourceImg) return;
     if (!this._renderer) return;
+    this._resetInteractions();
     this._resetCompletionState();
     await this._manager.rebuild(
       this._sourceImg,
@@ -213,6 +236,7 @@ export class PuzzleProject {
       this._ui,
       this._rng
     );
+    this._restoreLayoutSnapshot(snapshot);
   }
 
   dispose(): void {
@@ -241,6 +265,10 @@ export class PuzzleProject {
 
   pause(): void {
     this.setRenderActive(false);
+  }
+
+  resize(): void {
+    this._scheduleRebuild();
   }
 
   setRenderActive(active: boolean): void {
@@ -359,6 +387,81 @@ export class PuzzleProject {
       this._rewardTimer = null;
     }
     this._paint.clearFinalFill();
+  }
+
+  private _captureLayoutSnapshot(): _PuzzleLayoutSnapshot | null {
+    const canvasWidth = this._ui.canvas.width;
+    const canvasHeight = this._ui.canvas.height;
+    if (canvasWidth <= 0 || canvasHeight <= 0) return null;
+    if (this._manager.pieces.length === 0) return null;
+
+    const piecesById = new Map<number, { centerX01: number; centerY01: number; groupId: number }>();
+    for (const piece of this._manager.pieces) {
+      const left = piece.x - piece.img.geom.padPx;
+      const top = piece.y - piece.img.geom.padPx;
+      const centerX01 = (left + piece.img.bitmap.width * 0.5) / canvasWidth;
+      const centerY01 = (top + piece.img.bitmap.height * 0.5) / canvasHeight;
+      piecesById.set(piece.id, {
+        centerX01,
+        centerY01,
+        groupId: piece.groupId,
+      });
+    }
+
+    return {
+      canvasWidth,
+      canvasHeight,
+      pieceOrder: this._manager.pieces.map((piece) => piece.id),
+      piecesById,
+    };
+  }
+
+  private _restoreLayoutSnapshot(snapshot: _PuzzleLayoutSnapshot | null): void {
+    if (!snapshot) return;
+    const canvasWidth = Math.max(1, this._ui.canvas.width);
+    const canvasHeight = Math.max(1, this._ui.canvas.height);
+    if (this._manager.pieces.length === 0) return;
+
+    for (const piece of this._manager.pieces) {
+      const saved = snapshot.piecesById.get(piece.id);
+      if (!saved) continue;
+
+      const pieceWidth = piece.img.bitmap.width;
+      const pieceHeight = piece.img.bitmap.height;
+      const pad = piece.img.geom.padPx;
+      const centerX = saved.centerX01 * canvasWidth;
+      const centerY = saved.centerY01 * canvasHeight;
+      const maxLeft = Math.max(0, canvasWidth - pieceWidth);
+      const maxTop = Math.max(0, canvasHeight - pieceHeight);
+      const left = Math.max(0, Math.min(maxLeft, centerX - pieceWidth * 0.5));
+      const top = Math.max(0, Math.min(maxTop, centerY - pieceHeight * 0.5));
+
+      piece.x = left + pad;
+      piece.y = top + pad;
+    }
+
+    const desiredGroups = new Map<number, number[]>();
+    for (const piece of this._manager.pieces) {
+      const saved = snapshot.piecesById.get(piece.id);
+      const groupId = saved?.groupId ?? piece.id;
+      const members = desiredGroups.get(groupId);
+      if (members) members.push(piece.id);
+      else desiredGroups.set(groupId, [piece.id]);
+    }
+
+    for (const [targetGroupId, members] of desiredGroups) {
+      if (!members.includes(targetGroupId)) continue;
+      for (const pieceId of members) {
+        if (pieceId === targetGroupId) continue;
+        this._groupSys.mergeGroups(targetGroupId, pieceId);
+      }
+    }
+
+    const order = new Map<number, number>();
+    snapshot.pieceOrder.forEach((pieceId, idx) => order.set(pieceId, idx));
+    this._manager.setPieces(
+      [...this._manager.pieces].sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER))
+    );
   }
 }
 
