@@ -68,6 +68,28 @@ export class TrailComposer {
     (this._fadeMat.uniforms.uTexel.value as THREE.Vector2).set(1 / w, 1 / h);
   }
 
+  clear(renderer: THREE.WebGLRenderer): void {
+    if (!this._read || !this._write) return;
+
+    const prevRT = renderer.getRenderTarget();
+    const prevAutoClear = renderer.autoClear;
+    const prevClr = new THREE.Color();
+    renderer.getClearColor(prevClr);
+    const prevAlpha = renderer.getClearAlpha();
+
+    renderer.setClearColor(0x000000, 0);
+    renderer.autoClear = true;
+
+    renderer.setRenderTarget(this._read);
+    renderer.clear(true, true, true);
+    renderer.setRenderTarget(this._write);
+    renderer.clear(true, true, true);
+
+    renderer.setRenderTarget(prevRT);
+    renderer.setClearColor(prevClr, prevAlpha);
+    renderer.autoClear = prevAutoClear;
+  }
+
   renderFrame(opts: {
     renderer: THREE.WebGLRenderer;
     scene: THREE.Scene;

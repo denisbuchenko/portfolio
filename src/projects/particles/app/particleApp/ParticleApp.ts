@@ -41,6 +41,8 @@ export class ParticleApp {
   private _disposed = false;
   private _renderActive = true;
   private _raf = 0;
+  private _resizeRaf = 0;
+  private _resizeObserver: ResizeObserver | null = null;
   private _mode: Mode = -1;
   private _texSize = 0;
   private _viewBounds = new THREE.Vector2(4, 4);
@@ -63,7 +65,7 @@ export class ParticleApp {
 
   private _overlay: Overlay;
   private _onTraceComplete?: () => void;
-  private _onWindowResize = () => this._onResize();
+  private _onWindowResize = () => this._scheduleResize();
   private _onCanvasPointerMove = (e: PointerEvent) => this._onPointerMove(e);
   private _onCanvasPointerDown = (e: PointerEvent) => this._onPointerDown(e);
   private _onCanvasPointerUp = (e: PointerEvent) => this._onPointerUp(e);
@@ -118,7 +120,7 @@ export class ParticleApp {
     });
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(width, height);
+    renderer.setSize(width, height, false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.getElementById("app")?.appendChild(renderer.domElement);
     return renderer;
@@ -207,6 +209,13 @@ export class ParticleApp {
 
   private _bindEvents(): void {
     window.addEventListener("resize", this._onWindowResize);
+    window.visualViewport?.addEventListener("resize", this._onWindowResize, { passive: true });
+    const resizeTarget = this._renderer.domElement.parentElement;
+    if (resizeTarget) {
+      this._resizeObserver = new ResizeObserver(() => this._scheduleResize());
+      this._resizeObserver.observe(resizeTarget);
+      this._resizeObserver.observe(this._renderer.domElement);
+    }
 
     const canvas = this._renderer.domElement;
     canvas.addEventListener("pointermove", this._onCanvasPointerMove);
@@ -218,6 +227,9 @@ export class ParticleApp {
 
   private _unbindEvents(): void {
     window.removeEventListener("resize", this._onWindowResize);
+    window.visualViewport?.removeEventListener("resize", this._onWindowResize);
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
 
     const canvas = this._renderer.domElement;
     canvas.removeEventListener("pointermove", this._onCanvasPointerMove);
@@ -273,9 +285,10 @@ export class ParticleApp {
 
   private _onResize(): void {
     const { width: w, height: h } = this._getCanvasViewportSize(this._renderer.domElement);
+    this._pauseInteractions("resize");
     this._camera.aspect = w / h;
     this._camera.updateProjectionMatrix();
-    this._renderer.setSize(w, h);
+    this._renderer.setSize(w, h, false);
 
     this._updateParticleSize();
 
@@ -286,12 +299,27 @@ export class ParticleApp {
     this._traceGame.setSplinePointsWorld(this._splineSvg.worldPoints);
     this._trail.resize(this._renderer);
     this._paint.resize(this._renderer);
+    this._trail.clear(this._renderer);
+    this._paint.clear(this._renderer);
+    this._paintFadeActive = false;
+    this._paintFadeStart = 0;
+    this._traceDanger = 0;
+    (this._gas.uniforms.uTraceDanger.value as number) = 0;
     this._updatePixelMetrics();
 
     const size = this._paint.getSize();
     const pr = this._renderer.getPixelRatio();
     const spacingPx = CONFIG.paintSpacingCssPx * pr;
     this._paintInput.setSpacingUv(spacingPx / Math.max(1, Math.min(size.w, size.h)));
+  }
+
+  private _scheduleResize(): void {
+    if (this._disposed) return;
+    if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+    this._resizeRaf = requestAnimationFrame(() => {
+      this._resizeRaf = 0;
+      this._onResize();
+    });
   }
 
   private _updateParticleSize(): void {
@@ -392,6 +420,8 @@ export class ParticleApp {
     this._disposed = true;
     this._pauseInteractions();
     this._unbindEvents();
+    if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+    this._resizeRaf = 0;
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
     this._renderer.dispose();
@@ -406,7 +436,7 @@ export class ParticleApp {
   }
 
   resize(): void {
-    this._onResize();
+    this._scheduleResize();
   }
 
   setRenderActive(active: boolean): void {
@@ -539,11 +569,11 @@ export class ParticleApp {
     this._raf = requestAnimationFrame(this._animate);
   }
 
-  private _pauseInteractions(): void {
+  private _pauseInteractions(reason = "pause"): void {
     const canvas = this._renderer.domElement;
     this._pointer.forceRelease(canvas);
     this._paintInput.forceRelease(canvas);
-    this._traceGame.forceRelease(canvas, "pause");
+    this._traceGame.forceRelease(canvas, reason);
   }
 }
 
