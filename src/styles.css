@@ -912,12 +912,23 @@ canvas {
   gap: 14px;
 }
 
+.sunduc__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+}
+
 .sunduc__badge {
   padding: 0;
   border: none;
   background: transparent;
   color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
+}
+
+.sunduc__info-btn {
+  min-height: 40px;
 }
 
 .sunduc__menu {
@@ -966,6 +977,90 @@ canvas {
   backdrop-filter: none;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.sunduc__modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 9, 18, 0.68);
+  backdrop-filter: blur(12px);
+}
+
+.sunduc__modal[hidden] {
+  display: none;
+}
+
+.sunduc__modal-card {
+  position: relative;
+  width: min(100%, 720px);
+  display: grid;
+  gap: 14px;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(18, 22, 38, 0.96), rgba(10, 13, 24, 0.96));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.sunduc__modal-close {
+  justify-self: end;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.sunduc__modal-close:hover {
+  border-color: rgba(110, 231, 255, 0.42);
+  background: rgba(110, 231, 255, 0.08);
+  color: #fff;
+}
+
+.sunduc__modal-eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.sunduc__modal-title {
+  margin: 0;
+  font-size: clamp(26px, 3vw, 36px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.sunduc__modal-lead {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.sunduc__modal-paragraphs {
+  display: grid;
+  gap: 10px;
+}
+
+.sunduc__modal-paragraph {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
 }
 
 .sunduc__status {
@@ -1309,6 +1404,15 @@ canvas {
     left: 12px;
     right: 12px;
     max-width: none;
+  }
+
+  .sunduc__modal {
+    padding: 16px;
+  }
+
+  .sunduc__modal-card {
+    padding: 22px 18px 18px;
+    border-radius: 20px;
   }
 
   .sunduc__gesture {

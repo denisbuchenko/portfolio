@@ -36,6 +36,9 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
     .map((paragraph) => `<p class="sunduc__paragraph">${paragraph}</p>`)
     .join("");
   const badges = SUNDUC_CONFIG.badges.map((badge) => `<span class="sunduc__badge">${badge}</span>`).join("");
+  const additionalInfoRows = SUNDUC_CONFIG.additionalInfo.paragraphs
+    .map((paragraph) => `<p class="sunduc__modal-paragraph">${paragraph}</p>`)
+    .join("");
 
   root.innerHTML = `
     <div class="sunduc__info">
@@ -45,6 +48,11 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
         <p class="sunduc__lead">${SUNDUC_CONFIG.lead}</p>
         <div class="sunduc__paragraphs">${infoRows}</div>
         <div class="sunduc__badges">${badges}</div>
+        <div class="sunduc__actions">
+          <button class="btn btn--showcase sunduc__info-btn" type="button">
+            ${SUNDUC_CONFIG.additionalInfo.buttonLabel}
+          </button>
+        </div>
       </div>
       ${
         options.embedded
@@ -58,6 +66,26 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
         <div class="sunduc__status"></div>
       </div>
     </div>
+    <div class="sunduc__modal" hidden aria-hidden="true">
+      <div
+        class="sunduc__modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sunduc-additional-info-title"
+      >
+        <button
+          class="sunduc__modal-close"
+          type="button"
+          aria-label="${SUNDUC_CONFIG.additionalInfo.closeLabel}"
+        >
+          ${SUNDUC_CONFIG.additionalInfo.closeLabel}
+        </button>
+        <div class="sunduc__modal-eyebrow">${SUNDUC_CONFIG.additionalInfo.buttonLabel}</div>
+        <h2 class="sunduc__modal-title" id="sunduc-additional-info-title">${SUNDUC_CONFIG.additionalInfo.title}</h2>
+        <p class="sunduc__modal-lead">${SUNDUC_CONFIG.additionalInfo.lead}</p>
+        <div class="sunduc__modal-paragraphs">${additionalInfoRows}</div>
+      </div>
+    </div>
   `;
 
   host.appendChild(root);
@@ -65,9 +93,37 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
   const canvas = _requireElement(root, ".sunduc__canvas") as HTMLCanvasElement;
   const canvasWrap = _requireElement(root, ".sunduc__canvas-wrap") as HTMLDivElement;
   const status = _requireElement(root, ".sunduc__status") as HTMLDivElement;
+  const additionalInfoButton = _requireElement(root, ".sunduc__info-btn") as HTMLButtonElement;
+  const modal = _requireElement(root, ".sunduc__modal") as HTMLDivElement;
+  const modalCloseButton = _requireElement(root, ".sunduc__modal-close") as HTMLButtonElement;
   if (options.embedded) {
     status.style.display = "none";
   }
+
+  const _openAdditionalInfo = (): void => {
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+  };
+
+  const _closeAdditionalInfo = (): void => {
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+  };
+
+  const _onDocumentKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape" || modal.hidden) return;
+    _closeAdditionalInfo();
+  };
+
+  const _onModalClick = (event: MouseEvent): void => {
+    if (event.target !== modal) return;
+    _closeAdditionalInfo();
+  };
+
+  additionalInfoButton.addEventListener("click", _openAdditionalInfo);
+  modalCloseButton.addEventListener("click", _closeAdditionalInfo);
+  modal.addEventListener("click", _onModalClick);
+  document.addEventListener("keydown", _onDocumentKeydown);
 
   return {
     canvas,
@@ -87,6 +143,10 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
       // Debug controls are intentionally hidden in the minimalist showcase UI.
     },
     dispose(): void {
+      additionalInfoButton.removeEventListener("click", _openAdditionalInfo);
+      modalCloseButton.removeEventListener("click", _closeAdditionalInfo);
+      modal.removeEventListener("click", _onModalClick);
+      document.removeEventListener("keydown", _onDocumentKeydown);
       root.remove();
       host.classList.remove("launcher--puzzle");
     }
