@@ -29,6 +29,8 @@ export class GnomesApp {
 
   private _raf = 0;
   private _lastTs = 0;
+  private _resizeRaf = 0;
+  private _resizeObserver: ResizeObserver | null = null;
   private _started = false;
   private _disposed = false;
   private _renderActive = true;
@@ -39,7 +41,7 @@ export class GnomesApp {
   private _scrollSyncMode: "smooth" | "instant";
   private _pendingFocusToken = 0;
 
-  private _onResize = () => this._handleResize();
+  private _onResize = () => this._scheduleResize();
   private _onScroll = () => this._handleScroll();
   private _onClick = (e: MouseEvent) => {
     void this._handleClick(e);
@@ -127,6 +129,10 @@ export class GnomesApp {
     this._handleScroll();
 
     window.addEventListener("resize", this._onResize);
+    window.visualViewport?.addEventListener("resize", this._onResize, { passive: true });
+    this._resizeObserver = new ResizeObserver(() => this._scheduleResize());
+    this._resizeObserver.observe(this._interactionEl);
+    this._resizeObserver.observe(this._canvas);
     window.addEventListener("scroll", this._onScroll, { passive: true });
     this._interactionEl.addEventListener("click", this._onClick);
 
@@ -154,10 +160,15 @@ export class GnomesApp {
     this._dialogue.close();
     this._setScrollLocked(false);
     window.removeEventListener("resize", this._onResize);
+    window.visualViewport?.removeEventListener("resize", this._onResize);
     window.removeEventListener("scroll", this._onScroll);
     this._interactionEl.removeEventListener("click", this._onClick);
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
+    if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+    this._resizeRaf = 0;
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
 
     this._composer.dispose();
   }
@@ -218,6 +229,17 @@ export class GnomesApp {
     this._composer.resize(w, h, dpr);
     this._cameraRig.resize(w, h);
     this._layoutPages();
+  }
+
+  private _scheduleResize(): void {
+    if (this._disposed) return;
+    if (!this._started) return;
+    if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+    this._resizeRaf = requestAnimationFrame(() => {
+      this._resizeRaf = 0;
+      this._handleResize();
+      this._syncSceneState();
+    });
   }
 
   private _handleScroll(): void {
