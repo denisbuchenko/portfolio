@@ -2,12 +2,33 @@
  * Нормализованный “скролл прогресс” 0..1 для обзорной камеры.
  * Реализация: wheel + drag (pointer), без зависимости от window.scrollY.
  */
+type ScrollInputConfig = {
+  dragProgressPerPx?: number;
+  wheelDivisor?: number;
+  wheelMaxStep?: number;
+};
+
+const _DEFAULT_SCROLL_INPUT_CONFIG: Required<ScrollInputConfig> = {
+  dragProgressPerPx: 0.0012,
+  wheelDivisor: 1500,
+  wheelMaxStep: 0.08,
+};
+
 export class ScrollInput {
   private _progress01 = 0;
   private _enabled = true;
   private _dragging = false;
   private _lastY = 0;
   private _lastPointerId: number | null = null;
+  private _config: Required<ScrollInputConfig>;
+
+  constructor(config: ScrollInputConfig = {}) {
+    this._config = {
+      dragProgressPerPx: config.dragProgressPerPx ?? _DEFAULT_SCROLL_INPUT_CONFIG.dragProgressPerPx,
+      wheelDivisor: config.wheelDivisor ?? _DEFAULT_SCROLL_INPUT_CONFIG.wheelDivisor,
+      wheelMaxStep: config.wheelMaxStep ?? _DEFAULT_SCROLL_INPUT_CONFIG.wheelMaxStep,
+    };
+  }
 
   setEnabled(enabled: boolean): void {
     this._enabled = enabled;
@@ -32,7 +53,8 @@ export class ScrollInput {
       if (!this._enabled) return;
       if (isUiEvent(e)) return;
       // Вниз — увеличиваем прогресс.
-      const delta = Math.sign(e.deltaY) * Math.min(0.08, Math.abs(e.deltaY) / 1500);
+      const delta =
+        Math.sign(e.deltaY) * Math.min(this._config.wheelMaxStep, Math.abs(e.deltaY) / this._config.wheelDivisor);
       this._progress01 = _clamp01(this._progress01 + delta);
     };
 
@@ -57,7 +79,7 @@ export class ScrollInput {
       const dy = e.clientY - this._lastY;
       this._lastY = e.clientY;
       // Тащим вверх → прогресс уменьшается (как скролл).
-      this._progress01 = _clamp01(this._progress01 + dy * -0.0012);
+      this._progress01 = _clamp01(this._progress01 + dy * -this._config.dragProgressPerPx);
     };
 
     const onUp = (e: PointerEvent) => {

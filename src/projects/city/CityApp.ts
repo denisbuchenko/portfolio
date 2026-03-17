@@ -42,7 +42,7 @@ export class CityApp {
 
   private _mode: _Mode = "overview";
 
-  private _scroll = new ScrollInput();
+  private _scroll = new ScrollInput(CITY_CAMERA.overview.input);
   private _turn = new TurnInput();
   private _unsubScroll: (() => void) | null = null;
   private _unsubTurn: (() => void) | null = null;

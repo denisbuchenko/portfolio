@@ -37,6 +37,14 @@ export type OverviewCameraConfig = Readonly<{
   fitHorizontally: boolean;
   /** Ограничение движения, чтобы нельзя было "бесконечно вниз". */
   clamp: boolean;
+  /** Тюнинг чувствительности обзора от пальца/колеса. */
+  input?: Readonly<{
+    dragProgressPerPx: number;
+    wheelDivisor: number;
+    wheelMaxStep: number;
+    /** Линейный множитель скорости обзорной камеры в витрине. */
+    showcaseScrollSpeed?: number;
+  }>;
   /** Трек обзора с padding'ами. */
   track?: OverviewTrack;
   /** Ручная подстройка камеры (смещение/поворот). */

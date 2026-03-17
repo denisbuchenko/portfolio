@@ -21,6 +21,7 @@ import { PuzzleProject } from "../projects/puzzle/PuzzleProject";
 import { GnomesApp } from "../projects/gnomes/GnomesApp";
 import { GNOMES_CONFIG } from "../projects/gnomes/config";
 import { CityApp } from "../projects/city/CityApp";
+import { CITY_CAMERA } from "../projects/city/cityConfig";
 import { mountOsminogProject } from "../projects/osminog";
 import { mountSunducProject } from "../projects/sunduc";
 import type { Overlay } from "../ui/overlay";
@@ -1182,7 +1183,9 @@ export class ShowcaseMode {
     const vh = this._host.clientHeight;
     const maxScroll = Math.max(1, sectionHeight - vh);
     const localScroll = Math.max(0, this._host.scrollTop - sectionTop);
-    const progress = Math.min(1, localScroll / maxScroll);
+    const rawProgress = Math.min(1, localScroll / maxScroll);
+    const showcaseScrollSpeed = Math.max(0.01, CITY_CAMERA.overview.input?.showcaseScrollSpeed ?? 1);
+    const progress = Math.min(1, rawProgress * showcaseScrollSpeed);
 
     app.setOverviewProgress(progress);
   }

@@ -192,6 +192,25 @@ export const CITY_CAMERA = {
   overview: {
     fitHorizontally: true,
     clamp: true,
+    input: {
+      /**
+       * Насколько сильно обзорная камера двигается от вертикального движения пальца.
+       * Меньше значение = камера идёт плотнее за пальцем и не "убегает" вперёд.
+       */
+      dragProgressPerPx: 0.00075,
+      /**
+       * Чувствительность колеса мыши/тачпада в обзорном режиме.
+       * progress += sign(deltaY) * min(maxStep, abs(deltaY) / wheelDivisor)
+       */
+      wheelDivisor: 2200,
+      /** Ограничение максимального шага прогресса за одно wheel-событие. */
+      wheelMaxStep: 0.055,
+      /**
+       * Линейная скорость обзорной камеры именно в витрине.
+       * 1 = нативная скорость, меньше = камера идёт медленнее, больше = быстрее.
+       */
+      showcaseScrollSpeed: 0.6,
+    },
     track: {
       prePadding01: 0.12,
       postPadding01: 0.12
