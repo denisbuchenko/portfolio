@@ -19,6 +19,21 @@ function _syncAppVisibleViewport(): void {
   document.documentElement.style.setProperty("--app-visible-height", `${Math.round(viewportHeight)}px`);
 }
 
+function _mountHandheldLandscapeNotice(): void {
+  if (document.getElementById("phone-landscape-lock")) return;
+
+  const overlayEl = document.createElement("div");
+  overlayEl.id = "phone-landscape-lock";
+  overlayEl.className = "phone-landscape-lock";
+  overlayEl.setAttribute("aria-hidden", "true");
+  overlayEl.innerHTML = `
+    <div class="phone-landscape-lock__message">
+      Переверни телефон<br />в вертикальное положение
+    </div>
+  `;
+  document.body.appendChild(overlayEl);
+}
+
 function _blockTextSelectionUi(): void {
   const _preventDefault = (event: Event): void => {
     event.preventDefault();
@@ -204,6 +219,7 @@ function startShowcase(): void {
 
 _blockTextSelectionUi();
 _syncAppVisibleViewport();
+_mountHandheldLandscapeNotice();
 window.addEventListener("resize", _syncAppVisibleViewport, { passive: true });
 window.addEventListener("orientationchange", _syncAppVisibleViewport, { passive: true });
 window.visualViewport?.addEventListener("resize", _syncAppVisibleViewport, { passive: true });

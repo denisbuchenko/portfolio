@@ -68,6 +68,29 @@ body,
   overflow: hidden;
 }
 
+.phone-landscape-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: #000;
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+}
+
+.phone-landscape-lock__message {
+  max-width: 20ch;
+  font-size: clamp(28px, 7vw, 44px);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
 .launcher {
   position: absolute;
   inset: 0;
@@ -796,6 +819,13 @@ canvas {
     border-radius: 20px;
     font-size: clamp(20px, 6vw, 30px);
     line-height: 1.12;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  .phone-landscape-lock {
+    display: flex;
+    pointer-events: auto;
   }
 }
 
