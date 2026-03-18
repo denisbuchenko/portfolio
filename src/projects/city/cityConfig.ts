@@ -5,10 +5,11 @@ import type { FocusStartConfig } from "./contracts";
 import type { ProximityActivationRule } from "./contracts";
 import type { CrashRecoveryConfig } from "./contracts";
 import type { AnimationChannelId } from "./contracts";
+import { publicAssetUrl } from "../../utils/publicAssetUrl";
 
 export const CITY_ASSETS = {
-  cityGltfUrl: "/city/city.glb",
-  bikerGltfUrl: "/city/Chel.glb"
+  cityGltfUrl: publicAssetUrl("city/city.glb"),
+  bikerGltfUrl: publicAssetUrl("city/Chel.glb")
 } as const;
 export const CITY_WORLD = {
   /** Поворот карты вокруг Y в градусах. 0 = как в 3D файле. */

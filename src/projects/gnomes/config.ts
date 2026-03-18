@@ -1,4 +1,5 @@
 import type { GnomeAnimationProfile } from "./GnomeController";
+import { publicAssetUrl } from "../../utils/publicAssetUrl";
 
 const DEFAULT_GNOME_ANIMATION_PROFILE: GnomeAnimationProfile = {
   pose: {
@@ -35,7 +36,7 @@ const DEFAULT_GNOME_ANIMATION_PROFILE: GnomeAnimationProfile = {
 };
 
 export const GNOMES_CONFIG = {
-  glbUrl: "/gnomes/export.glb",
+  glbUrl: publicAssetUrl("gnomes/export.glb"),
   pages: 3,
 
   gnomes: {

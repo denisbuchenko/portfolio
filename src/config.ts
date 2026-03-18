@@ -1,3 +1,5 @@
+import { publicAssetUrl } from "./utils/publicAssetUrl";
+
 export type Mode = -1 | 0 | 1 | 2 | 3;
 
 export const CONFIG = {
@@ -29,7 +31,7 @@ export const CONFIG = {
       // legacy7rt оставлен для сравнения/отладки.
       mode: "masked1pass",
       debugShowMask: false,
-      gltfUrl: "/3dmodels/3d_props_-_adorable_foods/scene.gltf",
+      gltfUrl: publicAssetUrl("3dmodels/3d_props_-_adorable_foods/scene.gltf"),
       // Порог, после которого канал считается "включенным" (0..1) для получения bits.
       maskThreshold: 0.06,
 

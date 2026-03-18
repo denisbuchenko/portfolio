@@ -12,6 +12,7 @@ import { InputHandler } from "./app/input";
 import { PuzzleManager } from "./app/puzzleManager";
 import { XorShift32 } from "./rng";
 import { getDpr, loadImage } from "./app/utils";
+import { publicAssetUrl } from "../../utils/publicAssetUrl";
 
 const PUZZLE_FINAL_FILL_DURATION_SEC = 1.6;
 const PUZZLE_REWARD_DELAY_MS = 1000;
@@ -148,7 +149,7 @@ export class PuzzleProject {
 
   private async _init(): Promise<void> {
     try {
-      this._sourceImg = await loadImage("/img-lol.jpg");
+      this._sourceImg = await loadImage(publicAssetUrl("img-lol.jpg"));
       await this._rebuild(null);
       await this._renderer?.loadAndPrewarm(getDpr());
 

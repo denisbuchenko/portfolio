@@ -13,6 +13,7 @@ import { SplineSvgPath } from "./SplineSvgPath";
 import { PaintLayer } from "./PaintLayer";
 import { PaintInput } from "./PaintInput";
 import { TraceSplineGame } from "./TraceSplineGame";
+import { publicAssetUrl } from "../../../../utils/publicAssetUrl";
 
 interface ParticleAppOptions {
   canvas: HTMLCanvasElement;
@@ -165,7 +166,7 @@ export class ParticleApp {
 
   private async _loadSplineSvg(): Promise<void> {
     try {
-      await this._splineSvg.load("/paths/treble-clef.svg");
+      await this._splineSvg.load(publicAssetUrl("paths/treble-clef.svg"));
       this._splineSvg.applyToWorld({ viewBounds: this._viewBounds, pathLine: this._pathLine, gas: this._gas });
       this._traceGame.setSplinePointsWorld(this._splineSvg.worldPoints);
     } catch (e) {

@@ -1,6 +1,8 @@
+import { publicAssetUrl } from "../../../utils/publicAssetUrl";
+
 export const CITY_GIRLS = {
   /** GLB модель NPC. */
-  glbUrl: "/city/Girl.glb",
+  glbUrl: publicAssetUrl("city/Girl.glb"),
 
   /**
    * Маркеры в `city.glb` (коллекция `users`), которые задают места NPC.

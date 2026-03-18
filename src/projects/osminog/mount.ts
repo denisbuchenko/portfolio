@@ -4,6 +4,7 @@ import { OSMINOG_DUDU_CONFIG } from "./config";
 import { createDuduAudio, type DuduAudio, type DuduKeyName } from "./createDuduAudio";
 import { LottieSegmentsController } from "./LottieSegmentsController";
 import { MelodySequenceTracker, type MelodyTrackerState } from "./MelodySequenceTracker";
+import { publicAssetUrl } from "../../utils/publicAssetUrl";
 
 function _collectMeshTargets(root: THREE.Object3D | null | undefined): THREE.Mesh[] {
   if (!root) return [];
@@ -985,7 +986,7 @@ export function mountOsminogProject(host: HTMLElement, options?: MountOsminogPro
         renderer: "svg",
         loop: false,
         autoplay: false,
-        path: "/osminog/osminog%20.json"
+        path: publicAssetUrl("osminog/osminog%20.json")
       });
 
       _controller = new LottieSegmentsController(_anim);

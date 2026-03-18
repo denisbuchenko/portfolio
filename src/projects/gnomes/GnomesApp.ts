@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { DialogueSystem } from "./dialogue/DialogueSystem";
 import type { GnomeCharacterKey } from "./GnomeController";
 import type { GnomeAnimationProfile } from "./GnomeController";
+import { publicAssetUrl } from "../../utils/publicAssetUrl";
 
 export class GnomesApp {
   private _canvas: HTMLCanvasElement;
@@ -76,11 +77,11 @@ export class GnomesApp {
     this._dialogue = new DialogueSystem({
       uiRoot: opts.uiRoot,
       portraitUrls: {
-        horogran: "/gnomes/hor.jpg",
-        fyfchik: "/gnomes/fi.jpg",
-        pipiser: "/gnomes/pi.jpg",
+        horogran: publicAssetUrl("gnomes/hor.jpg"),
+        fyfchik: publicAssetUrl("gnomes/fi.jpg"),
+        pipiser: publicAssetUrl("gnomes/pi.jpg"),
       },
-      defaultPortraitUrl: "/gnomes/hor.jpg",
+      defaultPortraitUrl: publicAssetUrl("gnomes/hor.jpg"),
       onVisibilityChange: (isOpen) => {
         if (!isOpen) this._activeDialogueCharacterId = null;
         this._setScrollLocked(isOpen);

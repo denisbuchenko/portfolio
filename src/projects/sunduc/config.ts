@@ -1,5 +1,7 @@
+import { publicAssetUrl } from "../../utils/publicAssetUrl";
+
 export const SUNDUC_CONFIG = {
-  assetUrl: "/sunduc/sunduc.glb",
+  assetUrl: publicAssetUrl("sunduc/sunduc.glb"),
   title: "Портфолио интерактивных проектов",
   eyebrow: "Web graphics / creative development",
   lead:

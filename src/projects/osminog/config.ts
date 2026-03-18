@@ -1,5 +1,7 @@
+import { publicAssetUrl } from "../../utils/publicAssetUrl";
+
 export const OSMINOG_DUDU_CONFIG = {
-  assetUrl: "/sunduc/dudu.glb",
+  assetUrl: publicAssetUrl("sunduc/dudu.glb"),
   layer: {
     topPercent: 0,
     heightPercent: 0.5
@@ -46,7 +48,7 @@ export const OSMINOG_DUDU_CONFIG = {
     rimPosition: { x: 0.2, y: 1.4, z: -1.6 }
   },
   audio: {
-    baseUrl: "/sound/flute_sound_kit/",
+    baseUrl: publicAssetUrl("sound/flute_sound_kit/"),
     notesByKey: {
       key1: "G5",
       key2: "F5",

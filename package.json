@@ -7,6 +7,10 @@
     "dev": "vite",
     "dev:lan": "vite --host 0.0.0.0 --port 3000 --strictPort",
     "build": "tsc -p tsconfig.json && vite build",
+    "pages:prepare": "node ./scripts/prepare-pages-repo.mjs",
+    "pages:clean": "node ./scripts/clean-pages-repo.mjs",
+    "build:pages": "npm run pages:prepare && npm run pages:clean && tsc -p tsconfig.json && vite build --mode pages",
+    "pages:status": "git -C ./.pages/denis-portfolio status --short",
     "preview": "vite preview",
     "preview:lan": "vite preview --host 0.0.0.0 --port 4173 --strictPort"
   },

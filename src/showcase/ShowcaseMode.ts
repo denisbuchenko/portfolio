@@ -27,6 +27,7 @@ import { mountSunducProject } from "../projects/sunduc";
 import type { Overlay } from "../ui/overlay";
 import { ShowcaseInventory } from "./ShowcaseInventory";
 import { ShowcaseBackdrop } from "./ShowcaseBackdrop";
+import { publicAssetUrl } from "../utils/publicAssetUrl";
 
 // ─── типы ────────────────────────────────────────────────────────────────────
 
@@ -83,20 +84,20 @@ const SCROLL_SETTLE_MS = 120;
 // ─── preload manifest ───────────────────────────────────────────────────────
 
 const PRELOAD_ITEMS: Array<{ url: string; weight: number }> = [
-  { url: "/city/city.glb", weight: 59 },
-  { url: "/gnomes/export.glb", weight: 50 },
-  { url: "/city/Chel.glb", weight: 8 },
-  { url: "/3dmodels/3d_props_-_adorable_foods/scene.bin", weight: 4 },
-  { url: "/sunduc/sunduc.glb", weight: 3 },
-  { url: "/city/Girl.glb", weight: 2 },
-  { url: "/sunduc/dudu.glb", weight: 1 },
-  { url: "/osminog/osminog%20.json", weight: 1 },
-  { url: "/3dmodels/3d_props_-_adorable_foods/scene.gltf", weight: 1 },
-  { url: "/img-lol.jpg", weight: 1 },
-  { url: "/gnomes/hor.jpg", weight: 1 },
-  { url: "/gnomes/fi.jpg", weight: 1 },
-  { url: "/gnomes/pi.jpg", weight: 1 },
-  { url: "/paths/treble-clef.svg", weight: 1 },
+  { url: publicAssetUrl("city/city.glb"), weight: 59 },
+  { url: publicAssetUrl("gnomes/export.glb"), weight: 50 },
+  { url: publicAssetUrl("city/Chel.glb"), weight: 8 },
+  { url: publicAssetUrl("3dmodels/3d_props_-_adorable_foods/scene.bin"), weight: 4 },
+  { url: publicAssetUrl("sunduc/sunduc.glb"), weight: 3 },
+  { url: publicAssetUrl("city/Girl.glb"), weight: 2 },
+  { url: publicAssetUrl("sunduc/dudu.glb"), weight: 1 },
+  { url: publicAssetUrl("osminog/osminog%20.json"), weight: 1 },
+  { url: publicAssetUrl("3dmodels/3d_props_-_adorable_foods/scene.gltf"), weight: 1 },
+  { url: publicAssetUrl("img-lol.jpg"), weight: 1 },
+  { url: publicAssetUrl("gnomes/hor.jpg"), weight: 1 },
+  { url: publicAssetUrl("gnomes/fi.jpg"), weight: 1 },
+  { url: publicAssetUrl("gnomes/pi.jpg"), weight: 1 },
+  { url: publicAssetUrl("paths/treble-clef.svg"), weight: 1 },
 ];
 const LOTTIE_IMPORT_WEIGHT = 2;
 

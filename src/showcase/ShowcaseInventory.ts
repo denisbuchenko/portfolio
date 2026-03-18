@@ -1,3 +1,4 @@
+import { publicAssetUrl } from "../utils/publicAssetUrl";
 import { ShowcaseInventoryRewardOverlay } from "./ShowcaseInventoryRewardOverlay";
 
 const INVENTORY_STYLE_ID = "showcase-inventory-styles";
@@ -66,12 +67,12 @@ declare global {
 }
 
 const INVENTORY_CATALOG: Readonly<Record<InventoryItemId, InventoryItemDef>> = Object.freeze({
-  key: { id: "key", label: "Ключ", imageSrc: "/inventory/key.png" },
-  stone1: { id: "stone1", label: "Камень 1", imageSrc: "/inventory/stone1.png" },
-  stone2: { id: "stone2", label: "Камень 2", imageSrc: "/inventory/stone2.png" },
-  stone3: { id: "stone3", label: "Камень 3", imageSrc: "/inventory/stone3.png" },
-  stone4: { id: "stone4", label: "Камень 4", imageSrc: "/inventory/stone4.png" },
-  flute: { id: "flute", label: "Дудка", imageSrc: "/inventory/flute.png" },
+  key: { id: "key", label: "Ключ", imageSrc: publicAssetUrl("inventory/key.png") },
+  stone1: { id: "stone1", label: "Камень 1", imageSrc: publicAssetUrl("inventory/stone1.png") },
+  stone2: { id: "stone2", label: "Камень 2", imageSrc: publicAssetUrl("inventory/stone2.png") },
+  stone3: { id: "stone3", label: "Камень 3", imageSrc: publicAssetUrl("inventory/stone3.png") },
+  stone4: { id: "stone4", label: "Камень 4", imageSrc: publicAssetUrl("inventory/stone4.png") },
+  flute: { id: "flute", label: "Дудка", imageSrc: publicAssetUrl("inventory/flute.png") },
 });
 
 interface ActiveDragState {
