@@ -999,6 +999,21 @@ canvas {
   display: none;
 }
 
+.sunduc__confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 41;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 7, 13, 0.76);
+  backdrop-filter: blur(10px);
+}
+
+.sunduc__confirm[hidden] {
+  display: none;
+}
+
 .sunduc__modal-card {
   position: relative;
   width: min(100%, 720px);
@@ -1014,6 +1029,18 @@ canvas {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+.sunduc__confirm-card {
+  width: min(100%, 480px);
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(18, 22, 38, 0.98), rgba(10, 13, 24, 0.98));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
 }
 
 .sunduc__modal-close {
@@ -1137,6 +1164,39 @@ canvas {
   flex-wrap: wrap;
   gap: 12px;
   padding-top: 6px;
+}
+
+.sunduc__confirm-title {
+  margin: 0;
+  font-size: clamp(22px, 2.6vw, 30px);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+.sunduc__confirm-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.sunduc__confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.sunduc__confirm-approve {
+  border-color: rgba(255, 107, 107, 0.36);
+  background: rgba(255, 107, 107, 0.1);
+  color: #ffd6d6;
+}
+
+.sunduc__confirm-approve:hover {
+  border-color: rgba(255, 107, 107, 0.62);
+  background: rgba(255, 107, 107, 0.18);
 }
 
 .sunduc__modal-paragraph {
@@ -1493,9 +1553,18 @@ canvas {
     padding: 16px;
   }
 
+  .sunduc__confirm {
+    padding: 16px;
+  }
+
   .sunduc__modal-card {
     max-height: calc(100svh - 32px);
     padding: 22px 18px 18px;
+    border-radius: 20px;
+  }
+
+  .sunduc__confirm-card {
+    padding: 20px 18px;
     border-radius: 20px;
   }
 

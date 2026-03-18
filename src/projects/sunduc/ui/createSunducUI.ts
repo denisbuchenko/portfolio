@@ -70,8 +70,8 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
     .join("");
   const resetButtons = SUNDUC_CONFIG.additionalInfo.resetButtons
     .map(
-      (label) => `
-        <button class="btn sunduc__reset-btn" type="button">
+      (label, index) => `
+        <button class="btn sunduc__reset-btn" type="button" data-reset-action="${index === 0 ? "gnomes" : "all"}">
           ${label}
         </button>
       `
@@ -150,6 +150,22 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
         </div>
       </div>
     </div>
+    <div class="sunduc__confirm" hidden aria-hidden="true">
+      <div
+        class="sunduc__confirm-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sunduc-confirm-title"
+      >
+        <div class="sunduc__modal-eyebrow">Подтверждение</div>
+        <h3 class="sunduc__confirm-title" id="sunduc-confirm-title"></h3>
+        <p class="sunduc__confirm-text"></p>
+        <div class="sunduc__confirm-actions">
+          <button class="btn sunduc__confirm-cancel" type="button">Нет</button>
+          <button class="btn sunduc__confirm-approve" type="button">Да</button>
+        </div>
+      </div>
+    </div>
   `;
 
   host.appendChild(root);
@@ -161,9 +177,16 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
   const modal = _requireElement(root, ".sunduc__modal") as HTMLDivElement;
   const modalCard = _requireElement(root, ".sunduc__modal-card") as HTMLDivElement;
   const modalCloseButton = _requireElement(root, ".sunduc__modal-close") as HTMLButtonElement;
+  const resetActionButtons = Array.from(root.querySelectorAll(".sunduc__reset-btn")) as HTMLButtonElement[];
+  const confirmModal = _requireElement(root, ".sunduc__confirm") as HTMLDivElement;
+  const confirmTitle = _requireElement(root, ".sunduc__confirm-title") as HTMLHeadingElement;
+  const confirmText = _requireElement(root, ".sunduc__confirm-text") as HTMLParagraphElement;
+  const confirmCancelButton = _requireElement(root, ".sunduc__confirm-cancel") as HTMLButtonElement;
+  const confirmApproveButton = _requireElement(root, ".sunduc__confirm-approve") as HTMLButtonElement;
   const appRoot = document.getElementById("app");
   const initialAppOverflow = appRoot?.style.overflow ?? "";
   const initialAppOverscrollBehavior = appRoot?.style.overscrollBehavior ?? "";
+  let pendingResetAction: "gnomes" | "all" | null = null;
   if (options.embedded) {
     status.style.display = "none";
   }
@@ -181,21 +204,73 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
     appRoot.style.overscrollBehavior = initialAppOverscrollBehavior;
   };
 
+  const _syncAppScrollLock = (): void => {
+    _setAppScrollLocked(!modal.hidden || !confirmModal.hidden);
+  };
+
+  const _closeConfirm = (): void => {
+    confirmModal.hidden = true;
+    confirmModal.setAttribute("aria-hidden", "true");
+    pendingResetAction = null;
+    _syncAppScrollLock();
+  };
+
+  const _openConfirm = (action: "gnomes" | "all"): void => {
+    pendingResetAction = action;
+    if (action === "gnomes") {
+      confirmTitle.textContent = "Удалить прогресс у гномов?";
+      confirmText.textContent =
+        "Будет удален только прогресс проекта с гномами. После этого страница перезагрузится.";
+      confirmApproveButton.textContent = "Да, удалить";
+    } else {
+      confirmTitle.textContent = "Удалить весь игровой процесс?";
+      confirmText.textContent =
+        "Будет полностью очищен прогресс всего портфолио. После этого страница перезагрузится.";
+      confirmApproveButton.textContent = "Да, удалить все";
+    }
+
+    confirmModal.hidden = false;
+    confirmModal.setAttribute("aria-hidden", "false");
+    _syncAppScrollLock();
+  };
+
+  const _runPendingReset = (): void => {
+    if (!pendingResetAction) return;
+
+    if (pendingResetAction === "gnomes") {
+      for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+        if (!key || !key.startsWith("gnomes_")) continue;
+        localStorage.removeItem(key);
+      }
+    } else {
+      localStorage.clear();
+    }
+
+    window.location.reload();
+  };
+
   const _openAdditionalInfo = (): void => {
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
-    _setAppScrollLocked(true);
+    _syncAppScrollLock();
     modalCard.scrollTop = 0;
   };
 
   const _closeAdditionalInfo = (): void => {
+    _closeConfirm();
     modal.hidden = true;
     modal.setAttribute("aria-hidden", "true");
-    _setAppScrollLocked(false);
+    _syncAppScrollLock();
   };
 
   const _onDocumentKeydown = (event: KeyboardEvent): void => {
-    if (event.key !== "Escape" || modal.hidden) return;
+    if (event.key !== "Escape") return;
+    if (!confirmModal.hidden) {
+      _closeConfirm();
+      return;
+    }
+    if (modal.hidden) return;
     _closeAdditionalInfo();
   };
 
@@ -204,9 +279,28 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
     _closeAdditionalInfo();
   };
 
+  const _onConfirmClick = (event: MouseEvent): void => {
+    if (event.target !== confirmModal) return;
+    _closeConfirm();
+  };
+
+  const _onResetActionClick = (event: MouseEvent): void => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const action = button.dataset.resetAction;
+    if (action === "gnomes" || action === "all") {
+      _openConfirm(action);
+    }
+  };
+
   additionalInfoButton.addEventListener("click", _openAdditionalInfo);
   modalCloseButton.addEventListener("click", _closeAdditionalInfo);
   modal.addEventListener("click", _onModalClick);
+  confirmCancelButton.addEventListener("click", _closeConfirm);
+  confirmApproveButton.addEventListener("click", _runPendingReset);
+  confirmModal.addEventListener("click", _onConfirmClick);
+  for (const button of resetActionButtons) {
+    button.addEventListener("click", _onResetActionClick);
+  }
   document.addEventListener("keydown", _onDocumentKeydown);
 
   return {
@@ -231,6 +325,12 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
       additionalInfoButton.removeEventListener("click", _openAdditionalInfo);
       modalCloseButton.removeEventListener("click", _closeAdditionalInfo);
       modal.removeEventListener("click", _onModalClick);
+      confirmCancelButton.removeEventListener("click", _closeConfirm);
+      confirmApproveButton.removeEventListener("click", _runPendingReset);
+      confirmModal.removeEventListener("click", _onConfirmClick);
+      for (const button of resetActionButtons) {
+        button.removeEventListener("click", _onResetActionClick);
+      }
       document.removeEventListener("keydown", _onDocumentKeydown);
       root.remove();
       host.classList.remove("launcher--puzzle");
