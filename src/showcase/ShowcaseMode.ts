@@ -832,20 +832,19 @@ export class ShowcaseMode {
         this._inventoryUi.restoreItem("key");
       },
     });
-    let alignRequestedForDrag = false;
+    let rotationResetRequestedForDrag = false;
     const unsubscribeInventoryDrag = this._inventoryUi.subscribeDrag((event) => {
       if (event.phase === "start") {
-        alignRequestedForDrag = false;
+        rotationResetRequestedForDrag = false;
       }
 
-      if (!alignRequestedForDrag && event.phase !== "end" && project.canAcceptInventoryItem(event.itemId)) {
-        alignRequestedForDrag = true;
+      if (!rotationResetRequestedForDrag && event.phase !== "end" && project.canAcceptInventoryItem(event.itemId)) {
+        rotationResetRequestedForDrag = true;
         project.resetRotationToInitial(0.5);
-        void this.alignProject("sunduc", "smooth");
       }
 
       if (event.phase !== "end") return;
-      alignRequestedForDrag = false;
+      rotationResetRequestedForDrag = false;
       if (!project.hitTestInventoryDrop(event.clientX, event.clientY)) return;
 
       const dropResult = project.acceptInventoryItem(event.itemId);
