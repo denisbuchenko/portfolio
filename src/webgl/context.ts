@@ -5,7 +5,7 @@ export function tryCreateWebGL2Context() {
     antialias: false,
     depth: false,
     stencil: false,
-    premultipliedAlpha: false,
+    premultipliedAlpha: true,
     preserveDrawingBuffer: false,
     failIfMajorPerformanceCaveat: false
   });

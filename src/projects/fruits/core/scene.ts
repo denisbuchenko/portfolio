@@ -16,7 +16,7 @@ const DEFAULT_RENDERER_CFG: ConstructorParameters<typeof THREE.WebGLRenderer>[0]
   antialias: true,
   depth: true,
   stencil: false,
-  premultipliedAlpha: false,
+  premultipliedAlpha: true,
   preserveDrawingBuffer: false,
 };
 

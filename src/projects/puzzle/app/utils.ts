@@ -8,7 +8,9 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 export function getDpr(): number {
-  return Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const raw = window.devicePixelRatio || 1;
+  const maxDpr = /Mobi|Android/i.test(navigator.userAgent) ? 2 : 3;
+  return Math.max(1, Math.min(maxDpr, raw));
 }
 
 

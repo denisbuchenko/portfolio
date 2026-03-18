@@ -7,7 +7,7 @@ export function createWebGLRenderer2D(canvas: HTMLCanvasElement): THREE.WebGLRen
     antialias: false,
     depth: true,
     stencil: false,
-    premultipliedAlpha: false,
+    premultipliedAlpha: true,
     preserveDrawingBuffer: false
   });
   renderer.autoClear = true;
