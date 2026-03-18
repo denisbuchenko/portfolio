@@ -66,12 +66,12 @@ declare global {
 }
 
 const INVENTORY_CATALOG: Readonly<Record<InventoryItemId, InventoryItemDef>> = Object.freeze({
-  key: { id: "key", label: "Ключ", imageSrc: "/inventory/ключ.png" },
-  stone1: { id: "stone1", label: "Камень 1", imageSrc: "/inventory/Камень1.jpg" },
-  stone2: { id: "stone2", label: "Камень 2", imageSrc: "/inventory/Камень2.jpg" },
-  stone3: { id: "stone3", label: "Камень 3", imageSrc: "/inventory/Камень3.jpg" },
-  stone4: { id: "stone4", label: "Камень 4", imageSrc: "/inventory/Камень4.jpg" },
-  flute: { id: "flute", label: "Дудка", imageSrc: "/inventory/дудка.png" },
+  key: { id: "key", label: "Ключ", imageSrc: "/inventory/key.png" },
+  stone1: { id: "stone1", label: "Камень 1", imageSrc: "/inventory/stone1.png" },
+  stone2: { id: "stone2", label: "Камень 2", imageSrc: "/inventory/stone2.png" },
+  stone3: { id: "stone3", label: "Камень 3", imageSrc: "/inventory/stone3.png" },
+  stone4: { id: "stone4", label: "Камень 4", imageSrc: "/inventory/stone4.png" },
+  flute: { id: "flute", label: "Дудка", imageSrc: "/inventory/flute.png" },
 });
 
 interface ActiveDragState {
@@ -447,7 +447,7 @@ export class ShowcaseInventory {
 
     event.preventDefault();
 
-    const ghostEl = this._createGhost(itemId);
+    const ghostEl = this._createGhost(sourceEl, itemId);
     document.body.appendChild(ghostEl);
     sourceEl.style.opacity = "0";
 
@@ -503,9 +503,16 @@ export class ShowcaseInventory {
     }, 190);
   }
 
-  private _createGhost(itemId: InventoryItemId): HTMLDivElement {
+  private _createGhost(sourceEl: HTMLButtonElement, itemId: InventoryItemId): HTMLDivElement {
     const ghostEl = document.createElement("div");
     ghostEl.className = "showcase-inventory__drag-ghost";
+
+    const sourceImageEl = sourceEl.querySelector("img");
+    if (sourceImageEl instanceof HTMLImageElement) {
+      const sourceImageRect = sourceImageEl.getBoundingClientRect();
+      ghostEl.style.width = `${sourceImageRect.width}px`;
+      ghostEl.style.height = `${sourceImageRect.height}px`;
+    }
 
     const img = document.createElement("img");
     img.src = INVENTORY_CATALOG[itemId].imageSrc;
@@ -699,14 +706,8 @@ function _ensureInventoryStyles(): void {
       position: fixed;
       left: 0;
       top: 0;
-      width: 92px;
-      height: 92px;
-      padding: 8px;
-      border-radius: 18px;
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      background: rgba(10, 14, 24, 0.88);
-      box-shadow: 0 24px 50px rgba(0, 0, 0, 0.42);
-      backdrop-filter: blur(16px);
+      width: 100%;
+      height: 100%;
       transform: translate(-50%, -50%) scale(1.04);
       pointer-events: none;
     }
@@ -716,7 +717,7 @@ function _ensureInventoryStyles(): void {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      border-radius: 12px;
+      border-radius: 0;
     }
 
     @media (max-width: 900px) {
