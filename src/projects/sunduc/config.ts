@@ -110,9 +110,9 @@ export const SUNDUC_CONFIG = {
       minHeight: 0.7,
       maxHeight: 4.2
     },
-    offset: { x: 0.15, y: -0.1, z: 0.08 },
+    offset: { x: 0.15, y: 0.0, z: 0.08 },
     animation: {
-      startDelayMs: 1000,
+      startDelayMs: 0,
       riseSpeed: 0.07,
       maxOffsetY: 5.25
     }
