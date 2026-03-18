@@ -13,9 +13,14 @@ import { ShowcaseMode } from "./showcase/ShowcaseMode";
 
 const overlay = createOverlay();
 let showcaseInstance: ShowcaseMode | null = null;
+let _lastStableViewportHeight = 0;
 
 function _syncAppVisibleViewport(): void {
-  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+  const visualViewport = window.visualViewport;
+  const isZoomed = visualViewport ? Math.abs(visualViewport.scale - 1) > 0.01 : false;
+  const viewportHeight =
+    isZoomed ? _lastStableViewportHeight || window.innerHeight : (visualViewport?.height ?? window.innerHeight);
+  if (!isZoomed) _lastStableViewportHeight = Math.round(viewportHeight);
   document.documentElement.style.setProperty("--app-visible-height", `${Math.round(viewportHeight)}px`);
 }
 
@@ -38,6 +43,9 @@ function _blockTextSelectionUi(): void {
   const _preventDefault = (event: Event): void => {
     event.preventDefault();
   };
+  const _preventMultiTouchZoom = (event: TouchEvent): void => {
+    if (event.touches.length > 1) event.preventDefault();
+  };
   const _clearSelection = (): void => {
     window.getSelection()?.removeAllRanges();
   };
@@ -46,6 +54,8 @@ function _blockTextSelectionUi(): void {
   document.addEventListener("selectstart", _preventDefault, { passive: false });
   document.addEventListener("dragstart", _preventDefault, { passive: false });
   document.addEventListener("gesturestart", _preventDefault as EventListener, { passive: false });
+  document.addEventListener("touchstart", _preventMultiTouchZoom, { passive: false });
+  document.addEventListener("touchmove", _preventMultiTouchZoom, { passive: false });
   document.addEventListener("selectionchange", _clearSelection, { passive: true });
   document.addEventListener("touchstart", _clearSelection, { passive: true, capture: true });
   document.addEventListener("touchend", _clearSelection, { passive: true, capture: true });
