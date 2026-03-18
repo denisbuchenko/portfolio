@@ -12,12 +12,52 @@ export const SUNDUC_CONFIG = {
   additionalInfo: {
     buttonLabel: "Дополнительная информация",
     title: "Дополнительная информация",
-    lead: "Здесь будет отдельное окно с контактами, e-mail и ссылками на заимствованные материалы.",
-    paragraphs: [
-      "Пока это заглушка, но сам блок уже выделен под расширенную информацию о проекте.",
-      "Позже сюда можно добавить удобный список источников, ссылки на связанные работы и способы связи."
+    lead:
+      "Этот проект - часть большого интерактивного портфолио, в котором я показываю не только результат, но и свой подход к визуалу, анимации и подаче.",
+    contacts: [
+      {
+        label: "E-mail",
+        value: "denis.buchenko.dev@gmail.com",
+        href: "mailto:denis.buchenko.dev@gmail.com"
+      },
+      {
+        label: "Telegram",
+        value: "@buchachos",
+        href: "https://t.me/buchachos"
+      }
     ],
-    closeLabel: "Закрыть"
+    borrowedAssetsTitle: "Заимствованные материалы",
+    borrowedAssets: [
+      {
+        title: "Город",
+        href: "https://sketchfab.com/3d-models/100-lowpoly-buildings-buildings-pack-7c87fb777cd34985807e05b79c9548c0",
+        note: "Использован как основа для части городского окружения."
+      },
+      {
+        title: "Фрукты",
+        href: "https://sketchfab.com/3d-models/3d-props-adorable-foods-4377b5bf46234ad4a0b9f69f57d05eea",
+        note: "Использованы как заимствованные пропсы в одном из проектов."
+      }
+    ],
+    commissionedAssetsTitle: "Работы, выполненные лично для меня знакомым 3D-художником",
+    commissionedAssets: [
+      {
+        title: "Велосипед",
+        href: "https://skfb.ly/pHFEF"
+      },
+      {
+        title: "Сундук",
+        href: "https://skfb.ly/pHFEX"
+      }
+    ],
+    ownershipNote:
+      "Все остальные работы, включая 3D-моделирование, анимации, SVG-мультипликацию, рендеры и рисунки, были выполнены мной самостоятельно.",
+    paragraphs: [],
+    closeLabel: "Закрыть",
+    resetButtons: [
+      "Улаоить прогресс только у гномов",
+      "Удалить весь игройвой процесс"
+    ]
   },
   layout: {
     infoMinHeightVh: 16,

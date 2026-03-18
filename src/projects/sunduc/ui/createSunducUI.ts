@@ -39,6 +39,44 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
   const additionalInfoRows = SUNDUC_CONFIG.additionalInfo.paragraphs
     .map((paragraph) => `<p class="sunduc__modal-paragraph">${paragraph}</p>`)
     .join("");
+  const additionalInfoContacts = SUNDUC_CONFIG.additionalInfo.contacts
+    .map(
+      (contact) => `
+        <li class="sunduc__modal-list-item">
+          <span class="sunduc__modal-list-label">${contact.label}</span>
+          <a class="sunduc__modal-link" href="${contact.href}" target="_blank" rel="noreferrer">${contact.value}</a>
+        </li>
+      `
+    )
+    .join("");
+  const borrowedAssets = SUNDUC_CONFIG.additionalInfo.borrowedAssets
+    .map(
+      (asset) => `
+        <li class="sunduc__modal-list-item sunduc__modal-list-item--stacked">
+          <a class="sunduc__modal-link" href="${asset.href}" target="_blank" rel="noreferrer">${asset.title}</a>
+          <span class="sunduc__modal-list-note">${asset.note}</span>
+        </li>
+      `
+    )
+    .join("");
+  const commissionedAssets = SUNDUC_CONFIG.additionalInfo.commissionedAssets
+    .map(
+      (asset) => `
+        <li class="sunduc__modal-list-item">
+          <a class="sunduc__modal-link" href="${asset.href}" target="_blank" rel="noreferrer">${asset.title}</a>
+        </li>
+      `
+    )
+    .join("");
+  const resetButtons = SUNDUC_CONFIG.additionalInfo.resetButtons
+    .map(
+      (label) => `
+        <button class="btn sunduc__reset-btn" type="button">
+          ${label}
+        </button>
+      `
+    )
+    .join("");
 
   root.innerHTML = `
     <div class="sunduc__info">
@@ -83,7 +121,33 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
         <div class="sunduc__modal-eyebrow">${SUNDUC_CONFIG.additionalInfo.buttonLabel}</div>
         <h2 class="sunduc__modal-title" id="sunduc-additional-info-title">${SUNDUC_CONFIG.additionalInfo.title}</h2>
         <p class="sunduc__modal-lead">${SUNDUC_CONFIG.additionalInfo.lead}</p>
-        <div class="sunduc__modal-paragraphs">${additionalInfoRows}</div>
+        <div class="sunduc__modal-section">
+          <h3 class="sunduc__modal-section-title">Контакты</h3>
+          <ul class="sunduc__modal-list">
+            ${additionalInfoContacts}
+          </ul>
+        </div>
+        <div class="sunduc__modal-section">
+          <h3 class="sunduc__modal-section-title">${SUNDUC_CONFIG.additionalInfo.borrowedAssetsTitle}</h3>
+          <ul class="sunduc__modal-list">
+            ${borrowedAssets}
+          </ul>
+        </div>
+        <div class="sunduc__modal-section">
+          <h3 class="sunduc__modal-section-title">${SUNDUC_CONFIG.additionalInfo.commissionedAssetsTitle}</h3>
+          <ul class="sunduc__modal-list">
+            ${commissionedAssets}
+          </ul>
+        </div>
+        <p class="sunduc__modal-note">${SUNDUC_CONFIG.additionalInfo.ownershipNote}</p>
+        ${
+          additionalInfoRows
+            ? `<div class="sunduc__modal-paragraphs">${additionalInfoRows}</div>`
+            : ""
+        }
+        <div class="sunduc__modal-actions">
+          ${resetButtons}
+        </div>
       </div>
     </div>
   `;
@@ -95,19 +159,39 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
   const status = _requireElement(root, ".sunduc__status") as HTMLDivElement;
   const additionalInfoButton = _requireElement(root, ".sunduc__info-btn") as HTMLButtonElement;
   const modal = _requireElement(root, ".sunduc__modal") as HTMLDivElement;
+  const modalCard = _requireElement(root, ".sunduc__modal-card") as HTMLDivElement;
   const modalCloseButton = _requireElement(root, ".sunduc__modal-close") as HTMLButtonElement;
+  const appRoot = document.getElementById("app");
+  const initialAppOverflow = appRoot?.style.overflow ?? "";
+  const initialAppOverscrollBehavior = appRoot?.style.overscrollBehavior ?? "";
   if (options.embedded) {
     status.style.display = "none";
   }
 
+  const _setAppScrollLocked = (locked: boolean): void => {
+    if (!appRoot) return;
+
+    if (locked) {
+      appRoot.style.overflow = "hidden";
+      appRoot.style.overscrollBehavior = "none";
+      return;
+    }
+
+    appRoot.style.overflow = initialAppOverflow;
+    appRoot.style.overscrollBehavior = initialAppOverscrollBehavior;
+  };
+
   const _openAdditionalInfo = (): void => {
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
+    _setAppScrollLocked(true);
+    modalCard.scrollTop = 0;
   };
 
   const _closeAdditionalInfo = (): void => {
     modal.hidden = true;
     modal.setAttribute("aria-hidden", "true");
+    _setAppScrollLocked(false);
   };
 
   const _onDocumentKeydown = (event: KeyboardEvent): void => {
@@ -143,6 +227,7 @@ export function createSunducUI(options: CreateSunducUIOptions): SunducUI {
       // Debug controls are intentionally hidden in the minimalist showcase UI.
     },
     dispose(): void {
+      _setAppScrollLocked(false);
       additionalInfoButton.removeEventListener("click", _openAdditionalInfo);
       modalCloseButton.removeEventListener("click", _closeAdditionalInfo);
       modal.removeEventListener("click", _onModalClick);

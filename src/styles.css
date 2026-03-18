@@ -946,6 +946,10 @@ canvas {
   display: block;
 }
 
+.sunduc__reset-btn {
+  min-height: 40px;
+}
+
 .sunduc__canvas-wrap {
   position: relative;
   width: 100%;
@@ -988,6 +992,7 @@ canvas {
   padding: 24px;
   background: rgba(6, 9, 18, 0.68);
   backdrop-filter: blur(12px);
+  overscroll-behavior: contain;
 }
 
 .sunduc__modal[hidden] {
@@ -997,14 +1002,18 @@ canvas {
 .sunduc__modal-card {
   position: relative;
   width: min(100%, 720px);
+  max-height: min(calc(100svh - 48px), 860px);
   display: grid;
   gap: 14px;
   padding: 28px;
+  overflow-y: auto;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 24px;
   background:
     linear-gradient(180deg, rgba(18, 22, 38, 0.96), rgba(10, 13, 24, 0.96));
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sunduc__modal-close {
@@ -1054,6 +1063,80 @@ canvas {
 .sunduc__modal-paragraphs {
   display: grid;
   gap: 10px;
+}
+
+.sunduc__modal-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sunduc__modal-section-title {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.64);
+}
+
+.sunduc__modal-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sunduc__modal-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+}
+
+.sunduc__modal-list-item--stacked {
+  display: grid;
+  gap: 4px;
+}
+
+.sunduc__modal-list-label {
+  color: rgba(255, 255, 255, 0.58);
+  min-width: 88px;
+}
+
+.sunduc__modal-list-note {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.sunduc__modal-link {
+  color: #9be7ff;
+  text-decoration: none;
+}
+
+.sunduc__modal-link:hover {
+  color: #c8f4ff;
+  text-decoration: underline;
+}
+
+.sunduc__modal-note {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(155, 231, 255, 0.14);
+  border-radius: 18px;
+  background: rgba(155, 231, 255, 0.06);
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.sunduc__modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 6px;
 }
 
 .sunduc__modal-paragraph {
@@ -1411,6 +1494,7 @@ canvas {
   }
 
   .sunduc__modal-card {
+    max-height: calc(100svh - 32px);
     padding: 22px 18px 18px;
     border-radius: 20px;
   }
