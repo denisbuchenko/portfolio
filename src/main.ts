@@ -11,6 +11,8 @@ import { mountOsminogProject } from "./projects/osminog";
 import { mountSunducProject } from "./projects/sunduc";
 import { ShowcaseMode } from "./showcase/ShowcaseMode";
 
+console.log('V 1')
+
 const overlay = createOverlay();
 let showcaseInstance: ShowcaseMode | null = null;
 let _lastStableViewportHeight = 0;

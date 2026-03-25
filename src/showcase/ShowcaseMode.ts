@@ -130,6 +130,9 @@ export class ShowcaseMode {
   private _disposed = false;
   private _preloadDone = false;
 
+  /** Пока у #app inline overflow:hidden — блокируем touchmove, иначе в TG/WebView вертикальный свайп уходит в «свернуть браузер». */
+  private _hostNativeSwipeBlockAttached = false;
+
   constructor(opts: ShowcaseOpts) {
     this._host = opts.host;
     void opts.onBack;
@@ -341,6 +344,7 @@ export class ShowcaseMode {
 
     this._host.classList.remove("showcase-active");
     this._host.style.overflow = "";
+    this._syncHostOverflowNativeSwipeBlock();
     this._host.scrollTop = 0;
     this._showExistingUI();
   }
@@ -657,6 +661,7 @@ export class ShowcaseMode {
     this._interactingIdx = -1;
 
     this._host.style.overflow = "";
+    this._syncHostOverflowNativeSwipeBlock();
     if (s.blocker) s.blocker.style.display = "";
     if (s.interactBtn) s.interactBtn.style.display = "";
 
@@ -998,6 +1003,7 @@ export class ShowcaseMode {
     };
     const setScrollLocked = (locked: boolean): void => {
       hostEl.style.overflow = locked ? "hidden" : "";
+      this._syncHostOverflowNativeSwipeBlock();
     };
 
     const app = new GnomesApp({
@@ -1145,6 +1151,23 @@ export class ShowcaseMode {
 
   // ── interaction gate ───────────────────────────────────────────────────────
 
+  private _onWindowTouchMoveWhenHostScrollLocked = (event: TouchEvent): void => {
+    if (event.cancelable) event.preventDefault();
+  };
+
+  /** Вызывать после любого изменения `this._host.style.overflow` в этом классе. */
+  private _syncHostOverflowNativeSwipeBlock(): void {
+    const locked = this._host.style.overflow === "hidden";
+    if (locked === this._hostNativeSwipeBlockAttached) return;
+    if (locked) {
+      window.addEventListener("touchmove", this._onWindowTouchMoveWhenHostScrollLocked, { passive: false, capture: true });
+      this._hostNativeSwipeBlockAttached = true;
+    } else {
+      window.removeEventListener("touchmove", this._onWindowTouchMoveWhenHostScrollLocked, { capture: true });
+      this._hostNativeSwipeBlockAttached = false;
+    }
+  }
+
   private async _startInteraction(idx: number): Promise<void> {
     const s = this._sections[idx];
     if (!s || s.interacting || this._pendingInteractionIdx >= 0) return;
@@ -1164,6 +1187,7 @@ export class ShowcaseMode {
 
     // Block page scroll
     this._host.style.overflow = "hidden";
+    this._syncHostOverflowNativeSwipeBlock();
 
     // Hide gate UI
     if (s.blocker) s.blocker.style.display = "none";
