@@ -35,6 +35,9 @@ body {
   user-select: none !important;
   -webkit-touch-callout: none !important;
   touch-action: manipulation;
+  /* Меньше «резинки»/pull-to-dismiss у встроенных браузеров (Telegram и др.) */
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
 }
 
 #app,
@@ -66,6 +69,8 @@ body,
   right: 0;
   height: var(--app-visible-height);
   overflow: hidden;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
 }
 
 .phone-landscape-lock {

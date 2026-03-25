@@ -279,7 +279,8 @@ export class ShowcaseInventory {
       itemBtn.type = "button";
       itemBtn.dataset.inventoryItem = itemId;
       itemBtn.setAttribute("aria-label", itemDef.label);
-      itemBtn.addEventListener("pointerdown", this._onItemPointerDown);
+      itemBtn.addEventListener("pointerdown", this._onItemPointerDown, { passive: false });
+      itemBtn.addEventListener("touchstart", this._onItemTouchStart, { passive: false });
 
       const img = document.createElement("img");
       img.className = "showcase-inventory__item-image";
@@ -437,6 +438,11 @@ export class ShowcaseInventory {
     }
   }
 
+  private _onItemTouchStart = (event: TouchEvent): void => {
+    if (event.touches.length !== 1) return;
+    if (event.cancelable) event.preventDefault();
+  };
+
   private _onItemPointerDown = (event: PointerEvent): void => {
     const sourceEl = event.currentTarget;
     if (!(sourceEl instanceof HTMLButtonElement)) return;
@@ -446,7 +452,7 @@ export class ShowcaseInventory {
     const sourceSlotEl = sourceEl.parentElement;
     if (!(sourceSlotEl instanceof HTMLDivElement)) return;
 
-    event.preventDefault();
+    if (event.cancelable) event.preventDefault();
 
     const ghostEl = this._createGhost(sourceEl, itemId);
     document.body.appendChild(ghostEl);
@@ -466,12 +472,18 @@ export class ShowcaseInventory {
     window.addEventListener("pointermove", this._onWindowPointerMove, { passive: false });
     window.addEventListener("pointerup", this._onWindowPointerUp);
     window.addEventListener("pointercancel", this._onWindowPointerUp);
+    window.addEventListener("touchmove", this._onWindowTouchMoveDuringDrag, { passive: false, capture: true });
+  };
+
+  private _onWindowTouchMoveDuringDrag = (event: TouchEvent): void => {
+    if (!this._activeDrag) return;
+    if (event.cancelable) event.preventDefault();
   };
 
   private _onWindowPointerMove = (event: PointerEvent): void => {
     const drag = this._activeDrag;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    event.preventDefault();
+    if (event.cancelable) event.preventDefault();
     this._moveGhost(event.clientX, event.clientY);
     this._emitDrag(drag.itemId, "move", event.clientX, event.clientY);
   };
@@ -491,6 +503,7 @@ export class ShowcaseInventory {
     window.removeEventListener("pointermove", this._onWindowPointerMove);
     window.removeEventListener("pointerup", this._onWindowPointerUp);
     window.removeEventListener("pointercancel", this._onWindowPointerUp);
+    window.removeEventListener("touchmove", this._onWindowTouchMoveDuringDrag, { capture: true });
 
     const slotRect = drag.sourceSlotEl.getBoundingClientRect();
     drag.ghostEl.style.transition = "left 180ms ease, top 180ms ease, transform 180ms ease, opacity 180ms ease";

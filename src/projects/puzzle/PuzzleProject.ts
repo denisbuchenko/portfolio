@@ -113,11 +113,12 @@ export class PuzzleProject {
   }
 
   private _setupEventListeners(): void {
-    this._ui.canvas.addEventListener("pointerdown", this._onCanvasPointerDown);
-    this._ui.canvas.addEventListener("pointermove", this._onCanvasPointerMove);
-    this._ui.canvas.addEventListener("pointermove", this._onCanvasPointerMoveDraw);
-    this._ui.canvas.addEventListener("pointerup", this._onCanvasPointerUpOrCancel);
-    this._ui.canvas.addEventListener("pointercancel", this._onCanvasPointerUpOrCancel);
+    const nonPassive: AddEventListenerOptions = { passive: false };
+    this._ui.canvas.addEventListener("pointerdown", this._onCanvasPointerDown, nonPassive);
+    this._ui.canvas.addEventListener("pointermove", this._onCanvasPointerMove, nonPassive);
+    this._ui.canvas.addEventListener("pointermove", this._onCanvasPointerMoveDraw, nonPassive);
+    this._ui.canvas.addEventListener("pointerup", this._onCanvasPointerUpOrCancel, nonPassive);
+    this._ui.canvas.addEventListener("pointercancel", this._onCanvasPointerUpOrCancel, nonPassive);
 
     window.addEventListener("resize", this._onWindowResize);
     this._resizeObserver = new ResizeObserver(() => this._scheduleRebuild());
@@ -125,11 +126,12 @@ export class PuzzleProject {
   }
 
   private _removeEventListeners(): void {
-    this._ui.canvas.removeEventListener("pointerdown", this._onCanvasPointerDown);
-    this._ui.canvas.removeEventListener("pointermove", this._onCanvasPointerMove);
-    this._ui.canvas.removeEventListener("pointermove", this._onCanvasPointerMoveDraw);
-    this._ui.canvas.removeEventListener("pointerup", this._onCanvasPointerUpOrCancel);
-    this._ui.canvas.removeEventListener("pointercancel", this._onCanvasPointerUpOrCancel);
+    const nonPassive: AddEventListenerOptions = { passive: false };
+    this._ui.canvas.removeEventListener("pointerdown", this._onCanvasPointerDown, nonPassive);
+    this._ui.canvas.removeEventListener("pointermove", this._onCanvasPointerMove, nonPassive);
+    this._ui.canvas.removeEventListener("pointermove", this._onCanvasPointerMoveDraw, nonPassive);
+    this._ui.canvas.removeEventListener("pointerup", this._onCanvasPointerUpOrCancel, nonPassive);
+    this._ui.canvas.removeEventListener("pointercancel", this._onCanvasPointerUpOrCancel, nonPassive);
 
     window.removeEventListener("resize", this._onWindowResize);
     this._resizeObserver?.disconnect();
@@ -187,6 +189,9 @@ export class PuzzleProject {
       }
     );
     this._manager.setPieces(newPieces);
+    if (this._manager.drag || this._manager.draw) {
+      if (e.cancelable) e.preventDefault();
+    }
   }
 
   private _onPointerMove(e: PointerEvent): void {
@@ -195,12 +200,14 @@ export class PuzzleProject {
     this._input.handlePointerMove(e, this._ui.canvas, this._manager.drag, this._groupSys, (x, y) =>
       this._maskBitsAt(x, y)
     );
+    if (this._manager.drag && e.cancelable) e.preventDefault();
   }
 
   private _onPointerMoveDraw(e: PointerEvent): void {
     if (!this._renderActive) return;
     if (this._finalFillPhase !== "idle") return;
     this._input.handlePointerMoveDraw(e, this._ui.canvas, this._manager.draw, this._paint);
+    if (this._manager.draw && e.cancelable) e.preventDefault();
   }
 
   private _onPointerUpOrCancel(e: PointerEvent): void {
