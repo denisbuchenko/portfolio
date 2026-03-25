@@ -12,7 +12,7 @@ import { mountSunducProject } from "./projects/sunduc";
 import { ShowcaseMode } from "./showcase/ShowcaseMode";
 import { initTelegramWebApp } from "./telegram/initTelegramWebApp";
 
-console.log('V 2')
+console.log('V 3')
 
 const overlay = createOverlay();
 let showcaseInstance: ShowcaseMode | null = null;

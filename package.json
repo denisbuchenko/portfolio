@@ -15,6 +15,7 @@
     "preview:lan": "vite preview --host 0.0.0.0 --port 4173 --strictPort"
   },
   "dependencies": {
+    "@twa-dev/sdk": "^8.0.2",
     "cytoscape": "^3.33.1",
     "cytoscape-dagre": "^2.5.0",
     "cytoscape-edgehandles": "^4.0.1",

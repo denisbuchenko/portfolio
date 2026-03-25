@@ -1,25 +1,11 @@
 /**
- * Официальный скрипт подключается в index.html (telegram-web-app.js).
- * В обычном браузере window.Telegram нет — вызовы безопасно пропускаются.
+ * @twa-dev/sdk вшивает логику Web App в бандл (без запроса к telegram.org).
+ * В обычном браузере методы безопасны: клиент просто не применит нативные эффекты.
  */
 
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp?: {
-        ready: () => void;
-        /** Запрет свайпа вниз для закрытия Mini App (клиенты с поддержкой API). */
-        disableVerticalSwipes?: () => void;
-        enableVerticalSwipes?: () => void;
-      };
-    };
-  }
-}
+import WebApp from "@twa-dev/sdk";
 
 export function initTelegramWebApp(): void {
-  const webApp = window.Telegram?.WebApp;
-  if (!webApp) return;
-
-  webApp.ready();
-  webApp.disableVerticalSwipes?.();
+  WebApp.ready();
+  WebApp.disableVerticalSwipes();
 }
