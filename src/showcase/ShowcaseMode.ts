@@ -1152,6 +1152,8 @@ export class ShowcaseMode {
   // ── interaction gate ───────────────────────────────────────────────────────
 
   private _onWindowTouchMoveWhenHostScrollLocked = (event: TouchEvent): void => {
+    const target = event.target;
+    if (target instanceof Element && target.closest(".gnomes-dialogue__log")) return;
     if (event.cancelable) event.preventDefault();
   };
 
